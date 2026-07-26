@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lfgg-nodes"
+version = "1.0.0"
+description = "Small, explicit ComfyUI workflow utility nodes."
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "lfelipegg" }]
+dependencies = []
+classifiers = [
+    "Environment :: GPU :: NVIDIA CUDA",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.urls]
+Repository = "https://github.com/lfelipegg/comfyui-lfgg-nodes"
+Documentation = "https://github.com/lfelipegg/comfyui-lfgg-nodes#readme"
+Issues = "https://github.com/lfelipegg/comfyui-lfgg-nodes/issues"
+
+[project.optional-dependencies]
+dev = [
+    "comfy-cli",
+    "pytest",
+    "ruff",
+    "tomli; python_version < '3.11'",
+]
+
+[tool.comfy]
+PublisherId = "lfelipegg"
+DisplayName = "LFGG Nodes"
+requires-comfyui = ">=0.28.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+
+[tool.ruff]
+target-version = "py310"
+extend-exclude = [".codex-context", "reference"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "S102", "S307"]
+
+[tool.setuptools.packages.find]
+include = ["lfgg_nodes*"]

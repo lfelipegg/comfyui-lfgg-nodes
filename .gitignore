@@ -1,5 +1,14 @@
 /reference/
 
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+node.zip
+
 # Generated Codex context index
 .codex-context/context.sqlite
 .codex-context/*.sqlite
