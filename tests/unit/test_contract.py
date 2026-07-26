@@ -56,9 +56,17 @@ def test_v1_registration_and_schema_are_exact(monkeypatch):
 
     node = package.NODE_CLASS_MAPPINGS["LFGG_DimensionsByAspectRatio"]
     assert node.CATEGORY == "LFGG/sizing"
+    assert node.DESCRIPTION == (
+        "Calculates aligned width and height for a preset or custom aspect ratio "
+        "without exceeding the selected long-side limit."
+    )
     assert node.FUNCTION == "calculate"
     assert node.RETURN_TYPES == ("INT", "INT")
     assert node.RETURN_NAMES == ("width", "height")
+    assert node.OUTPUT_TOOLTIPS == (
+        "Aligned output width in pixels.",
+        "Aligned output height in pixels.",
+    )
 
     required = node.INPUT_TYPES()["required"]
     assert list(required) == [
@@ -69,22 +77,59 @@ def test_v1_registration_and_schema_are_exact(monkeypatch):
         "custom_ratio_height",
     ]
     assert required == {
-        "aspect_ratio": ("COMBO", {"options": RATIOS}),
+        "aspect_ratio": (
+            "COMBO",
+            {
+                "options": RATIOS,
+                "tooltip": (
+                    "Target width-to-height ratio. Select Custom to use the "
+                    "custom ratio inputs."
+                ),
+            },
+        ),
         "long_side": (
             "INT",
-            {"default": 1024, "min": 16, "max": MAX_RESOLUTION, "step": 8},
+            {
+                "default": 1024,
+                "min": 16,
+                "max": MAX_RESOLUTION,
+                "step": 8,
+                "tooltip": "Maximum size in pixels for the longer output axis.",
+            },
         ),
         "divisible_by": (
             "INT",
-            {"default": 8, "min": 1, "max": MAX_RESOLUTION},
+            {
+                "default": 8,
+                "min": 1,
+                "max": MAX_RESOLUTION,
+                "tooltip": (
+                    "Aligns both output dimensions to this exact multiple "
+                    "without exceeding the limit."
+                ),
+            },
         ),
         "custom_ratio_width": (
             "INT",
-            {"default": 1, "min": 1, "max": MAX_RESOLUTION},
+            {
+                "default": 1,
+                "min": 1,
+                "max": MAX_RESOLUTION,
+                "tooltip": (
+                    "Width component used only when aspect_ratio is Custom."
+                ),
+            },
         ),
         "custom_ratio_height": (
             "INT",
-            {"default": 1, "min": 1, "max": MAX_RESOLUTION},
+            {
+                "default": 1,
+                "min": 1,
+                "max": MAX_RESOLUTION,
+                "tooltip": (
+                    "Height component used only when aspect_ratio is Custom."
+                ),
+            },
         ),
     }
 
