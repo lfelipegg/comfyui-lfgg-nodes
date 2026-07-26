@@ -31,8 +31,9 @@ official docs, official examples, then local reference nodes.
   dependencies before adding code or dependencies.
 - Default to V1 `NODE_CLASS_MAPPINGS`; use V3 only for a demonstrated need with
   a tested ComfyUI floor. Never expose both registration generations.
-- Prefix stable node IDs and custom wire types with `LFGG_`; workflow schemas are
-  persisted public API.
+- Prefix every registered node name/ID (`NODE_CLASS_MAPPINGS` key or V3
+  `node_id`) with `LFGG_`, and every user-facing display name with `LFGG `.
+  Prefix custom wire types with `LFGG_`; workflow schemas are persisted API.
 - Keep root `__init__.py` registration-only and reject duplicate node IDs.
 - Keep transformations ComfyUI-independent; adapt schemas, tensors, lists, and
   UI envelopes at boundaries. See `custom-node-api.md` for exact contracts.
