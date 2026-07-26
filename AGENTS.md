@@ -92,6 +92,22 @@ These decisions are intentionally unresolved and must be confirmed before use:
 - package name, publisher ID, license, repository URLs, and release process;
 - canonical development, lint, test, integration, pack, and CI commands.
 
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues; external PRs are not a triage surface. See
+`docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default five-role vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `CONTEXT.md` and `docs/adr/`. See
+`docs/agents/domain.md`.
+
 ## Project Context Retrieval
 
 <!-- project-context:start -->
