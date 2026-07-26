@@ -11,72 +11,39 @@ not been selected.
 - Before scaffolding or implementing nodes, identify the requested node set,
   minimum supported ComfyUI/frontend versions, and registration generation.
 
-## Required Reading and Source Order
+## Context and Source Order
 
-Start with `docs/comfyui-info/README.md`, then read the document relevant to the
-task:
+Use the project-context workflow below before broad documentation scans. Search
+first, then read only the relevant chunks from:
 
-- `docs/comfyui-info/custom-node-api.md` for registration, schemas, execution,
-  caching, tensors, lists, routes, and frontend boundaries.
-- `docs/comfyui-info/distribution-and-quality.md` for packaging, dependencies,
-  tests, documentation, CI, security, and releases.
-- `docs/comfyui-info/reference-audit.md` before borrowing any local reference
-  design or code.
+- `docs/comfyui-info/README.md` for the research summary and routing;
+- `docs/comfyui-info/custom-node-api.md` for node/runtime behavior;
+- `docs/comfyui-info/distribution-and-quality.md` for packaging and quality;
+- `docs/comfyui-info/reference-audit.md` only before using local references.
 
-The research snapshot is dated 2026-07-26. When facts conflict or may have
-changed, prefer:
+The research snapshot is dated 2026-07-26. Recheck moving API and Registry facts
+before implementation or release. Prefer current/pinned ComfyUI source, current
+official docs, official examples, then local reference nodes.
 
-1. Pinned/current ComfyUI backend or frontend source.
-2. Current official ComfyUI documentation.
-3. Official examples and generators.
-4. Local reference nodes.
+## Pack Invariants
 
-Recheck moving API and Registry facts before implementation or release,
-especially V3 stability and compatibility metadata.
+- Use the standard library, ComfyUI helpers, project code, and installed
+  dependencies before adding code or dependencies.
+- Default to V1 `NODE_CLASS_MAPPINGS`; use V3 only for a demonstrated need with
+  a tested ComfyUI floor. Never expose both registration generations.
+- Prefix stable node IDs and custom wire types with `LFGG_`; workflow schemas are
+  persisted public API.
+- Keep root `__init__.py` registration-only and reject duplicate node IDs.
+- Keep transformations ComfyUI-independent; adapt schemas, tensors, lists, and
+  UI envelopes at boundaries. See `custom-node-api.md` for exact contracts.
+- Keep imports fast and side-effect-free. Add shared helpers only after two
+  callers and frontend/routes/hidden inputs/graph features only when required.
+- Preserve tensor batches, latent extra keys, input device, and supported dtype.
+  Do not confuse batches with ComfyUI scheduling lists.
+- Validate trust-boundary inputs during execution. Use pack-prefixed logging and
+  actionable errors; do not suppress failures with blank outputs.
 
-## Implementation Rules
-
-- Use the standard library, ComfyUI helpers, existing project code, and existing
-  dependencies before writing another abstraction or adding a dependency.
-- Default to V1 `NODE_CLASS_MAPPINGS` for broad compatibility unless a stated
-  requirement needs a V3-only feature. If V3 is chosen, set and test a concrete
-  ComfyUI floor; do not use `comfy_api.v0_0_1`.
-- Expose exactly one registration generation from an imported module. V1 takes
-  precedence if V1 and V3 hooks coexist.
-- Prefix stable node IDs and custom wire types with `LFGG_`. Treat IDs, input
-  names/order, outputs, defaults, and list semantics as persisted workflow API.
-- Keep the root `__init__.py` limited to registration. Reject duplicate node IDs
-  while aggregating module mappings.
-- Put ordinary transformations in small ComfyUI-independent functions. Keep
-  schemas, tensor adaptation, UI envelopes, and ComfyUI imports at boundaries.
-- Prefer one focused module per node or cohesive node family. Add shared helpers
-  only after at least two callers need the same behavior.
-- Keep module import fast and side-effect-free: no model/device allocation,
-  writes, deletion, downloads, network access, installers, threads, or banners.
-- Use `logging` with a pack prefix. Do not hide failures with blank outputs or
-  broad exception suppression.
-- Add frontend code, server routes, hidden inputs, graph expansion, wildcard
-  types, and ComfyUI scheduling-list flags only for a demonstrated requirement.
-
-## Node Contracts
-
-- V1 execution returns tuples aligned with `RETURN_TYPES`; optional inputs must
-  tolerate omission. V3 execution uses classmethods and `io.NodeOutput`.
-- Validate trust-boundary values in backend execution even when widgets or
-  prompt validation constrain them.
-- Preserve tensor batch dimensions: `IMAGE` is normally `[B,H,W,C]`, `MASK` is
-  `[B,H,W]` with `[H,W]` accepted where documented, and `LATENT` is a dictionary
-  whose extra keys must survive transformations.
-- Do not confuse tensor batches with ComfyUI scheduling lists. Test each
-  separately when a node supports it.
-- Operate on the input/model device and supported dtype. Avoid unconditional
-  CUDA moves, unnecessary copies, global cache clearing, and global Torch state.
-- Pure deterministic nodes need no cache hook. Represent external state as an
-  input or fingerprint it; use explicit seeds for randomness.
-- Keep graph-visible behavior in declared inputs. Request hidden context only
-  when the node actually uses it.
-
-## Security and Isolation
+## Security and Distribution
 
 - No `eval`, `exec`, obfuscation, runtime `pip`, or subprocess package
   installation.
@@ -84,66 +51,67 @@ especially V3 stability and compatibility metadata.
   custom-node pack.
 - Resolve filesystem paths and prove containment within an allowed root at the
   point of access. Reject traversal and symlink escape.
-- Validate external types, ranks, sizes, identifiers, URLs, decoded content,
-  archive members, and output destinations with actionable errors.
+- Validate external types, sizes, identifiers, URLs, decoded content, archive
+  members, and destinations.
 - Bound network timeouts, retries, response sizes, concurrency, temporary
   storage, and image pixel counts. Document every network call and file write.
 - Assume custom `PromptServer` routes have no general authentication gate.
   Namespace routes under `/lfgg/v1/`; use non-GET methods for mutation and add
   explicit authorization for sensitive operations.
-- Never commit, log, return, or package credentials, private data, caches, or
-  local absolute paths.
-- Before copying reference code, verify its license and preserve required
-  notices. Prefer reimplementation when compatibility is unclear.
+- Never commit, log, return, index, or package credentials, private data, caches,
+  or local absolute paths.
+- Verify reference licenses before reuse; prefer reimplementation when unclear.
+- Declare runtime dependencies in `pyproject.toml`; do not install at runtime or
+  add a ceremonial `requirements.txt`.
+- Use documented `WEB_DIRECTORY`; never copy into or mutate ComfyUI core.
+- Publishing requires an explicitly approved release and protected Registry
+  token. Published names and versions are immutable.
 
-## Packaging and Dependencies
+## Verification and Maintenance
 
-- Start with only `__init__.py`, focused node modules, `pyproject.toml`,
-  `README.md`, `LICENSE`, and tests. Add `web/`, routes, build tooling,
-  `example_workflows/`, `subgraphs/`, or `locales/` only when used.
-- Keep runtime dependencies static in `[project].dependencies`; keep development
-  tools in an optional extra. Do not add a ceremonial `requirements.txt`.
-- Declare direct runtime dependencies with the least restrictive tested bounds.
-  Do not pin ComfyUI's Torch/core stack without a proven incompatibility.
-- Use documented `WEB_DIRECTORY` for browser assets. Do not copy files into
-  ComfyUI core directories or rely on undocumented frontend mutation.
-- Treat published Registry versions and package names as immutable. Publishing
-  requires an explicitly approved tag or release workflow and a protected
-  `REGISTRY_ACCESS_TOKEN`.
-
-## Testing and Verification
-
-- Leave one focused runnable test for every non-trivial branch, parser, path
-  boundary, or behavior change.
-- Test pure helpers independently from ComfyUI, then test node schema,
-  registration, tuple/output order, validation, errors, and cache behavior.
-- Use real tensors for dtype/device/shape behavior. Relevant image nodes cover
-  `B=1` and `B>1`; mask nodes cover `[H,W]` and `[B,H,W]`.
-- Before release, test the packed archive in clean ComfyUI at the declared
-  minimum and current supported versions, check `/object_info`, and execute a
-  minimal workflow per node family.
-- Add browser E2E tests only when browser behavior exists.
+- Leave one focused runnable test for each non-trivial branch, parser, path
+  boundary, or behavior change. Use real tensors for shape/device behavior.
 - No install, lint, test, build, pack, or publish command is canonical yet.
-  Read checked-in project metadata once it exists; do not infer commands from
-  the stack or copy documentation examples as repository policy.
-
-## Documentation and Review
-
-- Keep `AGENTS.md` limited to durable agent rules. Put requirements and plans in
-  their own documents rather than expanding this file.
-- Once nodes exist, keep the README node catalog, compatibility matrix,
-  external effects, examples, and migration notes aligned with registration.
-- Update this file when canonical commands, compatibility policy, architecture
-  boundaries, or recurring guardrails change—not for one-off task details.
-- Before finishing work, report changed files, checks run, known limitations,
-  and deferred work. Do not claim unrun checks passed.
+  Read checked-in metadata; never infer commands from the stack or research docs.
+- Before release, test the packed archive at the minimum and current supported
+  ComfyUI versions, inspect `/object_info`, and run one workflow per node family.
+- Keep `AGENTS.md` durable and short. Put requirements and plans elsewhere;
+  update it only for reusable commands, boundaries, or recurring guardrails.
+- After meaningful Markdown changes, ingest the context index.
+- Finish with changed files, checks run, limitations, and deferred work. Never
+  claim an unrun check passed.
 
 ## Assumptions to Confirm
 
 These decisions are intentionally unresolved and must be confirmed before use:
 
 - first public nodes and their acceptance criteria;
-- V1 baseline versus a V3-only requirement;
+- compatibility floor and whether a demonstrated V3-only need overrides V1;
 - minimum/current ComfyUI, frontend, Python, OS, and accelerator matrix;
 - package name, publisher ID, license, repository URLs, and release process;
 - canonical development, lint, test, integration, pack, and CI commands.
+
+## Project Context Retrieval
+
+<!-- project-context:start -->
+This repo uses token-efficient project context retrieval.
+
+Use the user-level `$project-context` Skill before broad documentation scans or when a task depends on architecture, prior decisions, task history, database conventions, deployment behavior, auth/security/billing behavior, or non-obvious project behavior.
+
+Do not use it for trivial single-file edits.
+
+Preferred commands:
+
+- `python3 .codex-context/ctx.py status`
+- `python3 .codex-context/ctx.py search "<query>" --limit 5`
+- `python3 .codex-context/ctx.py read <id> --max-chars 4000`
+- `python3 .codex-context/ctx.py related <id> --limit 5`
+- `python3 .codex-context/ctx.py ingest` after meaningful Markdown doc changes
+
+Rules:
+
+- Search first; read only directly relevant IDs.
+- Never dump whole SQLite tables, full indexes, or every Markdown file.
+- Treat Markdown files as the source of truth and SQLite as the retrieval index.
+- If the index is missing or stale, rebuild it or fall back to targeted repo inspection.
+<!-- project-context:end -->

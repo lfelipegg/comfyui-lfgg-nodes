@@ -1,0 +1,38 @@
+version = 1
+
+db_path = ".codex-context/context.sqlite"
+
+[sources]
+include = [
+  "README.md",
+  "docs/**/*.md",
+  "docs/**/*.mdx",
+  "agents/**/*.md",
+  ".codex-context/notes/**/*.md"
+]
+exclude = [
+  ".git/**",
+  ".worktrees/**",
+  "node_modules/**",
+  "vendor/**",
+  "dist/**",
+  "build/**",
+  ".next/**",
+  "coverage/**",
+  ".venv/**",
+  "venv/**",
+  "**/.env*",
+  "**/*secret*",
+  "**/*credential*",
+  "**/*private-key*",
+  "reference/**"
+]
+
+[chunking]
+target_chars = 3000
+max_chars = 4000
+
+[output]
+search_limit_default = 5
+read_max_chars_default = 4000
+read_max_chars_hard = 12000

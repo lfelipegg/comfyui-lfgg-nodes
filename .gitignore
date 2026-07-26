@@ -1,1 +1,8 @@
 /reference/
+
+# Generated Codex context index
+.codex-context/context.sqlite
+.codex-context/*.sqlite
+.codex-context/*.sqlite-*
+.codex-context/*.db
+.codex-context/__pycache__/
