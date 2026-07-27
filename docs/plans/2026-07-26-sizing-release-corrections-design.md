@@ -10,6 +10,7 @@ Last reviewed: 2026-07-26
 
 - Make clean development environments install the declared build backend.
 - Reject every non-regular ZIP member and cover each archive limit.
+- Reject Registry URLs that resolve or redirect to non-public addresses.
 - Verify packed workflow outputs and sanitize successful logs and responses.
 - Exercise the exact published version through `comfy node install`.
 
@@ -20,6 +21,10 @@ extra because package tests intentionally build without isolation. Tighten the
 standard-library ZIP inspector to accept only directories and regular files, and
 add focused tests for member count, cumulative size, unsafe modes, and local or
 secret content in the candidate.
+
+Resolve Registry hosts before opening them and reject any non-global address.
+Use a standard-library redirect handler that applies the same validation before
+following a redirect.
 
 The packed integration harness will validate the returned output descriptors,
 non-empty latent files, and expected latent tensor shapes using the temporary
