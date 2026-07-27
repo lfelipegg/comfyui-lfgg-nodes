@@ -45,14 +45,22 @@ def load_root_package(monkeypatch, max_resolution=MAX_RESOLUTION):
     return module
 
 
-def test_v1_registration_and_schema_are_exact(monkeypatch):
+def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
     package = load_root_package(monkeypatch)
 
     assert not hasattr(package, "comfy_entrypoint")
     assert package.NODE_DISPLAY_NAME_MAPPINGS == {
-        "LFGG_DimensionsByAspectRatio": "LFGG Dimensions by Aspect Ratio"
+        "LFGG_DimensionsByAspectRatio": "LFGG Dimensions by Aspect Ratio",
+        "LFGG_ImageDimensionsByLongSide": "LFGG Image Dimensions by Long Side",
+        "LFGG_ImageDimensionsByPixelBudget": (
+            "LFGG Image Dimensions by Pixel Budget"
+        ),
     }
-    assert list(package.NODE_CLASS_MAPPINGS) == ["LFGG_DimensionsByAspectRatio"]
+    assert list(package.NODE_CLASS_MAPPINGS) == [
+        "LFGG_DimensionsByAspectRatio",
+        "LFGG_ImageDimensionsByLongSide",
+        "LFGG_ImageDimensionsByPixelBudget",
+    ]
 
     node = package.NODE_CLASS_MAPPINGS["LFGG_DimensionsByAspectRatio"]
     assert node.CATEGORY == "LFGG/sizing"
@@ -134,6 +142,84 @@ def test_v1_registration_and_schema_are_exact(monkeypatch):
     }
 
 
+def test_image_derived_v1_schemas_are_exact(monkeypatch):
+    package = load_root_package(monkeypatch)
+    long_side = package.NODE_CLASS_MAPPINGS["LFGG_ImageDimensionsByLongSide"]
+    pixel_budget = package.NODE_CLASS_MAPPINGS[
+        "LFGG_ImageDimensionsByPixelBudget"
+    ]
+
+    for node in (long_side, pixel_budget):
+        assert node.CATEGORY == "LFGG/sizing"
+        assert node.FUNCTION == "calculate"
+        assert node.RETURN_TYPES == ("INT", "INT")
+        assert node.RETURN_NAMES == ("width", "height")
+        assert node.OUTPUT_TOOLTIPS == (
+            "Aligned target width in pixels.",
+            "Aligned target height in pixels.",
+        )
+
+    assert long_side.DESCRIPTION == (
+        "Calculates aligned dimensions from an image without upscaling or "
+        "exceeding the selected long-side limit."
+    )
+    assert long_side.INPUT_TYPES()["required"] == {
+        "image": (
+            "IMAGE",
+            {"tooltip": "Image batch whose shared spatial shape is inspected."},
+        ),
+        "long_side": (
+            "INT",
+            {
+                "default": 1024,
+                "min": 16,
+                "max": MAX_RESOLUTION,
+                "step": 8,
+                "tooltip": "Maximum size in pixels for the longer output axis.",
+            },
+        ),
+        "divisible_by": (
+            "INT",
+            {
+                "default": 8,
+                "min": 1,
+                "max": MAX_RESOLUTION,
+                "tooltip": "Aligns both output dimensions to this exact multiple.",
+            },
+        ),
+    }
+
+    assert pixel_budget.DESCRIPTION == (
+        "Calculates aligned dimensions from an image without upscaling or "
+        "exceeding the selected pixel budget."
+    )
+    assert pixel_budget.INPUT_TYPES()["required"] == {
+        "image": (
+            "IMAGE",
+            {"tooltip": "Image batch whose shared spatial shape is inspected."},
+        ),
+        "max_pixels": (
+            "INT",
+            {
+                "default": 1_048_576,
+                "min": 1,
+                "max": MAX_RESOLUTION**2,
+                "step": 1024,
+                "tooltip": "Maximum total pixel count for the output dimensions.",
+            },
+        ),
+        "divisible_by": (
+            "INT",
+            {
+                "default": 8,
+                "min": 1,
+                "max": MAX_RESOLUTION,
+                "tooltip": "Aligns both output dimensions to this exact multiple.",
+            },
+        ),
+    }
+
+
 def test_root_registration_rejects_duplicate_ids(monkeypatch):
     package = load_root_package(monkeypatch)
 
@@ -145,13 +231,24 @@ def test_root_registration_rejects_duplicate_ids(monkeypatch):
 
 def test_schema_uses_comfyui_max_resolution(monkeypatch):
     package = load_root_package(monkeypatch, max_resolution=4096)
-    node = package.NODE_CLASS_MAPPINGS["LFGG_DimensionsByAspectRatio"]
-    required = node.INPUT_TYPES()["required"]
+    aspect_required = package.NODE_CLASS_MAPPINGS[
+        "LFGG_DimensionsByAspectRatio"
+    ].INPUT_TYPES()["required"]
+    long_required = package.NODE_CLASS_MAPPINGS[
+        "LFGG_ImageDimensionsByLongSide"
+    ].INPUT_TYPES()["required"]
+    pixel_required = package.NODE_CLASS_MAPPINGS[
+        "LFGG_ImageDimensionsByPixelBudget"
+    ].INPUT_TYPES()["required"]
 
-    assert required["long_side"][1]["max"] == 4096
-    assert required["divisible_by"][1]["max"] == 4096
-    assert required["custom_ratio_width"][1]["max"] == 4096
-    assert required["custom_ratio_height"][1]["max"] == 4096
+    assert aspect_required["long_side"][1]["max"] == 4096
+    assert aspect_required["divisible_by"][1]["max"] == 4096
+    assert aspect_required["custom_ratio_width"][1]["max"] == 4096
+    assert aspect_required["custom_ratio_height"][1]["max"] == 4096
+    assert long_required["long_side"][1]["max"] == 4096
+    assert long_required["divisible_by"][1]["max"] == 4096
+    assert pixel_required["max_pixels"][1]["max"] == 4096**2
+    assert pixel_required["divisible_by"][1]["max"] == 4096
 
 
 def test_metadata_and_model_free_workflow_match_the_release_contract():

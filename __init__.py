@@ -1,7 +1,15 @@
 if __package__:
     from .lfgg_nodes.dimensions_by_aspect_ratio import DimensionsByAspectRatio
+    from .lfgg_nodes.image_dimensions import (
+        ImageDimensionsByLongSide,
+        ImageDimensionsByPixelBudget,
+    )
 else:
     from lfgg_nodes.dimensions_by_aspect_ratio import DimensionsByAspectRatio
+    from lfgg_nodes.image_dimensions import (
+        ImageDimensionsByLongSide,
+        ImageDimensionsByPixelBudget,
+    )
 
 
 def _merge_class_mappings(*mappings):
@@ -15,10 +23,14 @@ def _merge_class_mappings(*mappings):
 
 
 NODE_CLASS_MAPPINGS = _merge_class_mappings(
-    {"LFGG_DimensionsByAspectRatio": DimensionsByAspectRatio}
+    {"LFGG_DimensionsByAspectRatio": DimensionsByAspectRatio},
+    {"LFGG_ImageDimensionsByLongSide": ImageDimensionsByLongSide},
+    {"LFGG_ImageDimensionsByPixelBudget": ImageDimensionsByPixelBudget},
 )
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "LFGG_DimensionsByAspectRatio": "LFGG Dimensions by Aspect Ratio"
+    "LFGG_DimensionsByAspectRatio": "LFGG Dimensions by Aspect Ratio",
+    "LFGG_ImageDimensionsByLongSide": "LFGG Image Dimensions by Long Side",
+    "LFGG_ImageDimensionsByPixelBudget": "LFGG Image Dimensions by Pixel Budget",
 }
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
