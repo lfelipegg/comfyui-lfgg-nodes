@@ -50,6 +50,27 @@ def fit(
     )
 
 
+def fit_source(
+    source_width,
+    source_height,
+    *,
+    max_width,
+    max_height,
+    max_pixels=None,
+    divisible_by=8,
+):
+    sizing = import_module("lfgg_nodes.sizing")
+    return sizing.fit_source_dimensions(
+        source_width=source_width,
+        source_height=source_height,
+        max_width=max_width,
+        max_height=max_height,
+        max_pixels=max_pixels,
+        divisible_by=divisible_by,
+        max_resolution=MAX_RESOLUTION,
+    )
+
+
 @pytest.mark.parametrize("aspect_ratio", PRESETS + ["Custom"])
 def test_every_ratio_returns_positive_aligned_dimensions_under_the_cap(aspect_ratio):
     width, height = fit(
@@ -129,3 +150,102 @@ def test_invalid_api_values_fail_actionably(overrides, message):
 def test_impossible_alignment_fails_actionably():
     with pytest.raises(ValueError, match="No positive aligned dimensions"):
         fit("1:1", long_side=16, divisible_by=64)
+
+
+def test_source_dimensions_fit_independent_axis_caps():
+    assert fit_source(
+        1920,
+        1080,
+        max_width=1024,
+        max_height=576,
+        divisible_by=64,
+    ) == (1024, 576)
+
+
+def test_source_dimensions_are_reciprocal():
+    landscape = fit_source(
+        1920,
+        1080,
+        max_width=1024,
+        max_height=576,
+        divisible_by=64,
+    )
+    portrait = fit_source(
+        1080,
+        1920,
+        max_width=576,
+        max_height=1024,
+        divisible_by=64,
+    )
+
+    assert portrait == landscape[::-1]
+
+
+def test_source_dimensions_keep_an_already_aligned_small_image():
+    assert fit_source(
+        320,
+        240,
+        max_width=320,
+        max_height=240,
+        divisible_by=8,
+    ) == (320, 240)
+
+
+def test_source_dimensions_prefer_aspect_fidelity_before_area():
+    assert fit_source(
+        400,
+        500,
+        max_width=128,
+        max_height=128,
+        divisible_by=32,
+    ) == (96, 128)
+
+
+def test_source_dimensions_respect_an_exact_pixel_ceiling():
+    width, height = fit_source(
+        1920,
+        1080,
+        max_width=1920,
+        max_height=1080,
+        max_pixels=1_000_000,
+        divisible_by=64,
+    )
+
+    assert (width, height) == (1024, 576)
+    assert width * height <= 1_000_000
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"source_width": True}, "source_width"),
+        ({"source_height": 0}, "source_height"),
+        ({"max_width": 0}, "max_width"),
+        ({"max_height": MAX_RESOLUTION + 1}, "max_height"),
+        ({"max_pixels": 0}, "max_pixels"),
+        ({"max_pixels": MAX_RESOLUTION**2 + 1}, "max_pixels"),
+    ],
+)
+def test_source_dimensions_reject_invalid_bounds(overrides, message):
+    arguments = {
+        "source_width": 1920,
+        "source_height": 1080,
+        "max_width": 1024,
+        "max_height": 576,
+        "max_pixels": None,
+    }
+    arguments.update(overrides)
+
+    with pytest.raises(ValueError, match=message):
+        fit_source(**arguments)
+
+
+def test_source_dimensions_reject_impossible_alignment():
+    with pytest.raises(ValueError, match="No positive aligned dimensions"):
+        fit_source(
+            32,
+            32,
+            max_width=32,
+            max_height=32,
+            divisible_by=64,
+        )
