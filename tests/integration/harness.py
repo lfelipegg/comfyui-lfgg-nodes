@@ -63,11 +63,19 @@ def assert_object_info_matches_manifest(object_info, manifest):
 
 
 def redact(text, *, secrets=(), metadata=(), paths=()):
-    replacements = [str(value) for value in (*secrets, *metadata) if value]
+    protected = [str(value) for value in (*secrets, *metadata) if value]
     for path in paths:
         value = str(path)
-        replacements.extend((value, value.replace("\\", "/"), value.replace("/", "\\")))
-    replacements = sorted(set(replacements), key=len, reverse=True)
+        protected.extend((value, value.replace("\\", "/"), value.replace("/", "\\")))
+    replacements = sorted(
+        {
+            replacement
+            for value in protected
+            for replacement in (value, json.dumps(value)[1:-1])
+        },
+        key=len,
+        reverse=True,
+    )
     for value in replacements:
         text = text.replace(value, "<redacted>")
     assert not any(value in text for value in replacements), (
@@ -79,6 +87,18 @@ def redact(text, *, secrets=(), metadata=(), paths=()):
 def history_succeeded(history):
     status = history.get("status", {})
     return status.get("completed") is True and status.get("status_str") == "success"
+
+
+def _confined_latent_files(output):
+    output = Path(output).resolve()
+    files = []
+    for entry in output.rglob("*.latent"):
+        path = entry.resolve()
+        assert path.is_relative_to(output), (
+            "discovered latent escaped output root"
+        )
+        files.append(path)
+    return sorted(files)
 
 
 def _public_https_url(url):
@@ -425,11 +445,7 @@ def run_packed_comfyui(
             raise AssertionError(f"workflow failed: {serialized_history}")
 
         output_root = output.resolve()
-        files = sorted(
-            path.resolve()
-            for path in output.rglob("*.latent")
-            if path.resolve().is_relative_to(output_root)
-        )
+        files = _confined_latent_files(output_root)
         described_files = []
         for node_output in history.get("outputs", {}).values():
             for descriptor in node_output.get("latents", ()):

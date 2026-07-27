@@ -111,6 +111,44 @@ def test_redacts_successful_response_disclosures():
     assert str(workspace).replace("/", "\\") not in sanitized
 
 
+def test_redacts_json_escaped_disclosures():
+    credential = 'credential"\\雪\n'
+    metadata = json.dumps({"workflow": 'private"\\雪\n'})
+    workspace = Path('/private/work"\\雪\nspace')
+    serialized = json.dumps(
+        {
+            "credential": credential,
+            "metadata": metadata,
+            "workspace": str(workspace),
+        }
+    )
+
+    sanitized = harness().redact(
+        serialized,
+        secrets=[credential],
+        metadata=[metadata],
+        paths=[workspace],
+    )
+
+    for protected in (credential, metadata, str(workspace)):
+        assert json.dumps(protected)[1:-1] not in sanitized
+
+
+def test_rejects_discovered_latent_symlink_escape(tmp_path):
+    output = tmp_path / "output"
+    output.mkdir()
+    target = tmp_path / "outside.latent"
+    target.write_bytes(b"latent")
+    link = output / "escape.latent"
+    try:
+        link.symlink_to(target)
+    except (NotImplementedError, OSError) as error:
+        pytest.skip(f"symlinks unavailable: {type(error).__name__}")
+
+    with pytest.raises(AssertionError, match="discovered latent escaped output root"):
+        harness()._confined_latent_files(output)
+
+
 def test_history_status_requires_success():
     successful = {"status": {"completed": True, "status_str": "success"}}
     failed = {"status": {"completed": True, "status_str": "error"}}
