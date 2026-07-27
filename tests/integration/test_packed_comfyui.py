@@ -157,7 +157,7 @@ def test_installed_comfyui_reuses_server_runner(monkeypatch, tmp_path):
         device="cpu",
         workspace=tmp_path / "exercise",
         manifest={"nodes": {"LFGG_Test": {}}},
-        workflow={"1": {"class_type": "LFGG_Test"}},
+        workflows={"test": {"1": {"class_type": "LFGG_Test"}}},
     )
 
     assert result == expected
@@ -294,7 +294,7 @@ def test_failure_traceback_redacts_error_and_log(monkeypatch, tmp_path):
             device="cpu",
             workspace=workspace,
             manifest={"nodes": {}},
-            workflow={},
+            workflows={},
         )
 
     rendered = "".join(
@@ -328,7 +328,7 @@ def test_failure_traceback_redacts_error_without_log(monkeypatch, tmp_path):
             device="cpu",
             workspace=workspace,
             manifest={"nodes": {}},
-            workflow={},
+            workflows={},
         )
 
     rendered = "".join(
@@ -340,19 +340,63 @@ def test_failure_traceback_redacts_error_without_log(monkeypatch, tmp_path):
     assert "<redacted>" in rendered
 
 
-def test_rejects_discovered_latent_symlink_escape(tmp_path):
+@pytest.mark.parametrize(
+    ("suffix", "label"),
+    [("latent", "latent"), ("png", "PNG")],
+)
+def test_rejects_discovered_output_symlink_escape(tmp_path, suffix, label):
     output = tmp_path / "output"
     output.mkdir()
-    target = tmp_path / "outside.latent"
-    target.write_bytes(b"latent")
-    link = output / "escape.latent"
+    target = tmp_path / f"outside.{suffix}"
+    target.write_bytes(b"file")
+    link = output / f"escape.{suffix}"
     try:
         link.symlink_to(target)
     except (NotImplementedError, OSError) as error:
         pytest.skip(f"symlinks unavailable: {type(error).__name__}")
 
-    with pytest.raises(AssertionError, match="discovered latent escaped output root"):
-        harness()._confined_latent_files(output)
+    with pytest.raises(
+        AssertionError,
+        match=f"discovered {label} escaped output root",
+    ):
+        harness()._confined_files(output, f"*.{suffix}", label)
+
+
+def test_rejects_nonstandard_or_escaped_image_descriptors(tmp_path):
+    output = tmp_path / "output"
+    output.mkdir()
+    escaped = {
+        "outputs": {
+            "1": {
+                "images": [
+                    {
+                        "filename": "image.png",
+                        "subfolder": str(tmp_path),
+                        "type": "output",
+                    }
+                ]
+            }
+        }
+    }
+    extra = {
+        "outputs": {
+            "1": {
+                "images": [
+                    {
+                        "filename": "image.png",
+                        "subfolder": "",
+                        "type": "output",
+                        "absolute_path": "/private/image.png",
+                    }
+                ]
+            }
+        }
+    }
+
+    with pytest.raises(AssertionError, match="descriptor escaped"):
+        harness()._descriptor_files([escaped], "images", output, "image")
+    with pytest.raises(AssertionError, match="standard fields"):
+        harness()._descriptor_files([extra], "images", output, "image")
 
 
 def test_history_status_requires_success():
@@ -775,6 +819,7 @@ def _assert_sizing_result(result):
         "LFGG_DimensionsByAspectRatio",
         "LFGG_ImageDimensionsByLongSide",
         "LFGG_ImageDimensionsByPixelBudget",
+        "LFGG_SaveImageDynamic",
     ]
     assert result["output_files"] == [
         "lfgg/sizing/aspect_ratio_00001_.latent",
@@ -785,6 +830,34 @@ def _assert_sizing_result(result):
         "lfgg/sizing/aspect_ratio_00001_.latent": [1, 4, 72, 128],
         "lfgg/sizing/long_side_00001_.latent": [2, 4, 36, 64],
         "lfgg/sizing/pixel_budget_00001_.latent": [2, 4, 27, 48],
+    }
+
+
+def _assert_dynamic_save_result(result):
+    expected_files = [
+        "lfgg/dynamic/metadata_off_00001_.png",
+        "lfgg/dynamic/metadata_off_00002_.png",
+        "lfgg/dynamic/metadata_on_00001_.png",
+        "lfgg/dynamic/metadata_on_00002_.png",
+    ]
+    assert result["image_files"] == expected_files
+    assert result["image_details"] == {
+        filename: {
+            "mode": "RGB",
+            "size": [3, 2],
+            "pixel": [0, 0, 0],
+            "text_keys": (
+                ["prompt", "workflow"] if "metadata_on" in filename else []
+            ),
+        }
+        for filename in expected_files
+    }
+
+
+def release_workflows():
+    return {
+        name: json.loads((ROOT / "workflows" / f"{name}.json").read_text())
+        for name in ("sizing", "save_image_dynamic")
     }
 
 
@@ -799,11 +872,12 @@ def test_packed_comfyui_schema_and_workflow(integration_options, tmp_path):
         archive=archive,
         device=integration_options["device"],
         workspace=tmp_path,
-        manifest=json.loads((ROOT / "release" / "1.0.0-schema.json").read_text()),
-        workflow=json.loads((ROOT / "workflows" / "sizing.json").read_text()),
+        manifest=json.loads((ROOT / "release" / "1.1.0-schema.json").read_text()),
+        workflows=release_workflows(),
     )
 
     _assert_sizing_result(result)
+    _assert_dynamic_save_result(result)
 
 
 def test_installed_comfyui_schema_and_workflow(integration_options, tmp_path):
@@ -817,8 +891,9 @@ def test_installed_comfyui_schema_and_workflow(integration_options, tmp_path):
         installed_comfyui=integration_options["installed_comfyui"],
         device=integration_options["device"],
         workspace=tmp_path,
-        manifest=json.loads((ROOT / "release" / "1.0.0-schema.json").read_text()),
-        workflow=json.loads((ROOT / "workflows" / "sizing.json").read_text()),
+        manifest=json.loads((ROOT / "release" / "1.1.0-schema.json").read_text()),
+        workflows=release_workflows(),
     )
 
     _assert_sizing_result(result)
+    _assert_dynamic_save_result(result)

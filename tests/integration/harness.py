@@ -11,6 +11,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
+from PIL import Image
+
 from tests.package.archive import inspect_archive
 
 COMFYUI_REPOSITORY = "https://github.com/Comfy-Org/ComfyUI.git"
@@ -96,15 +98,41 @@ def history_succeeded(history):
     return status.get("completed") is True and status.get("status_str") == "success"
 
 
-def _confined_latent_files(output):
+def _confined_files(output, pattern, label):
     output = Path(output).resolve()
     files = []
-    for entry in output.rglob("*.latent"):
+    for entry in output.rglob(pattern):
         path = entry.resolve()
         assert path.is_relative_to(output), (
-            "discovered latent escaped output root"
+            f"discovered {label} escaped output root"
         )
         files.append(path)
+    return sorted(files)
+
+
+def _descriptor_files(histories, descriptor_key, output, label):
+    output = Path(output).resolve()
+    files = []
+    for history in histories:
+        for node_output in history.get("outputs", {}).values():
+            for descriptor in node_output.get(descriptor_key, ()):
+                if descriptor_key == "images":
+                    assert set(descriptor) == {"filename", "subfolder", "type"}, (
+                        "image descriptor does not contain only standard fields"
+                    )
+                assert descriptor.get("type") == "output", (
+                    f"{label} descriptor is not an output"
+                )
+                filename = descriptor.get("filename")
+                subfolder = descriptor.get("subfolder", "")
+                assert isinstance(filename, str) and isinstance(subfolder, str), (
+                    f"{label} descriptor path is invalid"
+                )
+                path = (output / subfolder / filename).resolve()
+                assert path.is_relative_to(output), (
+                    f"{label} descriptor escaped the output root"
+                )
+                files.append(path)
     return sorted(files)
 
 
@@ -309,7 +337,7 @@ def run_packed_comfyui(
     device,
     workspace,
     manifest,
-    workflow,
+    workflows,
 ):
     validate_comfy_ref(comfy_ref)
     if device not in {"cpu", "cuda"}:
@@ -354,7 +382,7 @@ def run_packed_comfyui(
         device=device,
         workspace=workspace,
         manifest=manifest,
-        workflow=workflow,
+        workflows=workflows,
     )
 
 
@@ -429,7 +457,7 @@ def run_installed_comfyui(
     device,
     workspace,
     manifest,
-    workflow,
+    workflows,
 ):
     checkout, python = _validate_installed_comfyui(installed_comfyui)
     return _exercise_comfyui(
@@ -438,7 +466,7 @@ def run_installed_comfyui(
         device=device,
         workspace=workspace,
         manifest=manifest,
-        workflow=workflow,
+        workflows=workflows,
     )
 
 
@@ -449,7 +477,7 @@ def _exercise_comfyui(
     device,
     workspace,
     manifest,
-    workflow,
+    workflows,
 ):
     if device not in {"cpu", "cuda"}:
         raise ValueError("device must be cpu or cuda")
@@ -511,11 +539,13 @@ def _exercise_comfyui(
         os.environ.get(name)
         for name in SENSITIVE_ENVIRONMENT_VARIABLES
     ]
-    serialized_workflow = json.dumps(workflow, sort_keys=True)
+    serialized_workflows = [
+        json.dumps(workflow, sort_keys=True) for workflow in workflows.values()
+    ]
     protected_paths = [workspace, checkout, python.parent.parent]
     disclosures = {
         "secrets": credentials,
-        "metadata": [serialized_workflow],
+        "metadata": serialized_workflows,
         "paths": protected_paths,
     }
     try:
@@ -532,44 +562,61 @@ def _exercise_comfyui(
         redact(json.dumps(object_info, sort_keys=True), **disclosures)
         assert_object_info_matches_manifest(object_info, manifest)
 
-        submitted = _request_json(base_url, "/prompt", payload={"prompt": workflow})
-        serialized_submission = redact(
-            json.dumps(submitted, sort_keys=True),
-            **disclosures,
-        )
-        if "error" in submitted or submitted.get("node_errors"):
-            raise AssertionError(f"workflow rejected: {serialized_submission}")
-        prompt_id = submitted["prompt_id"]
-        history = _wait_for_history(base_url, prompt_id)
-        serialized_history = redact(
-            json.dumps(history, sort_keys=True),
-            **disclosures,
-        )
-        if not history_succeeded(history):
-            raise AssertionError(f"workflow failed: {serialized_history}")
+        histories = []
+        for workflow_name, workflow in workflows.items():
+            submitted = _request_json(
+                base_url,
+                "/prompt",
+                payload={
+                    "prompt": workflow,
+                    "extra_data": {"extra_pnginfo": {"workflow": workflow}},
+                },
+            )
+            serialized_submission = redact(
+                json.dumps(submitted, sort_keys=True),
+                **disclosures,
+            )
+            if "error" in submitted or submitted.get("node_errors"):
+                raise AssertionError(
+                    f"{workflow_name} workflow rejected: {serialized_submission}"
+                )
+            history = _wait_for_history(base_url, submitted["prompt_id"])
+            serialized_history = redact(
+                json.dumps(history, sort_keys=True),
+                **disclosures,
+            )
+            if not history_succeeded(history):
+                raise AssertionError(
+                    f"{workflow_name} workflow failed: {serialized_history}"
+                )
+            histories.append(history)
 
         output_root = output.resolve()
-        files = _confined_latent_files(output_root)
-        described_files = []
-        for node_output in history.get("outputs", {}).values():
-            for descriptor in node_output.get("latents", ()):
-                assert descriptor.get("type") == "output", (
-                    "SaveLatent descriptor is not an output"
-                )
-                path = (
-                    output_root
-                    / descriptor.get("subfolder", "")
-                    / descriptor["filename"]
-                ).resolve()
-                assert path.is_relative_to(output_root), (
-                    "SaveLatent descriptor escaped the output root"
-                )
-                described_files.append(path)
-        assert sorted(described_files) == files, (
+        files = _confined_files(output_root, "*.latent", "latent")
+        image_files = _confined_files(output_root, "*.png", "PNG")
+        described_files = _descriptor_files(
+            histories,
+            "latents",
+            output_root,
+            "SaveLatent",
+        )
+        described_images = _descriptor_files(
+            histories,
+            "images",
+            output_root,
+            "image",
+        )
+        assert described_files == files, (
             "SaveLatent descriptors do not match confined output files"
+        )
+        assert described_images == image_files, (
+            "image descriptors do not match confined output files"
         )
         assert all(path.stat().st_size > 0 for path in files), (
             "SaveLatent produced an empty file"
+        )
+        assert all(path.stat().st_size > 0 for path in image_files), (
+            "dynamic saver produced an empty PNG"
         )
 
         shape_reader = """
@@ -590,17 +637,33 @@ print(json.dumps(shapes))
         )
         relative_files = [path.relative_to(output_root).as_posix() for path in files]
         output_shapes = dict(zip(relative_files, shapes, strict=True))
-        _failure_log(log_path, protected_paths, metadata=[serialized_workflow])
+        image_details = {}
+        for path in image_files:
+            with Image.open(path) as image:
+                image.load()
+                pixel = image.getpixel((0, 0))
+                image_details[path.relative_to(output_root).as_posix()] = {
+                    "mode": image.mode,
+                    "size": list(image.size),
+                    "pixel": list(pixel) if isinstance(pixel, tuple) else [pixel],
+                    "text_keys": sorted(image.text),
+                }
+        relative_images = [
+            path.relative_to(output_root).as_posix() for path in image_files
+        ]
+        _failure_log(log_path, protected_paths, metadata=serialized_workflows)
         return {
             "registered_ids": sorted(manifest["nodes"]),
             "output_files": relative_files,
             "output_shapes": output_shapes,
+            "image_files": relative_images,
+            "image_details": image_details,
         }
     except Exception as error:
         logs = _failure_log(
             log_path,
             protected_paths,
-            metadata=[serialized_workflow],
+            metadata=serialized_workflows,
         )
         safe_error = redact(str(error), **disclosures)
         if logs:

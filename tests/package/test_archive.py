@@ -16,8 +16,10 @@ EXPECTED_PATHS = {
     "lfgg_nodes/__init__.py",
     "lfgg_nodes/dimensions_by_aspect_ratio.py",
     "lfgg_nodes/image_dimensions.py",
+    "lfgg_nodes/save_image_dynamic.py",
     "lfgg_nodes/sizing.py",
     "pyproject.toml",
+    "workflows/save_image_dynamic.json",
     "workflows/sizing.json",
 }
 
@@ -168,7 +170,7 @@ def test_candidate_matches_the_approved_content_manifest(archive_path):
 
     entries = archive_tools().inspect_archive(archive_path)
     assert {entry.path for entry in entries} == EXPECTED_PATHS
-    expected_manifest = Path(__file__).parents[2] / "release" / "1.0.0-archive.sha256"
+    expected_manifest = Path(__file__).parents[2] / "release" / "1.1.0-archive.sha256"
     assert expected_manifest.exists(), "approved archive manifest is not implemented"
     assert archive_tools().format_manifest(entries) == expected_manifest.read_text()
 
