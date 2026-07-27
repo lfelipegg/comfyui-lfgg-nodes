@@ -9,7 +9,7 @@ from ipaddress import ip_address
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 from tests.package.archive import inspect_archive
 
@@ -88,14 +88,32 @@ def _public_https_url(url):
         or parsed.password
     ):
         raise ValueError("Registry download URL must be public HTTPS")
-    try:
-        address = ip_address(parsed.hostname)
-    except ValueError:
-        pass
-    else:
-        if not address.is_global:
-            raise ValueError("Registry download URL must be public HTTPS")
+    host = parsed.hostname
+    if host == "localhost" or host.endswith(".localhost"):
+        raise ValueError("Registry download URL must be public HTTPS")
+    addresses = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+    resolved = [ip_address(address[4][0]) for address in addresses]
+    if not resolved or any(
+        not address.is_global or address.is_multicast for address in resolved
+    ):
+        raise ValueError("Registry download URL must be public HTTPS")
     return url
+
+
+class _PublicHTTPSRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, request, file, code, message, headers, new_url):
+        _public_https_url(new_url)
+        return super().redirect_request(
+            request,
+            file,
+            code,
+            message,
+            headers,
+            new_url,
+        )
+
+
+_REGISTRY_OPENER = build_opener(_PublicHTTPSRedirectHandler())
 
 
 def _read_limited(response, limit):
@@ -134,7 +152,7 @@ def download_registry_archive(
     deadline = time.monotonic() + timeout_seconds
     while True:
         try:
-            with urlopen(api_url, timeout=HTTP_TIMEOUT) as response:
+            with _REGISTRY_OPENER.open(api_url, timeout=HTTP_TIMEOUT) as response:
                 _public_https_url(response.geturl())
                 record = json.loads(
                     _read_limited(response, MAX_REGISTRY_RESPONSE_BYTES)
@@ -159,7 +177,7 @@ def download_registry_archive(
     destination = Path(destination)
     created = False
     try:
-        with urlopen(download_url, timeout=HTTP_TIMEOUT) as response:
+        with _REGISTRY_OPENER.open(download_url, timeout=HTTP_TIMEOUT) as response:
             _public_https_url(response.geturl())
             archive = _read_limited(response, MAX_ARCHIVE_BYTES)
         with destination.open("xb") as file:

@@ -97,6 +97,96 @@ def test_history_status_requires_success():
     assert not harness().history_succeeded(failed)
 
 
+@pytest.mark.parametrize("hostname", ["localhost", "subdomain.localhost"])
+def test_rejects_localhost_registry_urls(monkeypatch, hostname):
+    monkeypatch.setattr(
+        harness().socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+        ],
+    )
+
+    with pytest.raises(ValueError, match="public HTTPS"):
+        harness()._public_https_url(f"https://{hostname}/archive.zip")
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "127.0.0.1",
+        "10.0.0.1",
+        "169.254.1.1",
+        "224.0.0.1",
+        "240.0.0.1",
+        "0.0.0.0",
+    ],
+)
+def test_rejects_registry_hosts_with_any_non_public_address(monkeypatch, address):
+    monkeypatch.setattr(
+        harness().socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, 443)),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="public HTTPS"):
+        harness()._public_https_url("https://cdn.example/archive.zip")
+
+
+def test_accepts_registry_host_only_when_all_addresses_are_public(monkeypatch):
+    calls = []
+
+    def public_addresses(host, port, *, type):
+        calls.append((host, port, type))
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
+            (
+                socket.AF_INET6,
+                socket.SOCK_STREAM,
+                6,
+                "",
+                ("2606:2800:220:1:248:1893:25c8:1946", 443, 0, 0),
+            ),
+        ]
+
+    monkeypatch.setattr(harness().socket, "getaddrinfo", public_addresses)
+
+    url = "https://cdn.example/archive.zip"
+    assert harness()._public_https_url(url) == url
+    assert calls == [("cdn.example", 443, socket.SOCK_STREAM)]
+
+
+def test_rejects_non_public_registry_redirect_before_following(monkeypatch):
+    monkeypatch.setattr(
+        harness().socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))
+        ],
+    )
+    redirect_handler = harness()._PublicHTTPSRedirectHandler()
+
+    with pytest.raises(ValueError, match="public HTTPS"):
+        redirect_handler.redirect_request(
+            harness().Request("https://api.comfy.org/archive.zip"),
+            None,
+            302,
+            "Found",
+            {},
+            "https://private.example/archive.zip",
+        )
+
+
+def test_registry_opener_uses_public_https_redirect_handler():
+    assert any(
+        isinstance(handler, harness()._PublicHTTPSRedirectHandler)
+        for handler in harness()._REGISTRY_OPENER.handlers
+    )
+
+
 class Response:
     def __init__(self, body, url, *, content_length=None):
         self.body = body
@@ -123,8 +213,44 @@ class Response:
         return chunk
 
 
+def stub_registry_responses(monkeypatch, responses):
+    monkeypatch.setattr(
+        harness().socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+        ],
+    )
+    responses = iter(responses)
+    monkeypatch.setattr(
+        harness()._REGISTRY_OPENER,
+        "open",
+        lambda *_, **__: next(responses),
+    )
+
+
+@pytest.mark.parametrize("content_length", ["invalid", -1])
+def test_rejects_invalid_registry_content_length(content_length):
+    response = Response(
+        b"candidate",
+        "https://cdn.example/archive.zip",
+        content_length=content_length,
+    )
+
+    with pytest.raises(ValueError, match="invalid Content-Length"):
+        harness()._read_limited(response, 1024)
+
+
+def test_rejects_chunked_registry_body_larger_than_limit():
+    response = Response(b"candidate", "https://cdn.example/archive.zip")
+
+    with pytest.raises(ValueError, match="too large"):
+        harness()._read_limited(response, len(b"candidate") - 1)
+
+
 def test_downloads_exact_public_registry_archive(monkeypatch, tmp_path):
-    responses = iter(
+    stub_registry_responses(
+        monkeypatch,
         [
             Response(
                 json.dumps(
@@ -140,9 +266,8 @@ def test_downloads_exact_public_registry_archive(monkeypatch, tmp_path):
                 "https://cdn.example/lfgg-nodes.zip",
                 content_length=9,
             ),
-        ]
+        ],
     )
-    monkeypatch.setattr(harness(), "urlopen", lambda *_, **__: next(responses))
 
     destination = tmp_path / "registry-node.zip"
     harness().download_registry_archive("lfgg-nodes", "1.0.0", destination)
@@ -160,7 +285,7 @@ def test_rejects_unsafe_registry_download_url(monkeypatch, tmp_path):
         ).encode(),
         "https://api.comfy.org/nodes/lfgg-nodes/install?version=1.0.0",
     )
-    monkeypatch.setattr(harness(), "urlopen", lambda *_, **__: response)
+    stub_registry_responses(monkeypatch, [response])
 
     with pytest.raises(ValueError, match="public HTTPS"):
         harness().download_registry_archive(
@@ -171,7 +296,8 @@ def test_rejects_unsafe_registry_download_url(monkeypatch, tmp_path):
 
 
 def test_bounds_registry_archive_download(monkeypatch, tmp_path):
-    responses = iter(
+    stub_registry_responses(
+        monkeypatch,
         [
             Response(
                 json.dumps(
@@ -187,9 +313,8 @@ def test_bounds_registry_archive_download(monkeypatch, tmp_path):
                 "https://cdn.example/lfgg-nodes.zip",
                 content_length=harness().MAX_ARCHIVE_BYTES + 1,
             ),
-        ]
+        ],
     )
-    monkeypatch.setattr(harness(), "urlopen", lambda *_, **__: next(responses))
 
     with pytest.raises(ValueError, match="too large"):
         harness().download_registry_archive(
@@ -200,7 +325,8 @@ def test_bounds_registry_archive_download(monkeypatch, tmp_path):
 
 
 def test_registry_download_preserves_existing_destination(monkeypatch, tmp_path):
-    responses = iter(
+    stub_registry_responses(
+        monkeypatch,
         [
             Response(
                 json.dumps(
@@ -212,9 +338,8 @@ def test_registry_download_preserves_existing_destination(monkeypatch, tmp_path)
                 "https://api.comfy.org/nodes/lfgg-nodes/install?version=1.0.0",
             ),
             Response(b"candidate", "https://cdn.example/lfgg-nodes.zip"),
-        ]
+        ],
     )
-    monkeypatch.setattr(harness(), "urlopen", lambda *_, **__: next(responses))
     destination = tmp_path / "registry-node.zip"
     destination.write_bytes(b"approved")
 
@@ -222,6 +347,82 @@ def test_registry_download_preserves_existing_destination(monkeypatch, tmp_path)
         harness().download_registry_archive("lfgg-nodes", "1.0.0", destination)
 
     assert destination.read_bytes() == b"approved"
+
+
+def test_registry_version_mismatch_times_out(monkeypatch, tmp_path):
+    attempts = []
+    sleeps = []
+    times = iter([10, 10, 11])
+
+    monkeypatch.setattr(
+        harness().socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+        ],
+    )
+
+    def mismatched_response(*_args, **_kwargs):
+        attempts.append(None)
+        return Response(
+            json.dumps({"version": "0.9.0"}).encode(),
+            "https://api.comfy.org/nodes/lfgg-nodes/install?version=1.0.0",
+        )
+
+    monkeypatch.setattr(harness()._REGISTRY_OPENER, "open", mismatched_response)
+    monkeypatch.setattr(harness().time, "monotonic", lambda: next(times))
+    monkeypatch.setattr(harness().time, "sleep", sleeps.append)
+
+    with pytest.raises(TimeoutError, match="did not become active"):
+        harness().download_registry_archive(
+            "lfgg-nodes",
+            "1.0.0",
+            tmp_path / "registry-node.zip",
+            timeout_seconds=1,
+        )
+
+    assert len(attempts) == 2
+    assert sleeps == [1]
+
+
+def test_registry_download_removes_new_partial_destination(monkeypatch, tmp_path):
+    stub_registry_responses(
+        monkeypatch,
+        [
+            Response(
+                json.dumps(
+                    {
+                        "version": "1.0.0",
+                        "downloadUrl": "https://cdn.example/lfgg-nodes.zip",
+                    }
+                ).encode(),
+                "https://api.comfy.org/nodes/lfgg-nodes/install?version=1.0.0",
+            ),
+            Response(b"candidate", "https://cdn.example/lfgg-nodes.zip"),
+        ],
+    )
+    destination = tmp_path / "registry-node.zip"
+    original_open = Path.open
+
+    class FailingWrite:
+        def __enter__(self):
+            self.file = original_open(destination, "xb")
+            return self
+
+        def __exit__(self, *args):
+            self.file.close()
+
+        def write(self, body):
+            self.file.write(body[:1])
+            self.file.flush()
+            raise OSError("disk write failed")
+
+    monkeypatch.setattr(Path, "open", lambda *_args, **_kwargs: FailingWrite())
+
+    with pytest.raises(OSError, match="disk write failed"):
+        harness().download_registry_archive("lfgg-nodes", "1.0.0", destination)
+
+    assert not destination.exists()
 
 
 def test_packed_comfyui_schema_and_workflow(integration_options, tmp_path):
