@@ -4,8 +4,13 @@ Small, explicit workflow utility nodes for ComfyUI.
 
 ## Install
 
-Until the first Registry release, clone this repository into ComfyUI's
-`custom_nodes` directory:
+After the Registry release:
+
+```bash
+comfy node install lfgg-nodes
+```
+
+Until then, clone the repository into ComfyUI's `custom_nodes` directory:
 
 ```bash
 cd ComfyUI/custom_nodes
@@ -17,58 +22,80 @@ dependency and no frontend extension.
 
 ## Compatibility
 
-- ComfyUI `>=0.28.0`
+The required 1.0.0 release qualification covers:
+
+- ComfyUI `>=0.28.0`, tested at exact stable tags rather than `master`
 - Python `>=3.10,<3.14`
 - Linux and Windows
-- CPU and NVIDIA CUDA workflows
+- CPU and NVIDIA CUDA
 
-The sizing node performs standard-library integer math only. It does not
-allocate or inspect tensors, use an accelerator, access the network, or read or
-write files.
+Publication waits for the complete remote matrix. Other operating systems and
+accelerators are not claimed.
 
-## LFGG Dimensions by Aspect Ratio
+## Nodes
 
-`LFGG_DimensionsByAspectRatio` returns positive `width` and `height` integers
-in the `LFGG/sizing` category. It fits a stable preset or custom ratio under
-`long_side`, with both axes aligned to the exact `divisible_by` value.
+| Node | Inputs | Outputs |
+|---|---|---|
+| LFGG Dimensions by Aspect Ratio | preset/custom ratio, long-side cap, alignment | width, height |
+| LFGG Image Dimensions by Long Side | IMAGE, long-side cap, alignment | width, height |
+| LFGG Image Dimensions by Pixel Budget | IMAGE, exact pixel cap, alignment | width, height |
 
-Limits are hard ceilings: the node never rounds an axis above `long_side` or
-ComfyUI's `MAX_RESOLUTION`. Candidate dimensions are chosen by symmetric
-relative aspect error, then pixel area, then long-axis and short-axis size.
-Invalid API values and alignments that cannot produce positive dimensions
-raise actionable errors.
+All three nodes are in `LFGG/sizing`. They return positive dimensions aligned
+to the exact `divisible_by` value. Aspect fidelity wins before pixel area, with
+a deterministic side-size tie-break. Limits are hard ceilings and impossible
+alignments raise actionable errors.
 
-Presets: `1:1`, `4:5`, `5:4`, `3:4`, `4:3`, `2:3`, `3:2`, `5:7`, `7:5`,
-`9:16`, `16:9`, `9:21`, and `21:9`. Select `Custom` to use
-`custom_ratio_width` and `custom_ratio_height`.
+The two image-derived nodes are downscale-only and inspect the shared
+`[B,H,W,C]` tensor shape. Batch count does not change the result. They do not
+allocate, copy, cast, mutate, or move the image.
 
-The tracked
-[API workflow](workflows/dimensions_by_aspect_ratio.json) connects the returned
-dimensions to ComfyUI's native `EmptyLatentImage` and `SaveLatent` nodes. The
-example writes a `.latent` file; `LFGG Dimensions by Aspect Ratio` itself does
-not write files.
+## File and network behavior
 
-## Migrate from LfggLatentSizeByRatio
+The sizing nodes use standard-library integer math plus tensor shape
+inspection. They do not access the network and do not read or write files.
+The tracked [sizing API workflow](workflows/sizing.json) uses native
+`SaveLatent` nodes, which do write example `.latent` files.
 
-Replace `LfggLatentSizeByRatio` manually with
-`LFGG_DimensionsByAspectRatio`:
+## Migrate legacy workflows
 
-1. Map `base_size` to `long_side` and retain the ratio/custom values.
-2. Move `batch_size` and latent creation to the native initializer appropriate
-   for the model family.
-3. To preserve the legacy effective alignment, set `divisible_by` to
-   `lcm(8, legacy_divisible_by)`; otherwise the new node honors the chosen value
-   exactly.
+No legacy workflow ID is registered. Replace nodes manually:
 
-Dimensions may change where the legacy node rounded beyond a cap or selected a
-poorer aspect match. No legacy workflow ID is registered.
+- `LfggLatentSizeByRatio` → `LFGG_DimensionsByAspectRatio`. Map `base_size` to
+  `long_side`, retain the ratio/custom values, and move `batch_size` plus latent
+  creation to the native initializer appropriate for the model family.
+- `LfggImageResolutionByRatio` → `LFGG_ImageDimensionsByLongSide`. Map
+  `base_size` to `long_side`. Use native `Get Image Size` only when the removed
+  original-dimension outputs were consumed, and replace the latent output with
+  the appropriate native initializer.
+- `LfggPixelBudgetLatentSize` → `LFGG_ImageDimensionsByPixelBudget`. Transfer
+  `max_pixels` unchanged and replace latent creation with the appropriate
+  native initializer. The new default is `1048576`, replacing `900000`.
 
-## Develop
+To preserve the legacy effective alignment, set
+`divisible_by = lcm(8, legacy_divisible_by)`. Otherwise the new nodes honor the
+chosen value exactly. Dimensions may change where legacy rounding exceeded a
+cap or produced a poorer aspect match.
+
+Additional dispositions:
+
+- Replace `LfggImageBatchSelect` with native `ImageFromBatch`. Use
+  `batch_index=0` for first, `batch_index=-1` for last, or the desired explicit
+  index, with `length=1`.
+- Remove `LfggModelNameFromModel`; pass an explicit label string alongside the
+  model instead of trying to infer provenance from the prompt graph.
+- Prompt Library, Prompt Wildcard, and LoRA Loader by Path are deferred to
+  separate future efforts.
+
+## Develop and qualify
 
 ```bash
 python -m pip install -e ".[dev]"
 python -m ruff check .
 python -m pytest -q tests/unit
+comfy node validate
+comfy node pack
+python -m pytest -q tests/package --archive node.zip
 ```
 
-There is no generated-asset build or compatibility `requirements.txt`.
+There is no generated-asset build, runtime installer, or compatibility
+`requirements.txt`.

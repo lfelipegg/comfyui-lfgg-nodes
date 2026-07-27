@@ -1,0 +1,115 @@
+{
+  "1": {
+    "class_type": "LFGG_DimensionsByAspectRatio",
+    "inputs": {
+      "aspect_ratio": "16:9",
+      "long_side": 1024,
+      "divisible_by": 64,
+      "custom_ratio_width": 1,
+      "custom_ratio_height": 1
+    }
+  },
+  "2": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": [
+        "1",
+        0
+      ],
+      "height": [
+        "1",
+        1
+      ],
+      "batch_size": 1
+    }
+  },
+  "3": {
+    "class_type": "SaveLatent",
+    "inputs": {
+      "samples": [
+        "2",
+        0
+      ],
+      "filename_prefix": "lfgg/sizing/aspect_ratio"
+    }
+  },
+  "4": {
+    "class_type": "EmptyImage",
+    "inputs": {
+      "width": 640,
+      "height": 360,
+      "batch_size": 2,
+      "color": 0
+    }
+  },
+  "5": {
+    "class_type": "LFGG_ImageDimensionsByLongSide",
+    "inputs": {
+      "image": [
+        "4",
+        0
+      ],
+      "long_side": 512,
+      "divisible_by": 8
+    }
+  },
+  "6": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": [
+        "5",
+        0
+      ],
+      "height": [
+        "5",
+        1
+      ],
+      "batch_size": 2
+    }
+  },
+  "7": {
+    "class_type": "SaveLatent",
+    "inputs": {
+      "samples": [
+        "6",
+        0
+      ],
+      "filename_prefix": "lfgg/sizing/long_side"
+    }
+  },
+  "8": {
+    "class_type": "LFGG_ImageDimensionsByPixelBudget",
+    "inputs": {
+      "image": [
+        "4",
+        0
+      ],
+      "max_pixels": 131072,
+      "divisible_by": 8
+    }
+  },
+  "9": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": [
+        "8",
+        0
+      ],
+      "height": [
+        "8",
+        1
+      ],
+      "batch_size": 2
+    }
+  },
+  "10": {
+    "class_type": "SaveLatent",
+    "inputs": {
+      "samples": [
+        "9",
+        0
+      ],
+      "filename_prefix": "lfgg/sizing/pixel_budget"
+    }
+  }
+}

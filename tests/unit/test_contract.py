@@ -251,11 +251,13 @@ def test_schema_uses_comfyui_max_resolution(monkeypatch):
     assert pixel_required["divisible_by"][1]["max"] == 4096
 
 
-def test_metadata_and_model_free_workflow_match_the_release_contract():
+def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
     pyproject_path = ROOT / "pyproject.toml"
-    workflow_path = ROOT / "workflows" / "dimensions_by_aspect_ratio.json"
+    manifest_path = ROOT / "release" / "1.0.0-schema.json"
+    workflow_path = ROOT / "workflows" / "sizing.json"
     assert pyproject_path.exists(), "pyproject.toml is not implemented"
-    assert workflow_path.exists(), "model-free API workflow is not implemented"
+    assert manifest_path.exists(), "release schema manifest is not implemented"
+    assert workflow_path.exists(), "complete sizing API workflow is not implemented"
 
     try:
         import tomllib
@@ -282,10 +284,33 @@ def test_metadata_and_model_free_workflow_match_the_release_contract():
         "Python `>=3.10,<3.14`",
         "Linux and Windows",
         "CPU and NVIDIA CUDA",
-        "does not write files",
+        "do not read or write files",
         "native initializer appropriate for the model family",
+        "`ImageFromBatch`",
+        "explicit label",
+        "Prompt Library",
+        "Prompt Wildcard",
+        "LoRA Loader by Path",
+        "deferred",
     ]:
         assert claim in readme
+
+    package = load_root_package(monkeypatch)
+    expected_nodes = {}
+    for node_id, node in package.NODE_CLASS_MAPPINGS.items():
+        expected_nodes[node_id] = {
+            "display_name": package.NODE_DISPLAY_NAME_MAPPINGS[node_id],
+            "description": node.DESCRIPTION,
+            "category": node.CATEGORY,
+            "input": json.loads(json.dumps(node.INPUT_TYPES())),
+            "output": list(node.RETURN_TYPES),
+            "output_name": list(node.RETURN_NAMES),
+            "output_tooltips": list(node.OUTPUT_TOOLTIPS),
+        }
+    assert json.loads(manifest_path.read_text()) == {
+        "version": "1.0.0",
+        "nodes": expected_nodes,
+    }
 
     workflow = json.loads(workflow_path.read_text())
     assert workflow["1"]["class_type"] == "LFGG_DimensionsByAspectRatio"
@@ -304,6 +329,30 @@ def test_metadata_and_model_free_workflow_match_the_release_contract():
         "class_type": "SaveLatent",
         "inputs": {
             "samples": ["2", 0],
-            "filename_prefix": "lfgg/dimensions_by_aspect_ratio",
+            "filename_prefix": "lfgg/sizing/aspect_ratio",
         },
+    }
+    assert workflow["4"] == {
+        "class_type": "EmptyImage",
+        "inputs": {"width": 640, "height": 360, "batch_size": 2, "color": 0},
+    }
+    assert workflow["5"]["class_type"] == "LFGG_ImageDimensionsByLongSide"
+    assert workflow["5"]["inputs"]["image"] == ["4", 0]
+    assert workflow["6"] == {
+        "class_type": "EmptyLatentImage",
+        "inputs": {"width": ["5", 0], "height": ["5", 1], "batch_size": 2},
+    }
+    assert workflow["7"]["inputs"] == {
+        "samples": ["6", 0],
+        "filename_prefix": "lfgg/sizing/long_side",
+    }
+    assert workflow["8"]["class_type"] == "LFGG_ImageDimensionsByPixelBudget"
+    assert workflow["8"]["inputs"]["image"] == ["4", 0]
+    assert workflow["9"] == {
+        "class_type": "EmptyLatentImage",
+        "inputs": {"width": ["8", 0], "height": ["8", 1], "batch_size": 2},
+    }
+    assert workflow["10"]["inputs"] == {
+        "samples": ["9", 0],
+        "filename_prefix": "lfgg/sizing/pixel_budget",
     }
