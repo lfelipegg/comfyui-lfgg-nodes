@@ -271,6 +271,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
     assert project["version"] == "1.0.0"
     assert project["requires-python"] == ">=3.10,<3.14"
     assert project["dependencies"] == []
+    assert "setuptools>=77" in project["optional-dependencies"]["dev"]
     assert "Environment :: GPU :: NVIDIA CUDA" in project["classifiers"]
     assert comfy == {
         "PublisherId": "lfelipegg",

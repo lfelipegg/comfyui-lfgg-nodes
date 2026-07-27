@@ -32,6 +32,7 @@ dev = [
     "comfy-cli",
     "pytest",
     "ruff",
+    "setuptools>=77",
     "tomli; python_version < '3.11'",
 ]
 
