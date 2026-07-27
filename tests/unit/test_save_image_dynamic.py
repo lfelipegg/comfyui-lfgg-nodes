@@ -1,11 +1,16 @@
 from datetime import datetime
 
 import pytest
+import torch
 
 from lfgg_nodes.save_image_dynamic import (
+    MAX_METADATA_BYTES,
     ParsedTemplate,
+    image_to_pillow,
     render_filename,
     render_relative_path,
+    serialize_metadata,
+    validate_images,
 )
 
 NOW = datetime(2026, 7, 27, 15, 4, 5)
@@ -205,3 +210,136 @@ def test_rendered_components_and_filename_stems_are_bounded():
         render_relative_path(path, **arguments)
     with pytest.raises(ValueError, match="200"):
         render_filename(filename, counter_in_templates=True, **arguments)
+
+
+@pytest.mark.parametrize(
+    "images",
+    [
+        [],
+        torch.zeros((4, 4, 3)),
+        torch.empty((0, 4, 4, 3)),
+        torch.empty((1, 0, 4, 3)),
+        torch.empty((1, 4, 0, 3)),
+        torch.empty((1, 4, 4, 0)),
+        torch.zeros((1, 4, 4, 2)),
+        torch.zeros((1, 4, 4, 3), dtype=torch.bool),
+        torch.zeros((1, 4, 4, 3), dtype=torch.complex64),
+    ],
+)
+def test_image_validation_rejects_invalid_types_shapes_channels_and_dtypes(images):
+    with pytest.raises(ValueError, match=r"IMAGE.*\[B,H,W,C\]|IMAGE.*numeric"):
+        validate_images(images)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
+def test_image_validation_rejects_non_finite_values(value):
+    images = torch.zeros((1, 2, 2, 3))
+    images[0, 0, 0, 0] = value
+
+    with pytest.raises(ValueError, match="finite"):
+        validate_images(images)
+
+
+@pytest.mark.parametrize("channels", [1, 3, 4])
+def test_image_validation_accepts_supported_real_tensor_batches(channels):
+    images = torch.zeros((2, 3, 5, channels), dtype=torch.float64)
+
+    assert validate_images(images) == (2, 3, 5, channels)
+
+
+@pytest.mark.parametrize(
+    ("channels", "mode"),
+    [(1, "L"), (3, "RGB"), (4, "RGBA")],
+)
+def test_image_conversion_clamps_without_mutating_the_input(channels, mode):
+    frame = torch.linspace(-0.5, 1.5, 4 * channels).reshape(1, 4, channels)
+    original = frame.clone()
+
+    image = image_to_pillow(frame)
+
+    assert image.mode == mode
+    assert image.size == (4, 1)
+    assert image.getpixel((0, 0)) == (0 if channels == 1 else (0,) * channels)
+    assert image.getpixel((3, 0)) == (
+        255 if channels == 1 else (255,) * channels
+    )
+    assert torch.equal(frame, original)
+
+
+def test_metadata_serializes_prompt_and_every_extra_entry():
+    metadata = serialize_metadata(
+        save_metadata=True,
+        global_disabled=False,
+        prompt={"text": "hello"},
+        extra_pnginfo={
+            "workflow": {"nodes": [1]},
+            "custom": ["value"],
+        },
+    )
+
+    assert metadata == [
+        ("prompt", '{"text": "hello"}'),
+        ("workflow", '{"nodes": [1]}'),
+        ("custom", '["value"]'),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("save_metadata", "global_disabled"),
+    [(False, False), (True, True), (False, True)],
+)
+def test_metadata_toggles_skip_serialization(save_metadata, global_disabled):
+    assert (
+        serialize_metadata(
+            save_metadata=save_metadata,
+            global_disabled=global_disabled,
+            prompt=object(),
+            extra_pnginfo={"bad": object()},
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("prompt", "extra_pnginfo", "message"),
+    [
+        (None, [], "EXTRA_PNGINFO"),
+        (None, {1: "value"}, "keys"),
+        (object(), None, "prompt"),
+        (None, {"workflow": object()}, "workflow"),
+    ],
+)
+def test_metadata_rejects_invalid_inputs_without_disclosing_values(
+    prompt,
+    extra_pnginfo,
+    message,
+):
+    with pytest.raises(ValueError, match=message):
+        serialize_metadata(
+            save_metadata=True,
+            global_disabled=False,
+            prompt=prompt,
+            extra_pnginfo=extra_pnginfo,
+        )
+
+
+def test_metadata_enforces_the_exact_64_mib_serialized_boundary():
+    assert MAX_METADATA_BYTES == 64 * 1024 * 1024
+    at_limit = "x" * (MAX_METADATA_BYTES - 2)
+    metadata = serialize_metadata(
+        save_metadata=True,
+        global_disabled=False,
+        prompt=at_limit,
+        extra_pnginfo=None,
+    )
+    assert len(metadata[0][1].encode()) == MAX_METADATA_BYTES
+    del metadata, at_limit
+
+    above_limit = "x" * (MAX_METADATA_BYTES - 1)
+    with pytest.raises(ValueError, match="64 MiB"):
+        serialize_metadata(
+            save_metadata=True,
+            global_disabled=False,
+            prompt=above_limit,
+            extra_pnginfo=None,
+        )
