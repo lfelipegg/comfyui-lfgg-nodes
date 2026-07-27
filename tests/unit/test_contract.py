@@ -55,11 +55,13 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_ImageDimensionsByPixelBudget": (
             "LFGG Image Dimensions by Pixel Budget"
         ),
+        "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
     }
     assert list(package.NODE_CLASS_MAPPINGS) == [
         "LFGG_DimensionsByAspectRatio",
         "LFGG_ImageDimensionsByLongSide",
         "LFGG_ImageDimensionsByPixelBudget",
+        "LFGG_SaveImageDynamic",
     ]
 
     node = package.NODE_CLASS_MAPPINGS["LFGG_DimensionsByAspectRatio"]
@@ -220,6 +222,73 @@ def test_image_derived_v1_schemas_are_exact(monkeypatch):
     }
 
 
+def test_save_image_dynamic_v1_schema_is_exact(monkeypatch):
+    node = load_root_package(monkeypatch).NODE_CLASS_MAPPINGS[
+        "LFGG_SaveImageDynamic"
+    ]
+
+    assert node.CATEGORY == "LFGG/Image"
+    assert node.DESCRIPTION == (
+        "Saves PNG image batches beneath the ComfyUI output directory using "
+        "safe path and filename templates."
+    )
+    assert node.FUNCTION == "save_images"
+    assert node.RETURN_TYPES == ()
+    assert node.RETURN_NAMES == ()
+    assert node.OUTPUT_TOOLTIPS == ()
+    assert node.OUTPUT_NODE is True
+    assert node.INPUT_TYPES() == {
+        "required": {
+            "images": (
+                "IMAGE",
+                {"tooltip": "Image batch to save as PNG files."},
+            ),
+            "path_template": (
+                "STRING",
+                {
+                    "default": "runs/{model}/{date}",
+                    "tooltip": (
+                        "Output-relative subfolder template using supported "
+                        "brace tokens."
+                    ),
+                },
+            ),
+            "filename_template": (
+                "STRING",
+                {
+                    "default": "{model}_{datetime}_{batch}_{counter}",
+                    "tooltip": (
+                        "PNG filename template using supported brace tokens."
+                    ),
+                },
+            ),
+            "save_metadata": (
+                "BOOLEAN",
+                {
+                    "default": True,
+                    "tooltip": (
+                        "Embed prompt and workflow metadata unless globally "
+                        "disabled in ComfyUI."
+                    ),
+                },
+            ),
+        },
+        "optional": {
+            "model_name": (
+                "STRING",
+                {
+                    "forceInput": True,
+                    "tooltip": "Explicit model label used by the {model} token.",
+                },
+            )
+        },
+        "hidden": {
+            "prompt": "PROMPT",
+            "extra_pnginfo": "EXTRA_PNGINFO",
+        },
+    }
+
+
 def test_root_registration_rejects_duplicate_ids(monkeypatch):
     package = load_root_package(monkeypatch)
 
@@ -253,11 +322,13 @@ def test_schema_uses_comfyui_max_resolution(monkeypatch):
 
 def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
     pyproject_path = ROOT / "pyproject.toml"
-    manifest_path = ROOT / "release" / "1.0.0-schema.json"
+    manifest_path = ROOT / "release" / "1.1.0-schema.json"
     workflow_path = ROOT / "workflows" / "sizing.json"
+    save_workflow_path = ROOT / "workflows" / "save_image_dynamic.json"
     assert pyproject_path.exists(), "pyproject.toml is not implemented"
     assert manifest_path.exists(), "release schema manifest is not implemented"
     assert workflow_path.exists(), "complete sizing API workflow is not implemented"
+    assert save_workflow_path.exists(), "dynamic save API workflow is not implemented"
 
     try:
         import tomllib
@@ -268,9 +339,9 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
     project = metadata["project"]
     comfy = metadata["tool"]["comfy"]
     assert project["name"] == "lfgg-nodes"
-    assert project["version"] == "1.0.0"
+    assert project["version"] == "1.1.0"
     assert project["requires-python"] == ">=3.10,<3.14"
-    assert project["dependencies"] == []
+    assert project["dependencies"] == ["Pillow"]
     assert "setuptools>=77" in project["optional-dependencies"]["dev"]
     assert "Environment :: GPU :: NVIDIA CUDA" in project["classifiers"]
     assert comfy == {
@@ -286,6 +357,9 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
         "Linux and Windows",
         "CPU and NVIDIA CUDA",
         "do not read or write files",
+        "exclusive creation of final PNG files",
+        "cleanup of PNG files created by a failed execution",
+        "Imports and schema discovery do not write files",
         "native initializer appropriate for the model family",
         "`ImageFromBatch`",
         "explicit label",
@@ -293,6 +367,12 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
         "Prompt Wildcard",
         "LoRA Loader by Path",
         "deferred",
+        "`LfggSaveImageDynamic` → `LFGG_SaveImageDynamic`",
+        "`%token%` to `{token}`",
+        "`%batch_num%` to `{batch}`",
+        "Remove `compress_level`",
+        "Remove downstream uses of `saved_paths`",
+        "No legacy workflow ID alias",
     ]:
         assert claim in readme
 
@@ -305,11 +385,11 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
             "category": node.CATEGORY,
             "input": json.loads(json.dumps(node.INPUT_TYPES())),
             "output": list(node.RETURN_TYPES),
-            "output_name": list(node.RETURN_NAMES),
-            "output_tooltips": list(node.OUTPUT_TOOLTIPS),
+            "output_name": list(getattr(node, "RETURN_NAMES", ())),
+            "output_tooltips": list(getattr(node, "OUTPUT_TOOLTIPS", ())),
         }
     assert json.loads(manifest_path.read_text()) == {
-        "version": "1.0.0",
+        "version": "1.1.0",
         "nodes": expected_nodes,
     }
 
@@ -356,4 +436,35 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
     assert workflow["10"]["inputs"] == {
         "samples": ["9", 0],
         "filename_prefix": "lfgg/sizing/pixel_budget",
+    }
+
+    save_workflow = json.loads(save_workflow_path.read_text())
+    assert save_workflow == {
+        "1": {
+            "class_type": "EmptyImage",
+            "inputs": {
+                "width": 3,
+                "height": 2,
+                "batch_size": 2,
+                "color": 0,
+            },
+        },
+        "2": {
+            "class_type": "LFGG_SaveImageDynamic",
+            "inputs": {
+                "images": ["1", 0],
+                "path_template": "lfgg/dynamic",
+                "filename_template": "metadata_on",
+                "save_metadata": True,
+            },
+        },
+        "3": {
+            "class_type": "LFGG_SaveImageDynamic",
+            "inputs": {
+                "images": ["1", 0],
+                "path_template": "lfgg/dynamic",
+                "filename_template": "metadata_off",
+                "save_metadata": False,
+            },
+        },
     }

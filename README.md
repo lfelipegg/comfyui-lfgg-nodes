@@ -17,12 +17,12 @@ cd ComfyUI/custom_nodes
 git clone https://github.com/lfelipegg/comfyui-lfgg-nodes.git lfgg-nodes
 ```
 
-Restart ComfyUI after installation. This sizing-only release has no runtime
-dependency and no frontend extension.
+Restart ComfyUI after installation. Pillow is the only runtime dependency;
+there is no frontend extension.
 
 ## Compatibility
 
-The required 1.0.0 release qualification covers:
+The required 1.1.0 release qualification covers:
 
 - ComfyUI `>=0.28.0`, tested at exact stable tags rather than `master`
 - Python `>=3.10,<3.14`
@@ -39,6 +39,7 @@ accelerators are not claimed.
 | LFGG Dimensions by Aspect Ratio | preset/custom ratio, long-side cap, alignment | width, height |
 | LFGG Image Dimensions by Long Side | IMAGE, long-side cap, alignment | width, height |
 | LFGG Image Dimensions by Pixel Budget | IMAGE, exact pixel cap, alignment | width, height |
+| LFGG Save Image Dynamic | IMAGE, path/filename templates, metadata toggle, optional model label | saved-image previews |
 
 All three nodes are in `LFGG/sizing`. They return positive dimensions aligned
 to the exact `divisible_by` value. Aspect fidelity wins before pixel area, with
@@ -49,12 +50,27 @@ The two image-derived nodes are downscale-only and inspect the shared
 `[B,H,W,C]` tensor shape. Batch count does not change the result. They do not
 allocate, copy, cast, mutate, or move the image.
 
+`LFGG Save Image Dynamic` is in `LFGG/Image`. It saves one PNG per batch frame
+with separate output-relative path and filename templates. Supported brace
+tokens are `{model}`, `{date}`, `{time}`, `{datetime}`, `{width}`, `{height}`,
+`{batch}`, and `{counter}`. Missing or blank model labels become
+`unknown_model`. PNG compression is fixed at level 4, and the node returns only
+standard output-relative saved-image previews.
+
 ## File and network behavior
 
 The sizing nodes use standard-library integer math plus tensor shape
 inspection. They do not access the network and do not read or write files.
 The tracked [sizing API workflow](workflows/sizing.json) uses native
 `SaveLatent` nodes, which do write example `.latent` files.
+
+The dynamic saver does not access the network. Its only writes are creation of
+output subdirectories beneath ComfyUI's resolved output root, exclusive
+creation of final PNG files, and cleanup of PNG files created by a failed
+execution. It never overwrites or removes a pre-existing file. Imports and
+schema discovery do not write files. The tracked
+[dynamic-save API workflow](workflows/save_image_dynamic.json) writes small
+example PNGs beneath that output root.
 
 ## Migrate legacy workflows
 
@@ -70,6 +86,13 @@ No legacy workflow ID is registered. Replace nodes manually:
 - `LfggPixelBudgetLatentSize` → `LFGG_ImageDimensionsByPixelBudget`. Transfer
   `max_pixels` unchanged and replace latent creation with the appropriate
   native initializer. The new default is `1048576`, replacing `900000`.
+- `LfggSaveImageDynamic` → `LFGG_SaveImageDynamic`. Reconnect `images` and the
+  optional explicit `model_name`. Convert `%token%` to `{token}` and
+  `%batch_num%` to `{batch}` in both templates. Remove `compress_level`; PNG
+  compression is fixed at 4. Use `save_metadata` to disable both prompt and
+  workflow metadata when needed. Remove downstream uses of `saved_paths`; the
+  successor exposes only standard saved-image previews. No legacy workflow ID
+  alias or automatic workflow rewrite is provided.
 
 To preserve the legacy effective alignment, set
 `divisible_by = lcm(8, legacy_divisible_by)`. Otherwise the new nodes honor the

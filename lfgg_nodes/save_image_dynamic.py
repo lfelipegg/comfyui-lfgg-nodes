@@ -341,6 +341,8 @@ class SaveImageDynamic:
         }
 
     RETURN_TYPES = ()
+    RETURN_NAMES = ()
+    OUTPUT_TOOLTIPS = ()
     FUNCTION = "save_images"
     OUTPUT_NODE = True
     CATEGORY = "LFGG/Image"

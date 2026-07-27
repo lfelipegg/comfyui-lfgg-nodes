@@ -4,12 +4,14 @@ if __package__:
         ImageDimensionsByLongSide,
         ImageDimensionsByPixelBudget,
     )
+    from .lfgg_nodes.save_image_dynamic import SaveImageDynamic
 else:
     from lfgg_nodes.dimensions_by_aspect_ratio import DimensionsByAspectRatio
     from lfgg_nodes.image_dimensions import (
         ImageDimensionsByLongSide,
         ImageDimensionsByPixelBudget,
     )
+    from lfgg_nodes.save_image_dynamic import SaveImageDynamic
 
 
 def _merge_class_mappings(*mappings):
@@ -26,11 +28,13 @@ NODE_CLASS_MAPPINGS = _merge_class_mappings(
     {"LFGG_DimensionsByAspectRatio": DimensionsByAspectRatio},
     {"LFGG_ImageDimensionsByLongSide": ImageDimensionsByLongSide},
     {"LFGG_ImageDimensionsByPixelBudget": ImageDimensionsByPixelBudget},
+    {"LFGG_SaveImageDynamic": SaveImageDynamic},
 )
 NODE_DISPLAY_NAME_MAPPINGS = {
     "LFGG_DimensionsByAspectRatio": "LFGG Dimensions by Aspect Ratio",
     "LFGG_ImageDimensionsByLongSide": "LFGG Image Dimensions by Long Side",
     "LFGG_ImageDimensionsByPixelBudget": "LFGG Image Dimensions by Pixel Budget",
+    "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
 }
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

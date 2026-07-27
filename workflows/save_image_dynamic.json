@@ -1,0 +1,35 @@
+{
+  "1": {
+    "class_type": "EmptyImage",
+    "inputs": {
+      "width": 3,
+      "height": 2,
+      "batch_size": 2,
+      "color": 0
+    }
+  },
+  "2": {
+    "class_type": "LFGG_SaveImageDynamic",
+    "inputs": {
+      "images": [
+        "1",
+        0
+      ],
+      "path_template": "lfgg/dynamic",
+      "filename_template": "metadata_on",
+      "save_metadata": true
+    }
+  },
+  "3": {
+    "class_type": "LFGG_SaveImageDynamic",
+    "inputs": {
+      "images": [
+        "1",
+        0
+      ],
+      "path_template": "lfgg/dynamic",
+      "filename_template": "metadata_off",
+      "save_metadata": false
+    }
+  }
+}
