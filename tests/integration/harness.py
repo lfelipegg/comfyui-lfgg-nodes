@@ -166,9 +166,7 @@ def download_registry_archive(
             download_url = _public_https_url(record.get("downloadUrl"))
             break
         except (
-            HTTPError,
-            URLError,
-            TimeoutError,
+            OSError,
             LookupError,
             json.JSONDecodeError,
         ) as error:

@@ -257,6 +257,57 @@ def stub_registry_responses(monkeypatch, responses):
     )
 
 
+def test_retries_transient_initial_registry_dns_failure(monkeypatch, tmp_path):
+    dns_attempts = []
+    opened = []
+    sleeps = []
+    times = iter([10, 10])
+
+    def resolve_public_after_failure(*_args, **_kwargs):
+        dns_attempts.append(None)
+        if len(dns_attempts) == 1:
+            raise socket.gaierror("temporary DNS failure")
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+        ]
+
+    responses = iter(
+        [
+            Response(
+                json.dumps(
+                    {
+                        "version": "1.0.0",
+                        "downloadUrl": "https://cdn.example/lfgg-nodes.zip",
+                    }
+                ).encode(),
+                "https://api.comfy.org/nodes/lfgg-nodes/install?version=1.0.0",
+            ),
+            Response(b"candidate", "https://cdn.example/lfgg-nodes.zip"),
+        ]
+    )
+
+    def open_response(url, **_kwargs):
+        opened.append(url)
+        return next(responses)
+
+    monkeypatch.setattr(harness().socket, "getaddrinfo", resolve_public_after_failure)
+    monkeypatch.setattr(harness()._REGISTRY_OPENER, "open", open_response)
+    monkeypatch.setattr(harness().time, "monotonic", lambda: next(times))
+    monkeypatch.setattr(harness().time, "sleep", sleeps.append)
+
+    destination = tmp_path / "registry-node.zip"
+    harness().download_registry_archive(
+        "lfgg-nodes",
+        "1.0.0",
+        destination,
+        timeout_seconds=1,
+    )
+
+    assert destination.read_bytes() == b"candidate"
+    assert len(opened) == 2
+    assert sleeps == [1]
+
+
 @pytest.mark.parametrize("content_length", ["invalid", -1])
 def test_rejects_invalid_registry_content_length(content_length):
     response = Response(
