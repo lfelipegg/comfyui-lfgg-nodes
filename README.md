@@ -55,7 +55,8 @@ with separate output-relative path and filename templates. Supported brace
 tokens are `{model}`, `{date}`, `{time}`, `{datetime}`, `{width}`, `{height}`,
 `{batch}`, and `{counter}`. Missing or blank model labels become
 `unknown_model`. PNG compression is fixed at level 4, and the node returns only
-standard output-relative saved-image previews.
+standard output-relative saved-image previews. One execution is limited to
+268,435,456 total pixels across its image batch.
 
 ## File and network behavior
 

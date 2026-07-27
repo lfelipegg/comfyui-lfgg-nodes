@@ -360,6 +360,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
         "exclusive creation of final PNG files",
         "cleanup of PNG files created by a failed execution",
         "Imports and schema discovery do not write files",
+        "268,435,456 total pixels",
         "native initializer appropriate for the model family",
         "`ImageFromBatch`",
         "explicit label",

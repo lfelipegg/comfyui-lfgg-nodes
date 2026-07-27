@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 MAX_COUNTER = 99_999
+MAX_IMAGE_PIXELS = 16_384**2
 MAX_METADATA_BYTES = 64 * 1024 * 1024
 _ALLOWED_FIELDS = {
     "model",
@@ -49,7 +50,6 @@ class ParsedTemplate:
             raise ValueError(f"{input_name} must be at most 512 characters")
 
         self.source = source
-        self.input_name = input_name
         formatter = string.Formatter()
         try:
             parsed = tuple(formatter.parse(source))
@@ -130,12 +130,12 @@ def render_filename(template, *, counter_in_templates, **values):
     if not stem.strip():
         raise ValueError("filename_template must render a non-empty filename")
     stem = _sanitize_component(stem)
+    if not counter_in_templates:
+        stem = f"{stem}_{values['counter']:05d}_"
     if len(stem) > 200:
         raise ValueError(
             "filename_template rendered stem must be at most 200 characters"
         )
-    if not counter_in_templates:
-        stem = f"{stem}_{values['counter']:05d}_"
     return f"{stem}.png"
 
 
@@ -152,6 +152,10 @@ def validate_images(images):
     if images.shape[3] not in {1, 3, 4}:
         raise ValueError(
             "IMAGE must be shaped [B,H,W,C] with C equal to 1, 3, or 4"
+        )
+    if images.shape[0] * images.shape[1] * images.shape[2] > MAX_IMAGE_PIXELS:
+        raise ValueError(
+            f"IMAGE batch must contain at most {MAX_IMAGE_PIXELS} pixels"
         )
     if images.dtype == torch_bool or images.is_complex():
         raise ValueError("IMAGE values must have a real numeric dtype")
@@ -194,6 +198,9 @@ def serialize_metadata(
         isinstance(key, str) for key in extra_pnginfo
     ):
         raise ValueError("EXTRA_PNGINFO keys must be strings")
+    if extra_pnginfo is not None:
+        for key in extra_pnginfo:
+            _validate_png_keyword(key)
 
     values = []
     if prompt is not None:
@@ -207,11 +214,23 @@ def serialize_metadata(
             for key, value in extra_pnginfo.items()
         )
 
-    if sum(len(value.encode("utf-8")) for _key, value in values) > (
-        MAX_METADATA_BYTES
-    ):
+    if sum(
+        len(key.encode("utf-8")) + len(value.encode("utf-8"))
+        for key, value in values
+    ) > MAX_METADATA_BYTES:
         raise ValueError("serialized metadata must be at most 64 MiB")
     return values
+
+
+def _validate_png_keyword(key):
+    try:
+        encoded = key.encode("latin-1")
+    except UnicodeEncodeError:
+        raise ValueError(
+            "EXTRA_PNGINFO keys must be valid PNG keywords"
+        ) from None
+    if not 1 <= len(encoded) <= 79:
+        raise ValueError("EXTRA_PNGINFO keys must be valid PNG keywords")
 
 
 def _serialize_metadata_value(input_name, value):
@@ -373,24 +392,28 @@ class SaveImageDynamic:
             prompt=prompt,
             extra_pnginfo=extra_pnginfo,
         )
-        pnginfo = _pnginfo(metadata)
         root = _output_root()
 
-        for batch_index in range(batch):
+        def destination(batch_index, counter):
             values = {
                 "model": model_name,
                 "timestamp": timestamp,
                 "width": width,
                 "height": height,
                 "batch": batch_index,
-                "counter": 1,
+                "counter": counter,
             }
-            subfolder = render_relative_path(path, **values)
-            render_filename(
-                filename,
-                counter_in_templates=counter_in_templates,
-                **values,
+            return (
+                render_relative_path(path, **values),
+                render_filename(
+                    filename,
+                    counter_in_templates=counter_in_templates,
+                    **values,
+                ),
             )
+
+        for batch_index in range(batch):
+            subfolder, _file = destination(batch_index, 1)
             _preflight_parent(root, subfolder)
 
         created = []
@@ -399,20 +422,7 @@ class SaveImageDynamic:
         try:
             for batch_index, frame in enumerate(images):
                 while counter <= MAX_COUNTER:
-                    values = {
-                        "model": model_name,
-                        "timestamp": timestamp,
-                        "width": width,
-                        "height": height,
-                        "batch": batch_index,
-                        "counter": counter,
-                    }
-                    subfolder = render_relative_path(path, **values)
-                    file = render_filename(
-                        filename,
-                        counter_in_templates=counter_in_templates,
-                        **values,
-                    )
+                    subfolder, file = destination(batch_index, counter)
                     relative = subfolder / file
                     try:
                         parent = _prepare_parent(root, subfolder)
@@ -427,13 +437,13 @@ class SaveImageDynamic:
                         raise _safe_write_error(relative, error, root) from None
 
                     candidate = parent / file
-                    created.append(candidate)
+                    created.append((candidate, relative))
                     try:
                         with handle:
                             image_to_pillow(frame).save(
                                 handle,
                                 format="PNG",
-                                pnginfo=pnginfo,
+                                pnginfo=_pnginfo(metadata),
                                 compress_level=4,
                             )
                     except OSError as error:
@@ -454,17 +464,27 @@ class SaveImageDynamic:
                     raise FileExistsError(
                         "LFGG Save Image Dynamic exhausted the five-digit counter"
                     )
-        except Exception:
-            cleanup_failed = False
-            for candidate in reversed(created):
+        except Exception as original_error:
+            remaining = []
+            for candidate, relative in reversed(created):
                 try:
+                    _assert_contained(
+                        candidate.parent.resolve(strict=True),
+                        root,
+                    )
                     candidate.unlink(missing_ok=True)
-                except OSError:
-                    cleanup_failed = True
-            if cleanup_failed:
+                except (OSError, ValueError):
+                    remaining.append(relative.as_posix())
+            if remaining:
+                original_reason = (
+                    str(original_error)
+                    if isinstance(original_error, OSError)
+                    else original_error.__class__.__name__
+                )
                 raise OSError(
-                    "LFGG Save Image Dynamic failed and could not remove every "
-                    "file created by this execution"
+                    "LFGG Save Image Dynamic failed with "
+                    f"{original_reason}; rollback could not remove: "
+                    f"{', '.join(remaining)}"
                 ) from None
             raise
 

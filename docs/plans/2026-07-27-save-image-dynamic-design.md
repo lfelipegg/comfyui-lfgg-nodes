@@ -61,8 +61,9 @@ filename. Counters are decimal `00001` through `99999`; exhaustion fails
 without overwrite.
 
 Accept numeric finite Torch tensors only, with a non-empty batch, positive
-spatial dimensions, and one, three, or four channels. Copy each frame to CPU
-only for clamping and 8-bit PNG encoding; never mutate the input.
+spatial dimensions, one, three, or four channels, and no more than
+`16_384**2` aggregate batch pixels. Copy each frame to CPU only for clamping
+and 8-bit PNG encoding; never mutate the input.
 
 Serialize prompt and every `EXTRA_PNGINFO` value with the standard JSON
 encoder only when both metadata toggles allow it. Reject non-string metadata

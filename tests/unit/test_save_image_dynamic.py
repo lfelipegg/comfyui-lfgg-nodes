@@ -2,6 +2,7 @@ import sys
 import types
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 import torch
@@ -9,6 +10,7 @@ from PIL import Image
 
 import lfgg_nodes.save_image_dynamic as save_module
 from lfgg_nodes.save_image_dynamic import (
+    MAX_IMAGE_PIXELS,
     MAX_METADATA_BYTES,
     ParsedTemplate,
     SaveImageDynamic,
@@ -167,6 +169,22 @@ def test_filename_normalizes_png_once_and_appends_a_counter_when_absent():
     ) == "a_b_00007.png"
 
 
+def test_automatic_counter_is_included_in_the_200_character_stem_limit():
+    template = ParsedTemplate("x" * 194, input_name="filename_template")
+
+    with pytest.raises(ValueError, match="200"):
+        render_filename(
+            template,
+            counter_in_templates=False,
+            model="model",
+            timestamp=NOW,
+            width=64,
+            height=32,
+            batch=0,
+            counter=1,
+        )
+
+
 @pytest.mark.parametrize("source", ["CON", "nul.png", "LPT9"])
 def test_filename_protects_windows_reserved_names(source):
     template = ParsedTemplate(source, input_name="filename_template")
@@ -253,6 +271,14 @@ def test_image_validation_accepts_supported_real_tensor_batches(channels):
     assert validate_images(images) == (2, 3, 5, channels)
 
 
+def test_image_validation_bounds_aggregate_pixels_before_reading_storage():
+    assert MAX_IMAGE_PIXELS == 16_384**2
+    images = torch.empty((2, 16_384, 8_193, 1), device="meta")
+
+    with pytest.raises(ValueError, match="pixel"):
+        validate_images(images)
+
+
 @pytest.mark.parametrize(
     ("channels", "mode"),
     [(1, "L"), (3, "RGB"), (4, "RGBA")],
@@ -311,6 +337,9 @@ def test_metadata_toggles_skip_serialization(save_metadata, global_disabled):
     [
         (None, [], "EXTRA_PNGINFO"),
         (None, {1: "value"}, "keys"),
+        (None, {"": "value"}, "PNG keyword"),
+        (None, {"x" * 80: "value"}, "PNG keyword"),
+        (None, {"snowman_\N{SNOWMAN}": "value"}, "PNG keyword"),
         (object(), None, "prompt"),
         (None, {"workflow": object()}, "workflow"),
     ],
@@ -331,17 +360,17 @@ def test_metadata_rejects_invalid_inputs_without_disclosing_values(
 
 def test_metadata_enforces_the_exact_64_mib_serialized_boundary():
     assert MAX_METADATA_BYTES == 64 * 1024 * 1024
-    at_limit = "x" * (MAX_METADATA_BYTES - 2)
+    at_limit = "x" * (MAX_METADATA_BYTES - len("prompt") - 2)
     metadata = serialize_metadata(
         save_metadata=True,
         global_disabled=False,
         prompt=at_limit,
         extra_pnginfo=None,
     )
-    assert len(metadata[0][1].encode()) == MAX_METADATA_BYTES
+    assert sum(len(part.encode()) for part in metadata[0]) == MAX_METADATA_BYTES
     del metadata, at_limit
 
-    above_limit = "x" * (MAX_METADATA_BYTES - 1)
+    above_limit = "x" * (MAX_METADATA_BYTES - len("prompt") - 1)
     with pytest.raises(ValueError, match="64 MiB"):
         serialize_metadata(
             save_metadata=True,
@@ -437,6 +466,27 @@ def test_save_writes_a_batch_with_metadata_and_relative_descriptors(
                 "prompt": '{"text": "hello"}',
                 "workflow": '{"nodes": [1]}',
             }
+
+
+def test_save_builds_png_metadata_for_each_frame(monkeypatch, tmp_path):
+    output = tmp_path / "output"
+    output.mkdir()
+    install_comfy_stubs(monkeypatch, output)
+    original_pnginfo = save_module._pnginfo
+    calls = []
+
+    def count_pnginfo(metadata):
+        calls.append(metadata)
+        return original_pnginfo(metadata)
+
+    monkeypatch.setattr(save_module, "_pnginfo", count_pnginfo)
+
+    save_images(
+        torch.zeros((2, 1, 1, 3)),
+        prompt={"text": "hello"},
+    )
+
+    assert len(calls) == 2
 
 
 @pytest.mark.parametrize(("channels", "mode"), [(1, "L"), (3, "RGB"), (4, "RGBA")])
@@ -650,6 +700,81 @@ def test_later_frame_write_failure_rolls_back_only_this_execution(
     assert str(output) not in str(failure.value)
     assert existing.read_bytes() == b"existing"
     assert sorted(path.name for path in output.iterdir()) == [existing.name]
+
+
+def test_rollback_failure_preserves_original_reason_and_relative_leftovers(
+    monkeypatch,
+    tmp_path,
+):
+    output = tmp_path / "output"
+    output.mkdir()
+    install_comfy_stubs(monkeypatch, output)
+    original_save = Image.Image.save
+    original_unlink = Path.unlink
+    writes = 0
+
+    def fail_second_write(image, file, *args, **kwargs):
+        nonlocal writes
+        writes += 1
+        if writes == 2:
+            raise OSError("disk full")
+        return original_save(image, file, *args, **kwargs)
+
+    def fail_first_cleanup(path, *args, **kwargs):
+        if path.name == "image_00001_.png":
+            raise OSError("cleanup denied")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Image.Image, "save", fail_second_write)
+    monkeypatch.setattr(Path, "unlink", fail_first_cleanup)
+
+    with pytest.raises(OSError) as failure:
+        save_images(torch.zeros((2, 1, 1, 3)))
+
+    message = str(failure.value)
+    assert "disk full" in message
+    assert "image_00001_.png" in message
+    assert str(output) not in message
+
+
+def test_rollback_rechecks_containment_before_unlinking(monkeypatch, tmp_path):
+    output = tmp_path / "output"
+    outside = tmp_path / "outside"
+    moved = output / "moved"
+    output.mkdir()
+    install_comfy_stubs(monkeypatch, output)
+    original_save = Image.Image.save
+    writes = 0
+
+    def replace_parent_with_symlink(image, file, *args, **kwargs):
+        nonlocal writes
+        writes += 1
+        if writes == 2:
+            (output / "sub").rename(moved)
+            outside.mkdir()
+            for counter in (1, 2):
+                (outside / f"image_{counter:05d}_.png").write_bytes(b"outside")
+            try:
+                (output / "sub").symlink_to(outside, target_is_directory=True)
+            except (NotImplementedError, OSError) as error:
+                pytest.skip(f"symlinks unavailable: {type(error).__name__}")
+            raise OSError("disk full")
+        return original_save(image, file, *args, **kwargs)
+
+    monkeypatch.setattr(Image.Image, "save", replace_parent_with_symlink)
+
+    with pytest.raises(OSError, match="disk full"):
+        save_images(
+            torch.zeros((2, 1, 1, 3)),
+            path_template="sub",
+        )
+
+    assert {
+        path.name: path.read_bytes() for path in outside.iterdir()
+    } == {
+        "image_00001_.png": b"outside",
+        "image_00002_.png": b"outside",
+    }
 
 
 def test_counter_exhaustion_fails_without_overwrite(monkeypatch, tmp_path):
