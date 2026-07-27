@@ -1,0 +1,15 @@
+# Development and repository metadata
+.*
+AGENTS.md
+CONTEXT.md
+docs/
+reference/
+release/
+tests/
+
+# Local/generated artifacts
+*.egg-info/
+__pycache__/
+build/
+dist/
+node.zip
