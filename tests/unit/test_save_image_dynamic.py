@@ -1,11 +1,17 @@
+import sys
+import types
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 import pytest
 import torch
+from PIL import Image
 
+import lfgg_nodes.save_image_dynamic as save_module
 from lfgg_nodes.save_image_dynamic import (
     MAX_METADATA_BYTES,
     ParsedTemplate,
+    SaveImageDynamic,
     image_to_pillow,
     render_filename,
     render_relative_path,
@@ -343,3 +349,335 @@ def test_metadata_enforces_the_exact_64_mib_serialized_boundary():
             prompt=above_limit,
             extra_pnginfo=None,
         )
+
+
+def install_comfy_stubs(monkeypatch, output_root, *, disable_metadata=False):
+    folder_paths = types.ModuleType("folder_paths")
+    folder_paths.get_output_directory = lambda: str(output_root)
+    comfy = types.ModuleType("comfy")
+    comfy.__path__ = []
+    cli_args = types.ModuleType("comfy.cli_args")
+    cli_args.args = types.SimpleNamespace(disable_metadata=disable_metadata)
+    monkeypatch.setitem(sys.modules, "folder_paths", folder_paths)
+    monkeypatch.setitem(sys.modules, "comfy", comfy)
+    monkeypatch.setitem(sys.modules, "comfy.cli_args", cli_args)
+
+
+def save_images(
+    images,
+    *,
+    path_template="",
+    filename_template="image",
+    save_metadata=True,
+    model_name=None,
+    prompt=None,
+    extra_pnginfo=None,
+):
+    return SaveImageDynamic().save_images(
+        images,
+        path_template,
+        filename_template,
+        save_metadata,
+        model_name=model_name,
+        prompt=prompt,
+        extra_pnginfo=extra_pnginfo,
+    )
+
+
+def test_save_writes_a_batch_with_metadata_and_relative_descriptors(
+    monkeypatch,
+    tmp_path,
+):
+    output = tmp_path / "output"
+    output.mkdir()
+    install_comfy_stubs(monkeypatch, output)
+    images = torch.stack(
+        (
+            torch.zeros((2, 3, 3)),
+            torch.ones((2, 3, 3)),
+        )
+    )
+    original = images.clone()
+    pointer = images.data_ptr()
+
+    result = save_images(
+        images,
+        path_template="runs/{model}",
+        filename_template="{batch}",
+        model_name="model/name",
+        prompt={"text": "hello"},
+        extra_pnginfo={"workflow": {"nodes": [1]}},
+    )
+
+    assert result == {
+        "ui": {
+            "images": [
+                {
+                    "filename": "0_00001_.png",
+                    "subfolder": "runs/model_name",
+                    "type": "output",
+                },
+                {
+                    "filename": "1_00002_.png",
+                    "subfolder": "runs/model_name",
+                    "type": "output",
+                },
+            ]
+        }
+    }
+    assert torch.equal(images, original)
+    assert images.data_ptr() == pointer
+    for index, descriptor in enumerate(result["ui"]["images"]):
+        path = output / descriptor["subfolder"] / descriptor["filename"]
+        with Image.open(path) as image:
+            assert image.mode == "RGB"
+            assert image.size == (3, 2)
+            assert image.getpixel((0, 0)) == ((255,) * 3 if index else (0,) * 3)
+            assert image.text == {
+                "prompt": '{"text": "hello"}',
+                "workflow": '{"nodes": [1]}',
+            }
+
+
+@pytest.mark.parametrize(("channels", "mode"), [(1, "L"), (3, "RGB"), (4, "RGBA")])
+def test_save_writes_supported_png_channel_modes(
+    monkeypatch,
+    tmp_path,
+    channels,
+    mode,
+):
+    output = tmp_path / "output"
+    output.mkdir()
+    install_comfy_stubs(monkeypatch, output)
+
+    result = save_images(
+        torch.ones((1, 2, 3, channels)),
+        filename_template="mode_{counter}",
+        save_metadata=False,
+    )
+
+    descriptor = result["ui"]["images"][0]
+    with Image.open(output / descriptor["filename"]) as image:
+        assert image.mode == mode
+        assert image.size == (3, 2)
+
+
+@pytest.mark.parametrize(
+    ("save_metadata", "global_disabled"),
+    [(False, False), (True, True)],
+)
+def test_save_respects_both_metadata_toggles(
+    monkeypatch,
+    tmp_path,
+    save_metadata,
+    global_disabled,
+):
+    output = tmp_path / "output"
+    output.mkdir()
+    install_comfy_stubs(
+        monkeypatch,
+        output,
+        disable_metadata=global_disabled,
+    )
+
+    result = save_images(
+        torch.zeros((1, 1, 1, 3)),
+        filename_template="metadata",
+        save_metadata=save_metadata,
+        prompt={"private": "prompt"},
+        extra_pnginfo={"workflow": {"private": "workflow"}},
+    )
+
+    with Image.open(output / result["ui"]["images"][0]["filename"]) as image:
+        assert image.text == {}
+
+
+def test_save_validates_the_full_request_before_creating_directories(
+    monkeypatch,
+    tmp_path,
+):
+    output = tmp_path / "output"
+    output.mkdir()
+    install_comfy_stubs(monkeypatch, output)
+    images = torch.zeros((2, 1, 1, 3))
+    images[1, 0, 0, 0] = float("nan")
+
+    with pytest.raises(ValueError, match="finite"):
+        save_images(images, path_template="must-not-exist")
+
+    assert not (output / "must-not-exist").exists()
+
+
+@pytest.mark.parametrize(
+    "path_template",
+    ["/absolute", r"C:\drive", "../escape", r"nested\..\escape"],
+)
+def test_save_rejects_non_relative_output_paths(
+    monkeypatch,
+    tmp_path,
+    path_template,
+):
+    output = tmp_path / "output"
+    output.mkdir()
+    install_comfy_stubs(monkeypatch, output)
+
+    with pytest.raises(ValueError, match="path_template"):
+        save_images(
+            torch.zeros((1, 1, 1, 3)),
+            path_template=path_template,
+        )
+
+
+def test_save_rejects_a_preexisting_symlink_escape_without_path_leakage(
+    monkeypatch,
+    tmp_path,
+):
+    output = tmp_path / "output"
+    outside = tmp_path / "outside"
+    output.mkdir()
+    outside.mkdir()
+    (output / "escape").symlink_to(outside, target_is_directory=True)
+    install_comfy_stubs(monkeypatch, output)
+
+    with pytest.raises(ValueError, match="output root") as failure:
+        save_images(
+            torch.zeros((1, 1, 1, 3)),
+            path_template="escape",
+        )
+
+    assert str(output) not in str(failure.value)
+    assert str(outside) not in str(failure.value)
+    assert list(outside.iterdir()) == []
+
+
+def test_save_never_overwrites_and_advances_the_exclusive_counter(
+    monkeypatch,
+    tmp_path,
+):
+    output = tmp_path / "output"
+    output.mkdir()
+    existing = output / "image_00001_.png"
+    existing.write_bytes(b"existing")
+    install_comfy_stubs(monkeypatch, output)
+
+    result = save_images(torch.zeros((1, 1, 1, 3)))
+
+    assert existing.read_bytes() == b"existing"
+    assert result["ui"]["images"][0]["filename"] == "image_00002_.png"
+
+
+def test_save_does_not_treat_a_directory_creation_error_as_a_name_collision(
+    monkeypatch,
+    tmp_path,
+):
+    output = tmp_path / "output"
+    output.mkdir()
+    (output / "blocked").write_bytes(b"not a directory")
+    install_comfy_stubs(monkeypatch, output)
+    monkeypatch.setattr(save_module, "MAX_COUNTER", 2)
+
+    with pytest.raises(OSError, match=r"blocked/image_00001_\.png.*File exists"):
+        save_images(
+            torch.zeros((1, 1, 1, 3)),
+            path_template="blocked",
+        )
+
+
+def test_save_rerenders_both_templates_when_counter_is_explicit(
+    monkeypatch,
+    tmp_path,
+):
+    output = tmp_path / "output"
+    (output / "run_00001").mkdir(parents=True)
+    (output / "run_00001" / "image.png").write_bytes(b"existing")
+    install_comfy_stubs(monkeypatch, output)
+
+    result = save_images(
+        torch.zeros((1, 1, 1, 3)),
+        path_template="run_{counter}",
+        filename_template="image",
+    )
+
+    assert result["ui"]["images"] == [
+        {
+            "filename": "image.png",
+            "subfolder": "run_00002",
+            "type": "output",
+        }
+    ]
+
+
+def test_simultaneous_saves_reserve_distinct_files(monkeypatch, tmp_path):
+    output = tmp_path / "output"
+    output.mkdir()
+    install_comfy_stubs(monkeypatch, output)
+    images = torch.zeros((1, 1, 1, 3))
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _index: save_images(images), range(2)))
+
+    filenames = sorted(
+        result["ui"]["images"][0]["filename"] for result in results
+    )
+    assert filenames == ["image_00001_.png", "image_00002_.png"]
+    assert all((output / filename).stat().st_size > 0 for filename in filenames)
+
+
+def test_later_frame_write_failure_rolls_back_only_this_execution(
+    monkeypatch,
+    tmp_path,
+):
+    output = tmp_path / "output"
+    output.mkdir()
+    existing = output / "image_00001_.png"
+    existing.write_bytes(b"existing")
+    install_comfy_stubs(monkeypatch, output)
+    original_save = Image.Image.save
+    writes = 0
+
+    def fail_second_write(image, file, *args, **kwargs):
+        nonlocal writes
+        writes += 1
+        if writes == 2:
+            raise OSError("disk full")
+        return original_save(image, file, *args, **kwargs)
+
+    monkeypatch.setattr(Image.Image, "save", fail_second_write)
+
+    with pytest.raises(OSError, match=r"image_00003_\.png.*disk full") as failure:
+        save_images(torch.zeros((2, 1, 1, 3)))
+
+    assert str(output) not in str(failure.value)
+    assert existing.read_bytes() == b"existing"
+    assert sorted(path.name for path in output.iterdir()) == [existing.name]
+
+
+def test_counter_exhaustion_fails_without_overwrite(monkeypatch, tmp_path):
+    output = tmp_path / "output"
+    output.mkdir()
+    (output / "image_00001_.png").write_bytes(b"one")
+    (output / "image_00002_.png").write_bytes(b"two")
+    install_comfy_stubs(monkeypatch, output)
+    monkeypatch.setattr(save_module, "MAX_COUNTER", 2)
+
+    with pytest.raises(FileExistsError, match="counter"):
+        save_images(torch.zeros((1, 1, 1, 3)))
+
+    assert (output / "image_00001_.png").read_bytes() == b"one"
+    assert (output / "image_00002_.png").read_bytes() == b"two"
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
+def test_save_preserves_cuda_input_device_and_storage(monkeypatch, tmp_path):
+    output = tmp_path / "output"
+    output.mkdir()
+    install_comfy_stubs(monkeypatch, output)
+    images = torch.rand((1, 2, 3, 3), device="cuda")
+    original = images.clone()
+    pointer = images.data_ptr()
+
+    save_images(images, save_metadata=False)
+
+    assert images.device.type == "cuda"
+    assert images.data_ptr() == pointer
+    assert torch.equal(images, original)
