@@ -97,6 +97,133 @@ def test_history_status_requires_success():
     assert not harness().history_succeeded(failed)
 
 
+class Response:
+    def __init__(self, body, url, *, content_length=None):
+        self.body = body
+        self.url = url
+        self.headers = {}
+        if content_length is not None:
+            self.headers["Content-Length"] = str(content_length)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return None
+
+    def geturl(self):
+        return self.url
+
+    def read(self, size=-1):
+        if not self.body:
+            return b""
+        if size < 0:
+            size = len(self.body)
+        chunk, self.body = self.body[:size], self.body[size:]
+        return chunk
+
+
+def test_downloads_exact_public_registry_archive(monkeypatch, tmp_path):
+    responses = iter(
+        [
+            Response(
+                json.dumps(
+                    {
+                        "version": "1.0.0",
+                        "downloadUrl": "https://cdn.example/lfgg-nodes.zip",
+                    }
+                ).encode(),
+                "https://api.comfy.org/nodes/lfgg-nodes/install?version=1.0.0",
+            ),
+            Response(
+                b"candidate",
+                "https://cdn.example/lfgg-nodes.zip",
+                content_length=9,
+            ),
+        ]
+    )
+    monkeypatch.setattr(harness(), "urlopen", lambda *_, **__: next(responses))
+
+    destination = tmp_path / "registry-node.zip"
+    harness().download_registry_archive("lfgg-nodes", "1.0.0", destination)
+
+    assert destination.read_bytes() == b"candidate"
+
+
+def test_rejects_unsafe_registry_download_url(monkeypatch, tmp_path):
+    response = Response(
+        json.dumps(
+            {
+                "version": "1.0.0",
+                "downloadUrl": "http://127.0.0.1/private.zip",
+            }
+        ).encode(),
+        "https://api.comfy.org/nodes/lfgg-nodes/install?version=1.0.0",
+    )
+    monkeypatch.setattr(harness(), "urlopen", lambda *_, **__: response)
+
+    with pytest.raises(ValueError, match="public HTTPS"):
+        harness().download_registry_archive(
+            "lfgg-nodes",
+            "1.0.0",
+            tmp_path / "registry-node.zip",
+        )
+
+
+def test_bounds_registry_archive_download(monkeypatch, tmp_path):
+    responses = iter(
+        [
+            Response(
+                json.dumps(
+                    {
+                        "version": "1.0.0",
+                        "downloadUrl": "https://cdn.example/lfgg-nodes.zip",
+                    }
+                ).encode(),
+                "https://api.comfy.org/nodes/lfgg-nodes/install?version=1.0.0",
+            ),
+            Response(
+                b"",
+                "https://cdn.example/lfgg-nodes.zip",
+                content_length=harness().MAX_ARCHIVE_BYTES + 1,
+            ),
+        ]
+    )
+    monkeypatch.setattr(harness(), "urlopen", lambda *_, **__: next(responses))
+
+    with pytest.raises(ValueError, match="too large"):
+        harness().download_registry_archive(
+            "lfgg-nodes",
+            "1.0.0",
+            tmp_path / "registry-node.zip",
+        )
+
+
+def test_registry_download_preserves_existing_destination(monkeypatch, tmp_path):
+    responses = iter(
+        [
+            Response(
+                json.dumps(
+                    {
+                        "version": "1.0.0",
+                        "downloadUrl": "https://cdn.example/lfgg-nodes.zip",
+                    }
+                ).encode(),
+                "https://api.comfy.org/nodes/lfgg-nodes/install?version=1.0.0",
+            ),
+            Response(b"candidate", "https://cdn.example/lfgg-nodes.zip"),
+        ]
+    )
+    monkeypatch.setattr(harness(), "urlopen", lambda *_, **__: next(responses))
+    destination = tmp_path / "registry-node.zip"
+    destination.write_bytes(b"approved")
+
+    with pytest.raises(FileExistsError):
+        harness().download_registry_archive("lfgg-nodes", "1.0.0", destination)
+
+    assert destination.read_bytes() == b"approved"
+
+
 def test_packed_comfyui_schema_and_workflow(integration_options, tmp_path):
     if not integration_options["comfy_ref"] or not integration_options["device"]:
         pytest.skip("requires --comfy-ref and --device")

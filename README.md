@@ -95,7 +95,19 @@ python -m pytest -q tests/unit
 comfy node validate
 comfy node pack
 python -m pytest -q tests/package --archive node.zip
+python -m pytest -q tests/integration --comfy-ref v0.28.0 --archive node.zip --device cpu
 ```
 
 There is no generated-asset build, runtime installer, or compatibility
 `requirements.txt`.
+
+## Release operators
+
+Publishing is restricted to an exact version-matching tag after the complete
+qualification workflow passes. The `registry-release` GitHub environment must
+require reviewer `lfelipegg`, and its publisher-scoped
+`REGISTRY_ACCESS_TOKEN` must exist only as an environment secret.
+
+Registry versions are immutable. If a version is created before a later
+release step fails, deprecate it with an actionable replacement and publish an
+incremented version; never overwrite or retry the consumed version.

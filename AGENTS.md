@@ -72,8 +72,10 @@ official docs, official examples, then local reference nodes.
 
 - Leave one focused runnable test for each non-trivial branch, parser, path
   boundary, or behavior change. Use real tensors for shape/device behavior.
-- No install, lint, test, build, pack, or publish command is canonical yet.
-  Read checked-in metadata; never infer commands from the stack or research docs.
+- Canonical local gates are `python -m ruff check .`,
+  `python -m pytest -q tests/unit`, `comfy node validate`, `comfy node pack`,
+  and the explicit package/integration pytest commands in `README.md`.
+  Publication remains tag-gated and manually approved.
 - Before release, test the packed archive at the minimum and current supported
   ComfyUI versions, inspect `/object_info`, and run one workflow per node family.
 - Keep `AGENTS.md` durable and short. Put requirements and plans elsewhere;

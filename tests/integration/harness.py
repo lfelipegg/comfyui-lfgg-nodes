@@ -5,8 +5,10 @@ import socket
 import subprocess
 import sys
 import time
+from ipaddress import ip_address
 from pathlib import Path
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from tests.package.archive import inspect_archive
@@ -16,6 +18,8 @@ COMMAND_TIMEOUT = 1800
 HTTP_TIMEOUT = 15
 STARTUP_TIMEOUT = 180
 WORKFLOW_TIMEOUT = 180
+MAX_REGISTRY_RESPONSE_BYTES = 64 * 1024
+MAX_ARCHIVE_BYTES = 10 * 1024 * 1024
 
 
 def validate_comfy_ref(ref):
@@ -71,6 +75,101 @@ def redact(text, *, secrets=(), paths=()):
 def history_succeeded(history):
     status = history.get("status", {})
     return status.get("completed") is True and status.get("status_str") == "success"
+
+
+def _public_https_url(url):
+    if not isinstance(url, str):
+        raise ValueError("Registry download URL must be public HTTPS")
+    parsed = urlsplit(url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+    ):
+        raise ValueError("Registry download URL must be public HTTPS")
+    try:
+        address = ip_address(parsed.hostname)
+    except ValueError:
+        pass
+    else:
+        if not address.is_global:
+            raise ValueError("Registry download URL must be public HTTPS")
+    return url
+
+
+def _read_limited(response, limit):
+    content_length = response.headers.get("Content-Length")
+    if content_length is not None:
+        try:
+            content_length = int(content_length)
+        except ValueError as error:
+            raise ValueError("Registry returned an invalid Content-Length") from error
+        if content_length < 0:
+            raise ValueError("Registry returned an invalid Content-Length")
+        if content_length > limit:
+            raise ValueError("Registry response is too large")
+    body = response.read(limit + 1)
+    if len(body) > limit:
+        raise ValueError("Registry response is too large")
+    return body
+
+
+def download_registry_archive(
+    node_id,
+    version,
+    destination,
+    *,
+    timeout_seconds=180,
+):
+    if (
+        not isinstance(node_id, str)
+        or re.fullmatch(r"[a-z0-9][a-z0-9-]*", node_id) is None
+    ):
+        raise ValueError("Registry node ID is invalid")
+    if not isinstance(version, str) or re.fullmatch(r"\d+\.\d+\.\d+", version) is None:
+        raise ValueError("Registry version must be exact SemVer")
+
+    api_url = f"https://api.comfy.org/nodes/{node_id}/install?version={version}"
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        try:
+            with urlopen(api_url, timeout=HTTP_TIMEOUT) as response:
+                _public_https_url(response.geturl())
+                record = json.loads(
+                    _read_limited(response, MAX_REGISTRY_RESPONSE_BYTES)
+                )
+            if not isinstance(record, dict) or record.get("version") != version:
+                raise LookupError(f"Registry version {version} is not active")
+            download_url = _public_https_url(record.get("downloadUrl"))
+            break
+        except (
+            HTTPError,
+            URLError,
+            TimeoutError,
+            LookupError,
+            json.JSONDecodeError,
+        ) as error:
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"Registry version {node_id} {version} did not become active"
+                ) from error
+            time.sleep(1)
+
+    destination = Path(destination)
+    created = False
+    try:
+        with urlopen(download_url, timeout=HTTP_TIMEOUT) as response:
+            _public_https_url(response.geturl())
+            archive = _read_limited(response, MAX_ARCHIVE_BYTES)
+        with destination.open("xb") as file:
+            created = True
+            file.write(archive)
+    except Exception:
+        if created:
+            destination.unlink(missing_ok=True)
+        raise
+    return destination
 
 
 def _run(command, *, cwd=None):
