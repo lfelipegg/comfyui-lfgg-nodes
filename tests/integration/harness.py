@@ -602,10 +602,10 @@ print(json.dumps(shapes))
             protected_paths,
             metadata=[serialized_workflow],
         )
+        safe_error = redact(str(error), **disclosures)
         if logs:
-            safe_error = redact(str(error), **disclosures)
-            raise AssertionError(f"{safe_error}\nComfyUI log:\n{logs}") from error
-        raise
+            safe_error = f"{safe_error}\nComfyUI log:\n{logs}"
+        raise AssertionError(safe_error) from None
     finally:
         if process is not None and process.poll() is None:
             process.terminate()

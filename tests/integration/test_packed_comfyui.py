@@ -1,5 +1,6 @@
 import json
 import socket
+import traceback
 from importlib import import_module
 from pathlib import Path
 from types import SimpleNamespace
@@ -271,6 +272,72 @@ def test_redacts_json_escaped_disclosures():
 
     for protected in (credential, metadata, str(workspace)):
         assert json.dumps(protected)[1:-1] not in sanitized
+
+
+def test_failure_traceback_redacts_error_and_log(monkeypatch, tmp_path):
+    secret = "active-credential"
+    workspace = tmp_path / "private-workspace"
+    monkeypatch.setenv("GITHUB_TOKEN", secret)
+
+    def fail_start(*_args, stdout, **_kwargs):
+        stdout.write(f"log secret={secret} workspace={workspace}")
+        stdout.flush()
+        raise RuntimeError(f"start failed: {secret} {workspace}")
+
+    monkeypatch.setattr(harness(), "reserve_loopback_port", lambda: 8188)
+    monkeypatch.setattr(harness().subprocess, "Popen", fail_start)
+
+    with pytest.raises(Exception) as caught:
+        harness()._exercise_comfyui(
+            checkout=tmp_path / "checkout",
+            python=tmp_path / "environment" / "bin" / "python",
+            device="cpu",
+            workspace=workspace,
+            manifest={"nodes": {}},
+            workflow={},
+        )
+
+    rendered = "".join(
+        traceback.format_exception(caught.type, caught.value, caught.tb)
+    )
+    assert caught.type is AssertionError
+    assert secret not in rendered
+    assert str(workspace) not in rendered
+    assert "ComfyUI log:" in rendered
+
+
+def test_failure_traceback_redacts_error_without_log(monkeypatch, tmp_path):
+    secret = "active-credential"
+    workspace = tmp_path / "private-workspace"
+    log_path = workspace / "comfyui.log"
+    original_open = Path.open
+    monkeypatch.setenv("GITHUB_TOKEN", secret)
+
+    def fail_before_log(path, *args, **kwargs):
+        if path == log_path:
+            raise RuntimeError(f"start failed: {secret} {workspace}")
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(harness(), "reserve_loopback_port", lambda: 8188)
+    monkeypatch.setattr(Path, "open", fail_before_log)
+
+    with pytest.raises(Exception) as caught:
+        harness()._exercise_comfyui(
+            checkout=tmp_path / "checkout",
+            python=tmp_path / "environment" / "bin" / "python",
+            device="cpu",
+            workspace=workspace,
+            manifest={"nodes": {}},
+            workflow={},
+        )
+
+    rendered = "".join(
+        traceback.format_exception(caught.type, caught.value, caught.tb)
+    )
+    assert caught.type is AssertionError
+    assert secret not in rendered
+    assert str(workspace) not in rendered
+    assert "<redacted>" in rendered
 
 
 def test_rejects_discovered_latent_symlink_escape(tmp_path):

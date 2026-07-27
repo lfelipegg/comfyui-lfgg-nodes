@@ -175,6 +175,7 @@ def test_candidate_matches_the_approved_content_manifest(archive_path):
 
 def test_candidate_has_no_sensitive_content(archive_path):
     assert archive_path.exists(), f"candidate archive not found: {archive_path}"
+    archive_tools().inspect_archive(archive_path)
     with ZipFile(archive_path) as archive:
         content = b"".join(archive.read(member) for member in archive.infolist())
 
@@ -187,6 +188,25 @@ def test_candidate_has_no_sensitive_content(archive_path):
     ):
         if value := os.environ.get(name):
             assert value.encode() not in content
+
+
+def test_sensitive_scan_validates_before_reading_members(tmp_path, monkeypatch):
+    candidate = tmp_path / "oversized.zip"
+    write_zip(candidate, [("oversized.bin", b"12")])
+    monkeypatch.setattr(archive_tools(), "MAX_MEMBER_BYTES", 1)
+    original_read = ZipFile.read
+    reads = []
+
+    def record_read(archive, member, *args, **kwargs):
+        reads.append(member)
+        return original_read(archive, member, *args, **kwargs)
+
+    monkeypatch.setattr(ZipFile, "read", record_read)
+
+    with pytest.raises(ValueError, match="archive size limit"):
+        test_candidate_has_no_sensitive_content(candidate)
+
+    assert reads == []
 
 
 def test_candidate_builds_and_installs_non_editably(archive_path, tmp_path):
