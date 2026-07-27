@@ -62,13 +62,17 @@ def assert_object_info_matches_manifest(object_info, manifest):
             )
 
 
-def redact(text, *, secrets=(), paths=()):
-    replacements = [str(secret) for secret in secrets if secret]
+def redact(text, *, secrets=(), metadata=(), paths=()):
+    replacements = [str(value) for value in (*secrets, *metadata) if value]
     for path in paths:
         value = str(path)
         replacements.extend((value, value.replace("\\", "/"), value.replace("/", "\\")))
-    for value in sorted(set(replacements), key=len, reverse=True):
+    replacements = sorted(set(replacements), key=len, reverse=True)
+    for value in replacements:
         text = text.replace(value, "<redacted>")
+    assert not any(value in text for value in replacements), (
+        "protected disclosure remained after redaction"
+    )
     return text
 
 
@@ -260,7 +264,7 @@ def _install_comfyui(python, checkout, device):
     _run([*pip, "install", "-r", str(checkout / "requirements.txt")])
 
 
-def _failure_log(log_path, workspace):
+def _failure_log(log_path, workspace, *, metadata=()):
     if not log_path.exists():
         return ""
     text = log_path.read_text(errors="replace")[-16_000:]
@@ -273,7 +277,7 @@ def _failure_log(log_path, workspace):
             "GITHUB_TOKEN",
         )
     ]
-    return redact(text, secrets=secrets, paths=[workspace])
+    return redact(text, secrets=secrets, metadata=metadata, paths=[workspace])
 
 
 def run_packed_comfyui(
@@ -375,6 +379,21 @@ def run_packed_comfyui(
         server_environment.pop(name, None)
 
     process = None
+    credentials = [
+        os.environ.get(name)
+        for name in (
+            "REGISTRY_ACCESS_TOKEN",
+            "COMFY_API_KEY",
+            "COMFY_CLOUD_API_KEY",
+            "GITHUB_TOKEN",
+        )
+    ]
+    serialized_workflow = json.dumps(workflow, sort_keys=True)
+    disclosures = {
+        "secrets": credentials,
+        "metadata": [serialized_workflow],
+        "paths": [workspace],
+    }
     try:
         with log_path.open("w") as log:
             process = subprocess.Popen(
@@ -386,32 +405,82 @@ def run_packed_comfyui(
                 text=True,
             )
         object_info = _wait_for_server(base_url)
+        redact(json.dumps(object_info, sort_keys=True), **disclosures)
         assert_object_info_matches_manifest(object_info, manifest)
-        serialized_info = json.dumps(object_info)
-        assert str(workspace) not in serialized_info
 
         submitted = _request_json(base_url, "/prompt", payload={"prompt": workflow})
+        serialized_submission = redact(
+            json.dumps(submitted, sort_keys=True),
+            **disclosures,
+        )
         if "error" in submitted or submitted.get("node_errors"):
-            raise AssertionError(f"workflow rejected: {submitted}")
+            raise AssertionError(f"workflow rejected: {serialized_submission}")
         prompt_id = submitted["prompt_id"]
         history = _wait_for_history(base_url, prompt_id)
-        if not history_succeeded(history):
-            raise AssertionError(f"workflow failed: {history.get('status')}")
-        assert str(workspace) not in json.dumps(history)
-
-        files = sorted(
-            path.relative_to(output).as_posix()
-            for path in output.rglob("*.latent")
-            if path.resolve().is_relative_to(output.resolve())
+        serialized_history = redact(
+            json.dumps(history, sort_keys=True),
+            **disclosures,
         )
+        if not history_succeeded(history):
+            raise AssertionError(f"workflow failed: {serialized_history}")
+
+        output_root = output.resolve()
+        files = sorted(
+            path.resolve()
+            for path in output.rglob("*.latent")
+            if path.resolve().is_relative_to(output_root)
+        )
+        described_files = []
+        for node_output in history.get("outputs", {}).values():
+            for descriptor in node_output.get("latents", ()):
+                assert descriptor.get("type") == "output", (
+                    "SaveLatent descriptor is not an output"
+                )
+                path = (
+                    output_root
+                    / descriptor.get("subfolder", "")
+                    / descriptor["filename"]
+                ).resolve()
+                assert path.is_relative_to(output_root), (
+                    "SaveLatent descriptor escaped the output root"
+                )
+                described_files.append(path)
+        assert sorted(described_files) == files, (
+            "SaveLatent descriptors do not match confined output files"
+        )
+        assert all(path.stat().st_size > 0 for path in files), (
+            "SaveLatent produced an empty file"
+        )
+
+        shape_reader = """
+import json
+import sys
+from safetensors import safe_open
+
+shapes = []
+for filename in sys.argv[1:]:
+    with safe_open(filename, framework="pt", device="cpu") as tensors:
+        shapes.append(list(tensors.get_slice("latent_tensor").get_shape()))
+print(json.dumps(shapes))
+"""
+        shapes = json.loads(
+            _run(
+                [str(python), "-c", shape_reader, *(str(path) for path in files)]
+            ).stdout
+        )
+        relative_files = [path.relative_to(output_root).as_posix() for path in files]
+        output_shapes = dict(zip(relative_files, shapes, strict=True))
+        _failure_log(log_path, workspace, metadata=[serialized_workflow])
         return {
             "registered_ids": sorted(manifest["nodes"]),
-            "output_files": files,
+            "output_files": relative_files,
+            "output_shapes": output_shapes,
         }
     except Exception as error:
-        logs = _failure_log(log_path, workspace)
+        logs = _failure_log(log_path, workspace, metadata=[serialized_workflow])
         if logs:
-            raise AssertionError(f"{error}\nComfyUI log:\n{logs}") from error
+            safe_error = redact(str(error), **disclosures)
+            raise AssertionError(f"{safe_error}\nComfyUI log:\n{logs}") from error
         raise
     finally:
         if process is not None and process.poll() is None:

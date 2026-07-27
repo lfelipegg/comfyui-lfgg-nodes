@@ -89,6 +89,28 @@ def test_redacts_credentials_and_local_paths():
     )
 
 
+def test_redacts_successful_response_disclosures():
+    credential = "active-credential"
+    metadata = json.dumps({"workflow": "private-metadata"})
+    workspace = Path("/private/workspace")
+    text = (
+        f"credential={credential} metadata={metadata} "
+        f"native={workspace} windows={str(workspace).replace('/', chr(92))}"
+    )
+
+    sanitized = harness().redact(
+        text,
+        secrets=[credential],
+        metadata=[metadata],
+        paths=[workspace],
+    )
+
+    assert credential not in sanitized
+    assert metadata not in sanitized
+    assert str(workspace) not in sanitized
+    assert str(workspace).replace("/", "\\") not in sanitized
+
+
 def test_history_status_requires_success():
     successful = {"status": {"completed": True, "status_str": "success"}}
     failed = {"status": {"completed": True, "status_str": "error"}}
@@ -529,3 +551,8 @@ def test_packed_comfyui_schema_and_workflow(integration_options, tmp_path):
         "lfgg/sizing/long_side_00001_.latent",
         "lfgg/sizing/pixel_budget_00001_.latent",
     ]
+    assert result["output_shapes"] == {
+        "lfgg/sizing/aspect_ratio_00001_.latent": [1, 4, 72, 128],
+        "lfgg/sizing/long_side_00001_.latent": [2, 4, 36, 64],
+        "lfgg/sizing/pixel_budget_00001_.latent": [2, 4, 27, 48],
+    }
