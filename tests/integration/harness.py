@@ -21,6 +21,12 @@ STARTUP_TIMEOUT = 180
 WORKFLOW_TIMEOUT = 180
 MAX_REGISTRY_RESPONSE_BYTES = 64 * 1024
 MAX_ARCHIVE_BYTES = 10 * 1024 * 1024
+SENSITIVE_ENVIRONMENT_VARIABLES = (
+    "REGISTRY_ACCESS_TOKEN",
+    "COMFY_API_KEY",
+    "COMFY_CLOUD_API_KEY",
+    "GITHUB_TOKEN",
+)
 
 
 def validate_comfy_ref(ref):
@@ -291,12 +297,7 @@ def _failure_log(log_path, paths, *, metadata=()):
     text = log_path.read_text(errors="replace")[-16_000:]
     secrets = [
         os.environ.get(name)
-        for name in (
-            "REGISTRY_ACCESS_TOKEN",
-            "COMFY_API_KEY",
-            "COMFY_CLOUD_API_KEY",
-            "GITHUB_TOKEN",
-        )
+        for name in SENSITIVE_ENVIRONMENT_VARIABLES
     ]
     return redact(text, secrets=secrets, metadata=metadata, paths=paths)
 
@@ -502,23 +503,13 @@ def _exercise_comfyui(
         command.extend(("--cuda-device", "0"))
 
     server_environment = os.environ.copy()
-    for name in (
-        "REGISTRY_ACCESS_TOKEN",
-        "COMFY_API_KEY",
-        "COMFY_CLOUD_API_KEY",
-        "GITHUB_TOKEN",
-    ):
+    for name in SENSITIVE_ENVIRONMENT_VARIABLES:
         server_environment.pop(name, None)
 
     process = None
     credentials = [
         os.environ.get(name)
-        for name in (
-            "REGISTRY_ACCESS_TOKEN",
-            "COMFY_API_KEY",
-            "COMFY_CLOUD_API_KEY",
-            "GITHUB_TOKEN",
-        )
+        for name in SENSITIVE_ENVIRONMENT_VARIABLES
     ]
     serialized_workflow = json.dumps(workflow, sort_keys=True)
     protected_paths = [workspace, checkout, python.parent.parent]

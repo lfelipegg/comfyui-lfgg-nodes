@@ -75,7 +75,7 @@ def inspect_archive(archive_path, *, extract_to=None):
             mode = member.external_attr >> 16
             if stat.S_ISLNK(mode):
                 raise ValueError(f"symlink archive member: {normalized}")
-            if stat.S_IFMT(mode) and not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+            if mode and not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
                 raise ValueError(f"unsafe archive member type: {normalized}")
             if member.is_dir():
                 continue

@@ -32,7 +32,11 @@ def archive_tools():
 def write_zip(path, members):
     with ZipFile(path, "w", ZIP_DEFLATED) as archive:
         for name, content in members:
-            archive.writestr(name, content)
+            member = ZipInfo(name)
+            member.create_system = 3
+            member.compress_type = ZIP_DEFLATED
+            member.external_attr = (stat.S_IFREG | 0o644) << 16
+            archive.writestr(member, content)
 
 
 @pytest.mark.parametrize(
@@ -72,6 +76,18 @@ def test_rejects_symlink_members(tmp_path):
         archive.writestr(link, "target")
 
     with pytest.raises(ValueError, match="symlink"):
+        archive_tools().inspect_archive(candidate)
+
+
+def test_rejects_nonzero_mode_without_member_type(tmp_path):
+    candidate = tmp_path / "ambiguous-type.zip"
+    member = ZipInfo("ambiguous")
+    member.create_system = 3
+    member.external_attr = 0o644 << 16
+    with ZipFile(candidate, "w") as archive:
+        archive.writestr(member, b"ambiguous")
+
+    with pytest.raises(ValueError, match="unsafe archive member type: ambiguous"):
         archive_tools().inspect_archive(candidate)
 
 
