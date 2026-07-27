@@ -14,6 +14,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 from tests.package.archive import inspect_archive
 
 COMFYUI_REPOSITORY = "https://github.com/Comfy-Org/ComfyUI.git"
+INSTALLED_COMFYUI_REF = "v0.28.0"
 COMMAND_TIMEOUT = 1800
 HTTP_TIMEOUT = 15
 STARTUP_TIMEOUT = 180
@@ -284,7 +285,7 @@ def _install_comfyui(python, checkout, device):
     _run([*pip, "install", "-r", str(checkout / "requirements.txt")])
 
 
-def _failure_log(log_path, workspace, *, metadata=()):
+def _failure_log(log_path, paths, *, metadata=()):
     if not log_path.exists():
         return ""
     text = log_path.read_text(errors="replace")[-16_000:]
@@ -297,7 +298,7 @@ def _failure_log(log_path, workspace, *, metadata=()):
             "GITHUB_TOKEN",
         )
     ]
-    return redact(text, secrets=secrets, metadata=metadata, paths=[workspace])
+    return redact(text, secrets=secrets, metadata=metadata, paths=paths)
 
 
 def run_packed_comfyui(
@@ -317,13 +318,7 @@ def run_packed_comfyui(
     checkout = workspace / "ComfyUI"
     environment = workspace / "environment"
     custom_node = checkout / "custom_nodes" / "lfgg-nodes"
-    output = workspace / "output"
-    input_directory = workspace / "input"
-    temp_directory = workspace / "temp"
-    user_directory = workspace / "user"
-    log_path = workspace / "comfyui.log"
-    for directory in (output, input_directory, temp_directory, user_directory):
-        directory.mkdir(parents=True, exist_ok=True)
+    workspace.mkdir(parents=True, exist_ok=True)
 
     _run(
         [
@@ -352,6 +347,123 @@ def run_packed_comfyui(
             str(custom_node),
         ]
     )
+    return _exercise_comfyui(
+        checkout=checkout,
+        python=python,
+        device=device,
+        workspace=workspace,
+        manifest=manifest,
+        workflow=workflow,
+    )
+
+
+def _validate_installed_comfyui(installed_comfyui):
+    try:
+        checkout = Path(installed_comfyui).resolve(strict=True)
+        root = Path(
+            _run(
+                [
+                    "git",
+                    "-C",
+                    str(checkout),
+                    "rev-parse",
+                    "--show-toplevel",
+                ]
+            ).stdout.strip()
+        ).resolve(strict=True)
+        tag = _run(
+            [
+                "git",
+                "-C",
+                str(checkout),
+                "describe",
+                "--tags",
+                "--exact-match",
+                "HEAD",
+            ]
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise ValueError(
+            "installed ComfyUI must be an exact v0.28.0 checkout"
+        ) from error
+    if not checkout.is_dir() or root != checkout or tag != INSTALLED_COMFYUI_REF:
+        raise ValueError("installed ComfyUI must be an exact v0.28.0 checkout")
+
+    try:
+        custom_nodes = (checkout / "custom_nodes").resolve(strict=True)
+        custom_node = (custom_nodes / "lfgg-nodes").resolve(strict=True)
+    except OSError as error:
+        raise ValueError(
+            "installed node beneath custom_nodes is required"
+        ) from error
+    if (
+        not custom_nodes.is_relative_to(checkout)
+        or not custom_node.is_dir()
+        or not custom_node.is_relative_to(custom_nodes)
+    ):
+        raise ValueError("installed node beneath custom_nodes is required")
+
+    workspace = checkout.parent
+    for environment in (
+        checkout / ".venv",
+        checkout / "venv",
+        workspace / ".venv",
+        workspace / "environment",
+    ):
+        try:
+            environment = environment.resolve(strict=True)
+        except OSError:
+            continue
+        if not environment.is_dir() or not environment.is_relative_to(workspace):
+            continue
+        python = _environment_python(environment)
+        if python.is_file():
+            return checkout, python
+    raise ValueError("installed ComfyUI needs a contained environment Python")
+
+
+def run_installed_comfyui(
+    *,
+    installed_comfyui,
+    device,
+    workspace,
+    manifest,
+    workflow,
+):
+    checkout, python = _validate_installed_comfyui(installed_comfyui)
+    return _exercise_comfyui(
+        checkout=checkout,
+        python=python,
+        device=device,
+        workspace=workspace,
+        manifest=manifest,
+        workflow=workflow,
+    )
+
+
+def _exercise_comfyui(
+    *,
+    checkout,
+    python,
+    device,
+    workspace,
+    manifest,
+    workflow,
+):
+    if device not in {"cpu", "cuda"}:
+        raise ValueError("device must be cpu or cuda")
+
+    checkout = Path(checkout).resolve()
+    python = Path(python)
+    workspace = Path(workspace).resolve()
+    output = workspace / "output"
+    input_directory = workspace / "input"
+    temp_directory = workspace / "temp"
+    user_directory = workspace / "user"
+    log_path = workspace / "comfyui.log"
+    for directory in (output, input_directory, temp_directory, user_directory):
+        directory.mkdir(parents=True, exist_ok=True)
+
     if device == "cuda":
         _run(
             [
@@ -409,10 +521,11 @@ def run_packed_comfyui(
         )
     ]
     serialized_workflow = json.dumps(workflow, sort_keys=True)
+    protected_paths = [workspace, checkout, python.parent.parent]
     disclosures = {
         "secrets": credentials,
         "metadata": [serialized_workflow],
-        "paths": [workspace],
+        "paths": protected_paths,
     }
     try:
         with log_path.open("w") as log:
@@ -486,14 +599,18 @@ print(json.dumps(shapes))
         )
         relative_files = [path.relative_to(output_root).as_posix() for path in files]
         output_shapes = dict(zip(relative_files, shapes, strict=True))
-        _failure_log(log_path, workspace, metadata=[serialized_workflow])
+        _failure_log(log_path, protected_paths, metadata=[serialized_workflow])
         return {
             "registered_ids": sorted(manifest["nodes"]),
             "output_files": relative_files,
             "output_shapes": output_shapes,
         }
     except Exception as error:
-        logs = _failure_log(log_path, workspace, metadata=[serialized_workflow])
+        logs = _failure_log(
+            log_path,
+            protected_paths,
+            metadata=[serialized_workflow],
+        )
         if logs:
             safe_error = redact(str(error), **disclosures)
             raise AssertionError(f"{safe_error}\nComfyUI log:\n{logs}") from error

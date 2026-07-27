@@ -2,6 +2,7 @@ import json
 import socket
 from importlib import import_module
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -23,6 +24,144 @@ def test_rejects_non_release_comfyui_refs(ref):
 
 def test_accepts_an_exact_comfyui_release_tag():
     assert harness().validate_comfy_ref("v0.28.0") == "v0.28.0"
+
+
+def test_registers_installed_comfyui_option():
+    options = []
+
+    class Parser:
+        def addoption(self, *names, **settings):
+            options.append((names, settings))
+
+    import_module("tests.integration.conftest").pytest_addoption(Parser())
+
+    assert any(names == ("--installed-comfyui",) for names, _ in options)
+
+
+def test_rejects_installed_comfyui_with_comfy_ref():
+    class Config:
+        @staticmethod
+        def getoption(name):
+            return {
+                "--comfy-ref": "v0.28.0",
+                "--installed-comfyui": "/tmp/ComfyUI",
+            }[name]
+
+    with pytest.raises(pytest.UsageError, match="mutually exclusive"):
+        import_module("tests.integration.conftest").pytest_configure(Config())
+
+
+def _stub_installed_checkout(monkeypatch, tmp_path, *, tag="v0.28.0", root=None):
+    checkout = tmp_path / "ComfyUI"
+    (checkout / "custom_nodes" / "lfgg-nodes").mkdir(parents=True)
+    python = checkout / ".venv" / (
+        "Scripts/python.exe" if harness().sys.platform == "win32" else "bin/python"
+    )
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b"")
+    python.chmod(0o755)
+
+    def git_result(command, *, cwd=None):
+        assert cwd is None
+        if command[-1] == "--show-toplevel":
+            return SimpleNamespace(stdout=f"{root or checkout}\n")
+        if command[-2:] == ["--exact-match", "HEAD"]:
+            return SimpleNamespace(stdout=f"{tag}\n")
+        raise AssertionError(command)
+
+    monkeypatch.setattr(harness(), "_run", git_result)
+    return checkout, python
+
+
+def test_validates_exact_installed_comfyui_checkout(monkeypatch, tmp_path):
+    checkout, python = _stub_installed_checkout(monkeypatch, tmp_path)
+
+    assert harness()._validate_installed_comfyui(checkout) == (
+        checkout.resolve(),
+        python,
+    )
+
+
+@pytest.mark.parametrize(
+    ("tag", "root"),
+    [
+        ("v0.28.1", None),
+        ("v0.28.0", "parent"),
+    ],
+)
+def test_rejects_wrong_installed_comfyui_checkout(
+    monkeypatch,
+    tmp_path,
+    tag,
+    root,
+):
+    checkout, _ = _stub_installed_checkout(
+        monkeypatch,
+        tmp_path,
+        tag=tag,
+        root=tmp_path if root else None,
+    )
+
+    with pytest.raises(ValueError, match="exact v0.28.0 checkout"):
+        harness()._validate_installed_comfyui(checkout)
+
+
+def test_rejects_escaped_installed_comfyui_environment(monkeypatch, tmp_path):
+    checkout, python = _stub_installed_checkout(
+        monkeypatch,
+        tmp_path / "workspace",
+    )
+    outside = tmp_path / "outside-environment"
+    python.parent.parent.rename(outside)
+    python.parent.parent.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="contained environment Python"):
+        harness()._validate_installed_comfyui(checkout)
+
+
+def test_rejects_escaped_installed_custom_nodes_root(monkeypatch, tmp_path):
+    checkout, _ = _stub_installed_checkout(monkeypatch, tmp_path)
+    custom_nodes = checkout / "custom_nodes"
+    outside = tmp_path / "outside-custom-nodes"
+    custom_nodes.rename(outside)
+    custom_nodes.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="installed node beneath custom_nodes"):
+        harness()._validate_installed_comfyui(checkout)
+
+
+def test_rejects_escaped_installed_custom_node(monkeypatch, tmp_path):
+    checkout, _ = _stub_installed_checkout(monkeypatch, tmp_path)
+    custom_node = checkout / "custom_nodes" / "lfgg-nodes"
+    outside = tmp_path / "outside-node"
+    custom_node.rename(outside)
+    custom_node.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="installed node beneath custom_nodes"):
+        harness()._validate_installed_comfyui(checkout)
+
+
+def test_installed_comfyui_reuses_server_runner(monkeypatch, tmp_path):
+    checkout, python = _stub_installed_checkout(monkeypatch, tmp_path)
+    expected = {"registered_ids": ["LFGG_Test"]}
+    exercised = []
+    monkeypatch.setattr(
+        harness(),
+        "_exercise_comfyui",
+        lambda **arguments: exercised.append(arguments) or expected,
+    )
+
+    result = harness().run_installed_comfyui(
+        installed_comfyui=checkout,
+        device="cpu",
+        workspace=tmp_path / "exercise",
+        manifest={"nodes": {"LFGG_Test": {}}},
+        workflow={"1": {"class_type": "LFGG_Test"}},
+    )
+
+    assert result == expected
+    assert exercised[0]["checkout"] == checkout.resolve()
+    assert exercised[0]["python"] == python
 
 
 def test_reserves_a_loopback_port():
@@ -564,21 +703,7 @@ def test_registry_download_removes_new_partial_destination(monkeypatch, tmp_path
     assert not destination.exists()
 
 
-def test_packed_comfyui_schema_and_workflow(integration_options, tmp_path):
-    if not integration_options["comfy_ref"] or not integration_options["device"]:
-        pytest.skip("requires --comfy-ref and --device")
-
-    archive = Path(integration_options["archive"]).resolve()
-    assert archive.exists(), f"candidate archive not found: {archive}"
-    result = harness().run_packed_comfyui(
-        comfy_ref=integration_options["comfy_ref"],
-        archive=archive,
-        device=integration_options["device"],
-        workspace=tmp_path,
-        manifest=json.loads((ROOT / "release" / "1.0.0-schema.json").read_text()),
-        workflow=json.loads((ROOT / "workflows" / "sizing.json").read_text()),
-    )
-
+def _assert_sizing_result(result):
     assert result["registered_ids"] == [
         "LFGG_DimensionsByAspectRatio",
         "LFGG_ImageDimensionsByLongSide",
@@ -594,3 +719,39 @@ def test_packed_comfyui_schema_and_workflow(integration_options, tmp_path):
         "lfgg/sizing/long_side_00001_.latent": [2, 4, 36, 64],
         "lfgg/sizing/pixel_budget_00001_.latent": [2, 4, 27, 48],
     }
+
+
+def test_packed_comfyui_schema_and_workflow(integration_options, tmp_path):
+    if not integration_options["comfy_ref"] or not integration_options["device"]:
+        pytest.skip("requires --comfy-ref and --device")
+
+    archive = Path(integration_options["archive"]).resolve()
+    assert archive.exists(), f"candidate archive not found: {archive}"
+    result = harness().run_packed_comfyui(
+        comfy_ref=integration_options["comfy_ref"],
+        archive=archive,
+        device=integration_options["device"],
+        workspace=tmp_path,
+        manifest=json.loads((ROOT / "release" / "1.0.0-schema.json").read_text()),
+        workflow=json.loads((ROOT / "workflows" / "sizing.json").read_text()),
+    )
+
+    _assert_sizing_result(result)
+
+
+def test_installed_comfyui_schema_and_workflow(integration_options, tmp_path):
+    if (
+        not integration_options["installed_comfyui"]
+        or not integration_options["device"]
+    ):
+        pytest.skip("requires --installed-comfyui and --device")
+
+    result = harness().run_installed_comfyui(
+        installed_comfyui=integration_options["installed_comfyui"],
+        device=integration_options["device"],
+        workspace=tmp_path,
+        manifest=json.loads((ROOT / "release" / "1.0.0-schema.json").read_text()),
+        workflow=json.loads((ROOT / "workflows" / "sizing.json").read_text()),
+    )
+
+    _assert_sizing_result(result)

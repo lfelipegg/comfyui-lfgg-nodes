@@ -80,9 +80,31 @@ jobs:
           ${{ needs.tag.outputs.version }}
           registry-node.zip
       - run: python -m pytest -q tests/package --archive registry-node.zip
-      - name: Exercise fresh Registry archive
+      - name: Create fresh Registry workspace
+        env:
+          REGISTRY_WORKSPACE: ${{ runner.temp }}/lfgg-registry-workspace
+          REGISTRY_TOOLS: ${{ runner.temp }}/lfgg-registry-tools
+        run: |
+          python -m venv "$REGISTRY_TOOLS"
+          "$REGISTRY_TOOLS/bin/python" -m pip install "comfy-cli==1.12.0"
+          echo "REGISTRY_WORKSPACE=$REGISTRY_WORKSPACE" >> "$GITHUB_ENV"
+          echo "REGISTRY_TOOLS=$REGISTRY_TOOLS" >> "$GITHUB_ENV"
+      - name: Install exact supported ComfyUI
+        run: >-
+          "$REGISTRY_TOOLS/bin/comfy"
+          --workspace="$REGISTRY_WORKSPACE/ComfyUI"
+          --skip-prompt
+          install --version 0.28.0 --cpu
+      - name: Install exact published Registry version
+        env:
+          VERSION: ${{ needs.tag.outputs.version }}
+        run: >-
+          "$REGISTRY_TOOLS/bin/comfy"
+          --workspace="$REGISTRY_WORKSPACE/ComfyUI"
+          --skip-prompt
+          node install "lfgg-nodes@${VERSION}" --exit-on-fail
+      - name: Exercise fresh Registry installation
         run: >-
           python -m pytest -q tests/integration
-          --comfy-ref v0.28.0
-          --archive registry-node.zip
+          --installed-comfyui "$REGISTRY_WORKSPACE/ComfyUI"
           --device cpu
