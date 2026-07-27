@@ -94,7 +94,10 @@ def _public_https_url(url):
     addresses = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
     resolved = [ip_address(address[4][0]) for address in addresses]
     if not resolved or any(
-        not address.is_global or address.is_multicast for address in resolved
+        not address.is_global
+        or address.is_multicast
+        or (address.version == 6 and address.is_site_local)
+        for address in resolved
     ):
         raise ValueError("Registry download URL must be public HTTPS")
     return url
@@ -152,6 +155,7 @@ def download_registry_archive(
     deadline = time.monotonic() + timeout_seconds
     while True:
         try:
+            _public_https_url(api_url)
             with _REGISTRY_OPENER.open(api_url, timeout=HTTP_TIMEOUT) as response:
                 _public_https_url(response.geturl())
                 record = json.loads(

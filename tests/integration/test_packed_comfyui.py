@@ -120,15 +120,17 @@ def test_rejects_localhost_registry_urls(monkeypatch, hostname):
         "224.0.0.1",
         "240.0.0.1",
         "0.0.0.0",
+        "fec0::1",
     ],
 )
 def test_rejects_registry_hosts_with_any_non_public_address(monkeypatch, address):
+    family = socket.AF_INET6 if ":" in address else socket.AF_INET
     monkeypatch.setattr(
         harness().socket,
         "getaddrinfo",
         lambda *_args, **_kwargs: [
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
-            (socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, 443)),
+            (family, socket.SOCK_STREAM, 6, "", (address, 443)),
         ],
     )
 
@@ -185,6 +187,32 @@ def test_registry_opener_uses_public_https_redirect_handler():
         isinstance(handler, harness()._PublicHTTPSRedirectHandler)
         for handler in harness()._REGISTRY_OPENER.handlers
     )
+
+
+def test_rejects_private_initial_registry_api_before_open(monkeypatch, tmp_path):
+    opened = []
+    monkeypatch.setattr(
+        harness().socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))
+        ],
+    )
+
+    def record_open(url, **_kwargs):
+        opened.append(url)
+        raise AssertionError("unsafe Registry API URL was opened")
+
+    monkeypatch.setattr(harness()._REGISTRY_OPENER, "open", record_open)
+
+    with pytest.raises(ValueError, match="public HTTPS"):
+        harness().download_registry_archive(
+            "lfgg-nodes",
+            "1.0.0",
+            tmp_path / "registry-node.zip",
+        )
+
+    assert opened == []
 
 
 class Response:
