@@ -38,6 +38,7 @@ jobs:
           python -m pip install -e ".[dev]"
       - run: python -m ruff check .
       - run: python -m pytest -q tests/unit
+      - run: node --test tests/frontend/ratio_preview.test.mjs
 
   package:
     name: Package (Linux, Python 3.13)

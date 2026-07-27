@@ -17,14 +17,15 @@ cd ComfyUI/custom_nodes
 git clone https://github.com/lfelipegg/comfyui-lfgg-nodes.git lfgg-nodes
 ```
 
-Restart ComfyUI after installation. Pillow is the only runtime dependency;
-there is no frontend extension.
+Restart ComfyUI after installation. Pillow is the only Python runtime
+dependency. The pack includes a build-free frontend extension.
 
 ## Compatibility
 
-The required 1.1.0 release qualification covers:
+The required 1.2.0 release qualification covers:
 
 - ComfyUI `>=0.28.0`, tested at exact stable tags rather than `master`
+- ComfyUI frontend `>=1.45.21`
 - Python `>=3.10,<3.14`
 - Linux and Windows
 - CPU and NVIDIA CUDA
@@ -45,6 +46,13 @@ All three nodes are in `LFGG/sizing`. They return positive dimensions aligned
 to the exact `divisible_by` value. Aspect fidelity wins before pixel area, with
 a deterministic side-size tie-break. Limits are hard ceilings and impossible
 alignments raise actionable errors.
+
+`LFGG Dimensions by Aspect Ratio` shows a theme-aware preview of the requested
+aspect ratio directly below its selector. Presets hide the custom ratio
+controls; selecting `Custom` or connecting a dynamic ratio reveals them without
+resetting their values. The preview adds no workflow state and does not affect
+backend sizing. If the frontend extension is unavailable, all inputs remain
+visible and the node still executes normally.
 
 The two image-derived nodes are downscale-only and inspect the shared
 `[B,H,W,C]` tensor shape. Batch count does not change the result. They do not
@@ -114,6 +122,7 @@ Additional dispositions:
 
 ```bash
 python -m pip install -e ".[dev]"
+node --test tests/frontend/ratio_preview.test.mjs
 python -m ruff check .
 python -m pytest -q tests/unit
 comfy node validate
@@ -122,8 +131,8 @@ python -m pytest -q tests/package --archive node.zip
 python -m pytest -q tests/integration --comfy-ref v0.28.0 --archive node.zip --device cpu
 ```
 
-There is no generated-asset build, runtime installer, or compatibility
-`requirements.txt`.
+The handwritten frontend extension has no generated-asset build. There is no
+runtime installer or compatibility `requirements.txt`.
 
 ## Release operators
 

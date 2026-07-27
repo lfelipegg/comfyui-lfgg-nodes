@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lfgg-nodes"
-version = "1.1.0"
+version = "1.2.0"
 description = "Small, explicit ComfyUI workflow utility nodes."
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "lfelipegg" }]
-dependencies = ["Pillow"]
+dependencies = ["Pillow", "comfyui-frontend-package>=1.45.21"]
 classifiers = [
     "Environment :: GPU :: NVIDIA CUDA",
     "Operating System :: Microsoft :: Windows",

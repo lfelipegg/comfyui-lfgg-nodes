@@ -9,7 +9,7 @@ Last reviewed: 2026-07-26
 ## Summary
 
 - Fast checks use Ruff and pytest; integration installs and exercises `node.zip`, never the editable checkout.
-- The accepted successor nodes are Python-only, so there is no generated-asset build step.
+- The ratio preview is a build-free frontend extension; there is no generated-asset build step.
 - Release support is ComfyUI v0.28.0 through the latest tested stable tag, Python 3.10–3.13, Linux/Windows, and CPU/NVIDIA CUDA.
 - Registry publication is tag-gated, manually approved, and receives its token only through the protected `registry-release` environment.
 
@@ -23,19 +23,26 @@ Run commands from the successor-pack root with the same Python environment selec
 |---|---|
 | Confirm the development ComfyUI | `comfy which` |
 | Install development tools | `python -m pip install -e ".[dev]"` |
+| Frontend behavior | `node --test tests/frontend/ratio_preview.test.mjs` |
 | Lint and static security rules | `python -m ruff check .` |
 | Unit and contract tests | `python -m pytest -q tests/unit` |
 | Registry metadata/security validation | `comfy node validate` |
-| Generated-asset build | None while the pack remains Python-only |
+| Generated-asset build | None; the frontend is handwritten ES modules |
 | Create the Registry candidate | `comfy node pack` |
 | Inspect the candidate | `python -m pytest -q tests/package` |
 | Exercise a packed ComfyUI install | `python -m pytest -q tests/integration --comfy-ref <stable-tag> --archive node.zip --device <cpu-or-cuda>` |
 
 `[project.optional-dependencies].dev` owns Ruff, pytest, and comfy-cli. `[project].dependencies` is a static list of direct runtime dependencies only. Do not add a compatibility `requirements.txt`, a build wrapper, or a second command runner.
 
-The accepted designs need no new framework or frontend dependency. Do not declare or pin ComfyUI's Torch stack. A sizing-only release has no runtime dependency; a release containing `LFGG_SaveImageDynamic` declares Pillow because that node imports it. Add lower or upper bounds only after the supported matrix proves them.
+The accepted ratio preview uses handwritten JavaScript with no framework or
+build dependency. Declare `comfyui-frontend-package>=1.45.21` as compatibility
+metadata because ComfyUI `v0.28.0` bundles that frontend. Do not declare or pin
+ComfyUI's Torch stack. A release containing `LFGG_SaveImageDynamic` declares
+Pillow because that node imports it. Add other bounds only after the supported
+matrix proves them.
 
-If browser assets are accepted later, revise this contract with one real build command and test its built output. Do not add a placeholder Node toolchain now.
+Do not add npm metadata, a lockfile, or a placeholder build command while the
+frontend remains directly loaded ES modules.
 
 ## Fast test gate
 
@@ -49,6 +56,10 @@ If browser assets are accepted later, revise this contract with one real build c
 - deterministic filesystem tests using temporary roots, including traversal, symlink escape, exclusive creation, rollback, and no absolute-path leakage; and
 - `pyproject.toml`, README support claims, registered IDs, workflow fixtures, and dependency declarations remaining synchronized.
 
+`node --test tests/frontend/ratio_preview.test.mjs` is blocking and covers
+derived ratio state, contained geometry, conditional custom controls, and
+canvas detail levels without a browser-test framework.
+
 `python -m ruff check .` is blocking. Its checked-in configuration must reject `eval`, `exec`, multiple statements used to hide prohibited code, undefined names, and ordinary correctness errors. `comfy node validate` is an additional Registry check, not a substitute for the blocking lint and behavior gates.
 
 ## Candidate archive gate
@@ -58,7 +69,7 @@ If browser assets are accepted later, revise this contract with one real build c
 `tests/package` must inspect and safely extract that archive, then assert:
 
 - root `__init__.py`, runtime modules/data, `pyproject.toml`, README, LICENSE, and any required user-facing workflow/help assets are present;
-- generated frontend assets are absent while no frontend exists;
+- required handwritten frontend assets are present and generated frontend assets are absent;
 - tests, caches, coverage, source-control data, local paths, credentials, private data, large samples, and unrelated research are absent;
 - the archive contains no absolute or traversal member and no duplicate member; and
 - a clean ComfyUI environment can install the extracted package non-editably from its declared metadata.
@@ -108,7 +119,7 @@ Pull-request CI runs lint/unit, pack/package, and hosted CPU integration with re
 - MIT license metadata plus the packaged LICENSE;
 - repository, README documentation, and issue-tracker URLs;
 - `requires-python = ">=3.10,<3.14"` and `[tool.comfy].requires-comfyui = ">=0.28.0"`;
-- no `comfyui-frontend-package` constraint while the pack has no browser code;
+- `comfyui-frontend-package>=1.45.21` for the accepted browser code;
 - Linux and Windows classifiers plus NVIDIA CUDA if the current Registry taxonomy accepts it; document CPU support in the README because the Registry specification lists no CPU classifier; and
 - static runtime dependencies with platform markers where needed.
 
@@ -141,6 +152,7 @@ Registry versions are immutable. If Registry version creation succeeds before a 
 - [ ] Every shipped family workflow passed from the packed archive.
 - [ ] Real Torch and filesystem boundary tests passed on their required runners.
 - [ ] Runtime dependencies are static, minimal, and installation-tested; no runtime installer exists.
+- [ ] Frontend unit checks and manual minimum/current frontend visual checks passed.
 - [ ] `node.zip` and its content manifest passed inspection with no secret, private, local, or development-only files.
 - [ ] README compatibility, installation, network/file-write disclosure, node table, and migration notes match the release.
 - [ ] Tag/version/SemVer classification and changelog are correct.

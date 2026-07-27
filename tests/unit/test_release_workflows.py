@@ -9,6 +9,7 @@ def test_release_workflows_keep_security_boundaries():
     release = (ROOT / ".github" / "workflows" / "release.yml").read_text()
 
     assert "pull_request_target" not in qualify + release
+    assert "node --test tests/frontend/ratio_preview.test.mjs" in qualify
     assert "if: github.event_name != 'pull_request'" in qualify
     assert "runs-on: [self-hosted, linux, x64, cuda]" in qualify
     assert release.count("secrets.REGISTRY_ACCESS_TOKEN") == 1
@@ -64,5 +65,10 @@ def test_release_exercises_the_exact_registry_installed_version():
         in release[installed_integration:]
     )
     assert "REGISTRY_ACCESS_TOKEN" not in release[fresh_workspace:]
-    assert '--changelog "Add LFGG Save Image Dynamic."' in release
+    assert (
+        '--changelog "Add the aspect-ratio preview and conditional '
+        'custom-ratio controls."'
+        in release
+    )
+    assert '--changelog "Add LFGG Save Image Dynamic."' not in release
     assert '--changelog "Initial sizing nodes release."' not in release

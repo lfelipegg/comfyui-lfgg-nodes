@@ -36,5 +36,10 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LFGG_ImageDimensionsByPixelBudget": "LFGG Image Dimensions by Pixel Budget",
     "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
 }
+WEB_DIRECTORY = "./web"
 
-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
+__all__ = [
+    "NODE_CLASS_MAPPINGS",
+    "NODE_DISPLAY_NAME_MAPPINGS",
+    "WEB_DIRECTORY",
+]

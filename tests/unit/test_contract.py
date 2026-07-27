@@ -49,6 +49,12 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
     package = load_root_package(monkeypatch)
 
     assert not hasattr(package, "comfy_entrypoint")
+    assert package.WEB_DIRECTORY == "./web"
+    assert package.__all__ == [
+        "NODE_CLASS_MAPPINGS",
+        "NODE_DISPLAY_NAME_MAPPINGS",
+        "WEB_DIRECTORY",
+    ]
     assert package.NODE_DISPLAY_NAME_MAPPINGS == {
         "LFGG_DimensionsByAspectRatio": "LFGG Dimensions by Aspect Ratio",
         "LFGG_ImageDimensionsByLongSide": "LFGG Image Dimensions by Long Side",
@@ -322,7 +328,7 @@ def test_schema_uses_comfyui_max_resolution(monkeypatch):
 
 def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
     pyproject_path = ROOT / "pyproject.toml"
-    manifest_path = ROOT / "release" / "1.1.0-schema.json"
+    manifest_path = ROOT / "release" / "1.2.0-schema.json"
     workflow_path = ROOT / "workflows" / "sizing.json"
     save_workflow_path = ROOT / "workflows" / "save_image_dynamic.json"
     assert pyproject_path.exists(), "pyproject.toml is not implemented"
@@ -339,9 +345,12 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
     project = metadata["project"]
     comfy = metadata["tool"]["comfy"]
     assert project["name"] == "lfgg-nodes"
-    assert project["version"] == "1.1.0"
+    assert project["version"] == "1.2.0"
     assert project["requires-python"] == ">=3.10,<3.14"
-    assert project["dependencies"] == ["Pillow"]
+    assert project["dependencies"] == [
+        "Pillow",
+        "comfyui-frontend-package>=1.45.21",
+    ]
     assert "setuptools>=77" in project["optional-dependencies"]["dev"]
     assert "Environment :: GPU :: NVIDIA CUDA" in project["classifiers"]
     assert comfy == {
@@ -356,6 +365,10 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
         "Python `>=3.10,<3.14`",
         "Linux and Windows",
         "CPU and NVIDIA CUDA",
+        "frontend `>=1.45.21`",
+        "requested aspect ratio",
+        "custom ratio controls",
+        "node --test tests/frontend/ratio_preview.test.mjs",
         "do not read or write files",
         "exclusive creation of final PNG files",
         "cleanup of PNG files created by a failed execution",
@@ -390,7 +403,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
             "output_tooltips": list(getattr(node, "OUTPUT_TOOLTIPS", ())),
         }
     assert json.loads(manifest_path.read_text()) == {
-        "version": "1.1.0",
+        "version": "1.2.0",
         "nodes": expected_nodes,
     }
 

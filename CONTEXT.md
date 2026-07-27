@@ -20,6 +20,11 @@ A successor node that computes pixel width and height under a sizing policy
 without resizing an image or creating a latent.
 _Avoid_: Latent sizing node
 
+**Ratio preview**:
+A visual representation of the requested width-to-height proportion, independent
+of the aligned dimensions produced during execution.
+_Avoid_: Dimension preview, output preview
+
 **Latent initializer**:
 A ComfyUI node that creates an empty latent in the format required by a model
 family. Sizing successors leave this job to native ComfyUI nodes.

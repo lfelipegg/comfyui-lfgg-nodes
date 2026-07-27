@@ -872,7 +872,7 @@ def test_packed_comfyui_schema_and_workflow(integration_options, tmp_path):
         archive=archive,
         device=integration_options["device"],
         workspace=tmp_path,
-        manifest=json.loads((ROOT / "release" / "1.1.0-schema.json").read_text()),
+        manifest=json.loads((ROOT / "release" / "1.2.0-schema.json").read_text()),
         workflows=release_workflows(),
     )
 
@@ -891,7 +891,7 @@ def test_installed_comfyui_schema_and_workflow(integration_options, tmp_path):
         installed_comfyui=integration_options["installed_comfyui"],
         device=integration_options["device"],
         workspace=tmp_path,
-        manifest=json.loads((ROOT / "release" / "1.1.0-schema.json").read_text()),
+        manifest=json.loads((ROOT / "release" / "1.2.0-schema.json").read_text()),
         workflows=release_workflows(),
     )
 

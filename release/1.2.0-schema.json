@@ -1,0 +1,229 @@
+{
+  "version": "1.2.0",
+  "nodes": {
+    "LFGG_DimensionsByAspectRatio": {
+      "display_name": "LFGG Dimensions by Aspect Ratio",
+      "description": "Calculates aligned width and height for a preset or custom aspect ratio without exceeding the selected long-side limit.",
+      "category": "LFGG/sizing",
+      "input": {
+        "required": {
+          "aspect_ratio": [
+            "COMBO",
+            {
+              "options": [
+                "1:1",
+                "4:5",
+                "5:4",
+                "3:4",
+                "4:3",
+                "2:3",
+                "3:2",
+                "5:7",
+                "7:5",
+                "9:16",
+                "16:9",
+                "9:21",
+                "21:9",
+                "Custom"
+              ],
+              "tooltip": "Target width-to-height ratio. Select Custom to use the custom ratio inputs."
+            }
+          ],
+          "long_side": [
+            "INT",
+            {
+              "default": 1024,
+              "min": 16,
+              "max": 16384,
+              "step": 8,
+              "tooltip": "Maximum size in pixels for the longer output axis."
+            }
+          ],
+          "divisible_by": [
+            "INT",
+            {
+              "default": 8,
+              "min": 1,
+              "max": 16384,
+              "tooltip": "Aligns both output dimensions to this exact multiple without exceeding the limit."
+            }
+          ],
+          "custom_ratio_width": [
+            "INT",
+            {
+              "default": 1,
+              "min": 1,
+              "max": 16384,
+              "tooltip": "Width component used only when aspect_ratio is Custom."
+            }
+          ],
+          "custom_ratio_height": [
+            "INT",
+            {
+              "default": 1,
+              "min": 1,
+              "max": 16384,
+              "tooltip": "Height component used only when aspect_ratio is Custom."
+            }
+          ]
+        }
+      },
+      "output": [
+        "INT",
+        "INT"
+      ],
+      "output_name": [
+        "width",
+        "height"
+      ],
+      "output_tooltips": [
+        "Aligned output width in pixels.",
+        "Aligned output height in pixels."
+      ]
+    },
+    "LFGG_ImageDimensionsByLongSide": {
+      "display_name": "LFGG Image Dimensions by Long Side",
+      "description": "Calculates aligned dimensions from an image without upscaling or exceeding the selected long-side limit.",
+      "category": "LFGG/sizing",
+      "input": {
+        "required": {
+          "image": [
+            "IMAGE",
+            {
+              "tooltip": "Image batch whose shared spatial shape is inspected."
+            }
+          ],
+          "long_side": [
+            "INT",
+            {
+              "default": 1024,
+              "min": 16,
+              "max": 16384,
+              "step": 8,
+              "tooltip": "Maximum size in pixels for the longer output axis."
+            }
+          ],
+          "divisible_by": [
+            "INT",
+            {
+              "default": 8,
+              "min": 1,
+              "max": 16384,
+              "tooltip": "Aligns both output dimensions to this exact multiple."
+            }
+          ]
+        }
+      },
+      "output": [
+        "INT",
+        "INT"
+      ],
+      "output_name": [
+        "width",
+        "height"
+      ],
+      "output_tooltips": [
+        "Aligned target width in pixels.",
+        "Aligned target height in pixels."
+      ]
+    },
+    "LFGG_ImageDimensionsByPixelBudget": {
+      "display_name": "LFGG Image Dimensions by Pixel Budget",
+      "description": "Calculates aligned dimensions from an image without upscaling or exceeding the selected pixel budget.",
+      "category": "LFGG/sizing",
+      "input": {
+        "required": {
+          "image": [
+            "IMAGE",
+            {
+              "tooltip": "Image batch whose shared spatial shape is inspected."
+            }
+          ],
+          "max_pixels": [
+            "INT",
+            {
+              "default": 1048576,
+              "min": 1,
+              "max": 268435456,
+              "step": 1024,
+              "tooltip": "Maximum total pixel count for the output dimensions."
+            }
+          ],
+          "divisible_by": [
+            "INT",
+            {
+              "default": 8,
+              "min": 1,
+              "max": 16384,
+              "tooltip": "Aligns both output dimensions to this exact multiple."
+            }
+          ]
+        }
+      },
+      "output": [
+        "INT",
+        "INT"
+      ],
+      "output_name": [
+        "width",
+        "height"
+      ],
+      "output_tooltips": [
+        "Aligned target width in pixels.",
+        "Aligned target height in pixels."
+      ]
+    },
+    "LFGG_SaveImageDynamic": {
+      "display_name": "LFGG Save Image Dynamic",
+      "description": "Saves PNG image batches beneath the ComfyUI output directory using safe path and filename templates.",
+      "category": "LFGG/Image",
+      "input": {
+        "required": {
+          "images": [
+            "IMAGE",
+            {
+              "tooltip": "Image batch to save as PNG files."
+            }
+          ],
+          "path_template": [
+            "STRING",
+            {
+              "default": "runs/{model}/{date}",
+              "tooltip": "Output-relative subfolder template using supported brace tokens."
+            }
+          ],
+          "filename_template": [
+            "STRING",
+            {
+              "default": "{model}_{datetime}_{batch}_{counter}",
+              "tooltip": "PNG filename template using supported brace tokens."
+            }
+          ],
+          "save_metadata": [
+            "BOOLEAN",
+            {
+              "default": true,
+              "tooltip": "Embed prompt and workflow metadata unless globally disabled in ComfyUI."
+            }
+          ]
+        },
+        "optional": {
+          "model_name": [
+            "STRING",
+            {
+              "forceInput": true,
+              "tooltip": "Explicit model label used by the {model} token."
+            }
+          ]
+        },
+        "hidden": {
+          "prompt": "PROMPT",
+          "extra_pnginfo": "EXTRA_PNGINFO"
+        }
+      },
+      "output": [],
+      "output_name": [],
+      "output_tooltips": []
+    }
+  }
+}
