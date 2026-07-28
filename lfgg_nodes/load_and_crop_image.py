@@ -3,6 +3,9 @@ from math import gcd
 from .sizing import _bounded_int
 
 MAX_IMAGE_PIXELS = 16_384**2
+_WINDOWS_FILE_ATTRIBUTE_DIRECTORY = 0x10
+_WINDOWS_FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+_WINDOWS_FILE_TYPE_DISK = 1
 
 
 def _input_path(image):
@@ -26,11 +29,138 @@ def _input_path(image):
     return root, path
 
 
+def _open_windows_handle(path):
+    import ctypes
+    import msvcrt
+    import os
+    from ctypes import wintypes
+
+    class FileAttributeTagInfo(ctypes.Structure):
+        _fields_ = (
+            ("file_attributes", wintypes.DWORD),
+            ("reparse_tag", wintypes.DWORD),
+        )
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    )
+    create_file.restype = wintypes.HANDLE
+    get_attributes = kernel32.GetFileInformationByHandleEx
+    get_attributes.argtypes = (
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+    )
+    get_attributes.restype = wintypes.BOOL
+    get_file_type = kernel32.GetFileType
+    get_file_type.argtypes = (wintypes.HANDLE,)
+    get_file_type.restype = wintypes.DWORD
+    get_final_path = kernel32.GetFinalPathNameByHandleW
+    get_final_path.argtypes = (
+        wintypes.HANDLE,
+        wintypes.LPWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+    )
+    get_final_path.restype = wintypes.DWORD
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = (wintypes.HANDLE,)
+    close_handle.restype = wintypes.BOOL
+
+    handle = create_file(
+        str(path),
+        0x80000000,  # GENERIC_READ
+        0x7,  # FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
+        None,
+        3,  # OPEN_EXISTING
+        0x00200000,  # FILE_FLAG_OPEN_REPARSE_POINT
+        None,
+    )
+    invalid_handle = ctypes.c_void_p(-1).value
+    if handle == invalid_handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+
+    try:
+        information = FileAttributeTagInfo()
+        if not get_attributes(
+            handle,
+            9,  # FileAttributeTagInfo
+            ctypes.byref(information),
+            ctypes.sizeof(information),
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+        file_type = get_file_type(handle)
+        buffer = ctypes.create_unicode_buffer(32_768)
+        length = get_final_path(handle, buffer, len(buffer), 0)
+        if length == 0:
+            raise ctypes.WinError(ctypes.get_last_error())
+        if length >= len(buffer):
+            raise OSError("opened image path exceeds the Windows path limit")
+
+        descriptor = msvcrt.open_osfhandle(
+            handle,
+            os.O_RDONLY | os.O_BINARY | os.O_NOINHERIT,
+        )
+        handle = None
+        try:
+            source = os.fdopen(descriptor, "rb")
+        except Exception:
+            os.close(descriptor)
+            raise
+        return source, buffer.value, information.file_attributes, file_type
+    finally:
+        if handle is not None:
+            close_handle(handle)
+
+
+def _open_windows_input_file(root, path):
+    from pathlib import PureWindowsPath
+
+    try:
+        source, final_path, attributes, file_type = _open_windows_handle(path)
+    except (AttributeError, OSError):
+        raise ValueError(
+            "selected image could not be opened securely inside the "
+            "ComfyUI input directory"
+        ) from None
+
+    if final_path.startswith("\\\\?\\UNC\\"):
+        final_path = "\\\\" + final_path[8:]
+    elif final_path.startswith("\\\\?\\"):
+        final_path = final_path[4:]
+    opened_path = PureWindowsPath(final_path)
+    input_root = PureWindowsPath(root)
+    unsafe = (
+        attributes & _WINDOWS_FILE_ATTRIBUTE_REPARSE_POINT
+        or attributes & _WINDOWS_FILE_ATTRIBUTE_DIRECTORY
+        or file_type != _WINDOWS_FILE_TYPE_DISK
+        or not opened_path.is_relative_to(input_root)
+    )
+    if unsafe:
+        source.close()
+        raise ValueError(
+            "selected image could not be opened securely inside the "
+            "ComfyUI input directory"
+        )
+    return source
+
+
 def _open_input_file(image):
     import os
     import stat
 
     root, path = _input_path(image)
+    if os.name == "nt":
+        return _open_windows_input_file(root, path)
     if (
         not hasattr(os, "O_NOFOLLOW")
         or not hasattr(os, "O_DIRECTORY")

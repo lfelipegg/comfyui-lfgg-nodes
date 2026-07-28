@@ -1,6 +1,7 @@
+import io
 import os
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
 
 import pytest
@@ -231,6 +232,96 @@ def test_fails_actionably_without_secure_descriptor_opening(monkeypatch, tmp_pat
 
     with pytest.raises(ValueError, match="secure selected-image access"):
         load_default_crop()
+
+
+def test_windows_open_accepts_regular_file_beneath_input_root(monkeypatch):
+    source = io.BytesIO(b"image")
+    monkeypatch.setattr(
+        load_and_crop_image_module,
+        "_open_windows_handle",
+        lambda _path: (
+            source,
+            r"\\?\C:\Comfy\input\source.png",
+            0,
+            1,
+        ),
+        raising=False,
+    )
+
+    opened = load_and_crop_image_module._open_windows_input_file(
+        PureWindowsPath(r"C:\Comfy\input"),
+        PureWindowsPath(r"C:\Comfy\input\source.png"),
+    )
+
+    assert opened.read() == b"image"
+
+
+@pytest.mark.parametrize(
+    ("final_path", "attributes", "file_type"),
+    [
+        (r"\\?\C:\Comfy\input-escape\source.png", 0, 1),
+        (r"\\?\C:\Comfy\input\source.png", 0x400, 1),
+        (r"\\?\C:\Comfy\input\source.png", 0x10, 1),
+        (r"\\?\C:\Comfy\input\source.png", 0, 2),
+    ],
+)
+def test_windows_open_rejects_unsafe_handle_results(
+    monkeypatch, final_path, attributes, file_type
+):
+    source = io.BytesIO(b"image")
+    monkeypatch.setattr(
+        load_and_crop_image_module,
+        "_open_windows_handle",
+        lambda _path: (source, final_path, attributes, file_type),
+        raising=False,
+    )
+
+    with pytest.raises(ValueError, match="securely inside"):
+        load_and_crop_image_module._open_windows_input_file(
+            PureWindowsPath(r"C:\Comfy\input"),
+            PureWindowsPath(r"C:\Comfy\input\source.png"),
+        )
+
+    assert source.closed
+
+
+def test_windows_open_reports_native_boundary_failures(monkeypatch):
+    def fail_to_open(_path):
+        raise OSError("native failure")
+
+    monkeypatch.setattr(
+        load_and_crop_image_module,
+        "_open_windows_handle",
+        fail_to_open,
+        raising=False,
+    )
+
+    with pytest.raises(ValueError, match="securely inside"):
+        load_and_crop_image_module._open_windows_input_file(
+            PureWindowsPath(r"C:\Comfy\input"),
+            PureWindowsPath(r"C:\Comfy\input\source.png"),
+        )
+
+
+def test_input_open_dispatches_to_windows_handle_path(monkeypatch):
+    root = PureWindowsPath(r"C:\Comfy\input")
+    path = root / "source.png"
+    source = io.BytesIO(b"image")
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr(
+        load_and_crop_image_module,
+        "_input_path",
+        lambda _image: (root, path),
+    )
+    monkeypatch.setattr(
+        load_and_crop_image_module,
+        "_open_windows_input_file",
+        lambda opened_root, opened_path: (
+            source if (opened_root, opened_path) == (root, path) else None
+        ),
+    )
+
+    assert load_and_crop_image_module._open_input_file("source.png") is source
 
 
 @pytest.mark.parametrize("image", [None, b"source.png", Path("source.png")])
