@@ -1,6 +1,188 @@
-import pytest
+import sys
+from types import SimpleNamespace
 
-from lfgg_nodes.load_and_crop_image import resolve_crop
+import pytest
+import torch
+from PIL import Image
+
+from lfgg_nodes.load_and_crop_image import LoadAndCropImage, resolve_crop
+
+
+def install_folder_paths(monkeypatch, input_root, *, resolve_name=None):
+    module = SimpleNamespace(
+        get_input_directory=lambda: str(input_root),
+        get_annotated_filepath=lambda name: str(
+            input_root / name if resolve_name is None else resolve_name(name)
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "folder_paths", module)
+    monkeypatch.setitem(sys.modules, "nodes", SimpleNamespace(MAX_RESOLUTION=16_384))
+
+
+def load_default_crop():
+    return LoadAndCropImage().load_and_crop(
+        image="source.png",
+        ratio_width=1,
+        ratio_height=1,
+        crop_x=0,
+        crop_y=0,
+        crop_width=0,
+        crop_height=0,
+    )
+
+
+def test_loads_and_crops_rgba_image(monkeypatch, tmp_path):
+    pixels = Image.new("RGBA", (4, 3), (10, 20, 30, 255))
+    pixels.putpixel((0, 0), (100, 110, 120, 0))
+    pixels.save(tmp_path / "source.png")
+    install_folder_paths(monkeypatch, tmp_path)
+
+    result = load_default_crop()
+
+    image, mask = result["result"]
+    assert image.shape == (1, 3, 3, 3)
+    assert mask.shape == (1, 3, 3)
+    assert image.dtype == torch.float32
+    assert mask.dtype == torch.float32
+    assert torch.allclose(image[0, 0, 0], torch.tensor([100, 110, 120]) / 255)
+    assert mask[0, 0, 0].item() == pytest.approx(1.0)
+    assert result["ui"]["crop"] == [
+        {
+            "ratio_width": 1,
+            "ratio_height": 1,
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 3,
+        }
+    ]
+
+
+def test_rgb_image_has_a_zero_mask(monkeypatch, tmp_path):
+    Image.new("RGB", (4, 3), (10, 20, 30)).save(tmp_path / "source.png")
+    install_folder_paths(monkeypatch, tmp_path)
+
+    image, mask = load_default_crop()["result"]
+
+    assert image.shape == (1, 3, 3, 3)
+    assert mask.shape == (1, 3, 3)
+    assert torch.equal(mask, torch.zeros((1, 3, 3), dtype=torch.float32))
+
+
+def test_applies_exif_orientation_before_interpreting_crop_coordinates(
+    monkeypatch, tmp_path
+):
+    pixels = Image.new("RGB", (4, 2), (10, 20, 30))
+    exif = Image.Exif()
+    exif[274] = 6
+    pixels.save(tmp_path / "source.jpg", exif=exif)
+    install_folder_paths(monkeypatch, tmp_path)
+
+    image, mask = LoadAndCropImage().load_and_crop(
+        image="source.jpg",
+        ratio_width=1,
+        ratio_height=1,
+        crop_x=0,
+        crop_y=2,
+        crop_width=2,
+        crop_height=2,
+    )["result"]
+
+    assert image.shape == (1, 2, 2, 3)
+    assert mask.shape == (1, 2, 2)
+
+
+def test_rejects_animated_images(monkeypatch, tmp_path):
+    first = Image.new("RGB", (2, 2), (10, 20, 30))
+    first.save(
+        tmp_path / "source.gif",
+        save_all=True,
+        append_images=[Image.new("RGB", (2, 2), (40, 50, 60))],
+    )
+    install_folder_paths(monkeypatch, tmp_path)
+
+    with pytest.raises(ValueError, match="single still image"):
+        LoadAndCropImage().load_and_crop(
+            image="source.gif",
+            ratio_width=1,
+            ratio_height=1,
+            crop_x=0,
+            crop_y=0,
+            crop_width=0,
+            crop_height=0,
+        )
+
+
+def test_rejects_images_above_the_axis_limit_before_tensor_conversion(
+    monkeypatch, tmp_path
+):
+    Image.new("RGB", (4, 1)).save(tmp_path / "source.png")
+    install_folder_paths(monkeypatch, tmp_path)
+    monkeypatch.setitem(sys.modules, "nodes", SimpleNamespace(MAX_RESOLUTION=3))
+
+    with pytest.raises(ValueError, match="maximum supported resolution"):
+        load_default_crop()
+
+
+def test_rejects_images_above_the_pixel_limit_before_tensor_conversion(
+    monkeypatch, tmp_path
+):
+    Image.new("RGB", (3, 3)).save(tmp_path / "source.png")
+    install_folder_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr("lfgg_nodes.load_and_crop_image.MAX_IMAGE_PIXELS", 8)
+
+    with pytest.raises(ValueError, match="pixel limit"):
+        load_default_crop()
+
+
+def test_rejects_corrupt_images_with_an_actionable_error(monkeypatch, tmp_path):
+    (tmp_path / "source.png").write_bytes(b"not an image")
+    install_folder_paths(monkeypatch, tmp_path)
+
+    with pytest.raises(ValueError, match="could not be opened"):
+        load_default_crop()
+
+
+def test_rejects_paths_outside_the_input_directory(monkeypatch, tmp_path):
+    outside = tmp_path.parent / "outside.png"
+    Image.new("RGB", (1, 1)).save(outside)
+    install_folder_paths(monkeypatch, tmp_path, resolve_name=lambda _: outside)
+
+    with pytest.raises(ValueError, match="ComfyUI input directory"):
+        load_default_crop()
+
+
+def test_rejects_symlink_escapes_from_the_input_directory(monkeypatch, tmp_path):
+    outside = tmp_path.parent / "outside.png"
+    Image.new("RGB", (1, 1)).save(outside)
+    link = tmp_path / "source.png"
+    try:
+        link.symlink_to(outside)
+    except OSError:
+        pytest.skip("symlinks are unavailable on this platform")
+    install_folder_paths(monkeypatch, tmp_path)
+
+    with pytest.raises(ValueError, match="ComfyUI input directory"):
+        load_default_crop()
+
+
+def test_change_fingerprint_tracks_file_content(monkeypatch, tmp_path):
+    source = tmp_path / "source.png"
+    source.write_bytes(b"first")
+    install_folder_paths(monkeypatch, tmp_path)
+
+    first = LoadAndCropImage.IS_CHANGED("source.png")
+    source.write_bytes(b"second")
+
+    assert LoadAndCropImage.IS_CHANGED("source.png") != first
+
+
+def test_validates_the_selected_input_path(monkeypatch, tmp_path):
+    Image.new("RGB", (1, 1)).save(tmp_path / "source.png")
+    install_folder_paths(monkeypatch, tmp_path)
+
+    assert LoadAndCropImage.VALIDATE_INPUTS("source.png") is True
+    assert "selected image" in LoadAndCropImage.VALIDATE_INPUTS("../bad.png")
 
 
 def test_initializes_the_largest_centered_exact_ratio_crop():
