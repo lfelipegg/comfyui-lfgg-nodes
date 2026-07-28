@@ -21,6 +21,17 @@ test("initializes the largest centered exact frame", () => {
   });
 });
 
+test("puts odd unused source pixels on the right and bottom", () => {
+  assert.deepEqual(initializeFrame(4, 4, 3, 2), {
+    x: 0,
+    y: 1,
+    width: 3,
+    height: 2,
+    ratioWidth: 3,
+    ratioHeight: 2,
+  });
+});
+
 test("contains the source image in a bounded preview", () => {
   assert.deepEqual(
     fitPreviewImage(1920, 1080, { x: 8, y: 10, width: 320, height: 360 }),
@@ -121,6 +132,22 @@ test("clamps each corner resize at the source boundary", () => {
     width: 60,
     height: 30,
   });
+});
+
+test("rejects an out-of-bounds frame before resizing", () => {
+  assert.deepEqual(
+    resizeFrame(
+      { x: 90, y: 10, width: 20, height: 20 },
+      "bottom-right",
+      100,
+      40,
+      100,
+      100,
+      1,
+      1,
+    ),
+    { kind: "invalid" },
+  );
 });
 
 test("reduces ratios before fitting and reports invalid states", () => {

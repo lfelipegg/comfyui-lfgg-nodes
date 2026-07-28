@@ -132,6 +132,9 @@ export function resizeFrame(
   const reduced = ratio(sourceWidth, sourceHeight, ratioWidth, ratioHeight);
   if (reduced === undefined) return invalid;
   if (reduced === null) return doesNotFit;
+  if (frame.x + frame.width > sourceWidth || frame.y + frame.height > sourceHeight) {
+    return invalid;
+  }
   const corners = {
     "top-left": [frame.x + frame.width, frame.y + frame.height, -1, -1],
     "top-right": [frame.x, frame.y + frame.height, 1, -1],
