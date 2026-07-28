@@ -160,7 +160,9 @@ def test_load_and_crop_image_import_is_lazy_and_side_effect_free(
 ):
     input_directory = tmp_path / "input"
     input_directory.mkdir()
-    source = input_directory / "source.png"
+    nested = input_directory / "nested"
+    nested.mkdir()
+    source = nested / "source.png"
     source.write_bytes(b"unchanged")
     stub_directory = tmp_path / "stubs"
     stub_directory.mkdir()
@@ -171,7 +173,9 @@ def test_load_and_crop_image_import_is_lazy_and_side_effect_free(
     target = source.resolve()
     before_content = source.read_bytes()
     before_stat = source.stat()
-    before_entries = sorted(input_directory.iterdir())
+    before_entries = sorted(
+        path.relative_to(input_directory) for path in input_directory.rglob("*")
+    )
 
     def reject_target_access(original):
         def guarded(path, *args, **kwargs):
@@ -205,7 +209,9 @@ def test_load_and_crop_image_import_is_lazy_and_side_effect_free(
         load_root_package(import_guard)
 
     assert "folder_paths" not in sys.modules
-    assert sorted(input_directory.iterdir()) == before_entries
+    assert sorted(
+        path.relative_to(input_directory) for path in input_directory.rglob("*")
+    ) == before_entries
     assert source.read_bytes() == before_content
     after_stat = source.stat()
     assert (after_stat.st_size, after_stat.st_mtime_ns) == (
