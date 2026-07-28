@@ -9,6 +9,7 @@ __pycache__/
 build/
 dist/
 node.zip
+.worktrees/
 
 # Generated Codex context index
 .codex-context/context.sqlite
