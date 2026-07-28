@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   fitPreviewImage,
   initializeFrame,
+  installCropEditor,
   moveFrame,
   normalizeTypedFrame,
   resizeFrame,
@@ -232,4 +233,168 @@ test("stops reroute cycles and rejects invalid widget values", () => {
     resolveStaticInt({ widgets: [{ name: "ratio_width", value: 1.5 }] }, "ratio_width"),
     { kind: "invalid" },
   );
+});
+
+function cropNode() {
+  const callbackValues = [];
+  const widgets = [
+    { name: "image", value: "portrait.png", callback(value) { callbackValues.push(["image", value]); } },
+    { name: "ratio_width", value: 1, callback(value) { callbackValues.push(["ratio_width", value]); } },
+    { name: "ratio_height", value: 1, callback(value) { callbackValues.push(["ratio_height", value]); } },
+    { name: "crop_x", value: 0, callback(value) { callbackValues.push(["crop_x", value]); } },
+    { name: "crop_y", value: 0, callback(value) { callbackValues.push(["crop_y", value]); } },
+    { name: "crop_width", value: 0, callback(value) { callbackValues.push(["crop_width", value]); } },
+    { name: "crop_height", value: 0, callback(value) { callbackValues.push(["crop_height", value]); } },
+  ];
+  return {
+    comfyClass: "LFGG_LoadAndCropImage",
+    widgets,
+    inputs: widgets.slice(1).map(({ name }) => ({ name, link: null })),
+    size: [320, 160],
+    addCustomWidget(widget) { this.widgets.push(widget); return widget; },
+    computeSize() { return [this.size[0], 40 + this.widgets.reduce((total, widget) => total + (widget.computeSize?.()[1] ?? 20), 0)]; },
+    setSize(size) { this.size = size; },
+    setDirtyCanvas() { this.dirty = (this.dirty ?? 0) + 1; },
+    onConnectInput() { this.connected = (this.connected ?? 0) + 1; return "previous"; },
+    onExecuted() { this.executed = (this.executed ?? 0) + 1; },
+    callbackValues,
+  };
+}
+
+function loadedImage(width = 400, height = 200) {
+  return {
+    naturalWidth: width,
+    naturalHeight: height,
+    set src(_value) { this.onload?.(); },
+  };
+}
+
+function cropContext() {
+  const calls = [];
+  return {
+    calls,
+    save() {}, restore() {}, beginPath() {}, stroke() {}, fill() {},
+    drawImage(...args) { calls.push(["image", ...args]); },
+    fillRect(...args) { calls.push(["dim", ...args]); },
+    strokeRect(...args) { calls.push(["border", ...args]); },
+    fillText(...args) { calls.push(["label", ...args]); },
+  };
+}
+
+function dragEvent() {
+  const callbacks = {};
+  return {
+    onDragStart(callback) { assert.equal(typeof callback, "function"); callbacks.start = callback; },
+    onDrag(callback) { assert.equal(typeof callback, "function"); callbacks.drag = callback; },
+    onDragEnd(callback) { assert.equal(typeof callback, "function"); callbacks.end = callback; },
+    finally(callback) { assert.equal(typeof callback, "function"); callbacks.finally = callback; },
+    move(position) { callbacks.start?.(); callbacks.drag?.(position); callbacks.end?.(); callbacks.finally?.(); },
+  };
+}
+
+function installedCropNode(options = {}) {
+  const node = cropNode();
+  const preview = installCropEditor(node, {
+    createImage: () => loadedImage(),
+    buildViewUrl: (value) => `/view?filename=${value}`,
+    getGraph: () => options.graph,
+    isConfiguring: () => options.configuring ?? false,
+  });
+  return { node, preview };
+}
+
+function cropValues(node) {
+  return ["crop_x", "crop_y", "crop_width", "crop_height"].map(
+    (name) => node.widgets.find((widget) => widget.name === name).value,
+  );
+}
+
+test("installs exactly one canvas after image and ignores other or incomplete nodes", () => {
+  const { node, preview } = installedCropNode();
+  assert.equal(node.widgets[1], preview);
+  assert.equal(preview.serialize, false);
+  assert.equal(preview.options.serialize, false);
+  assert.deepEqual(preview.computeSize(), [0, 360]);
+  assert.equal(node.widgets.find((widget) => widget.name === "crop_height").disabled, true);
+  assert.equal(installCropEditor(node), preview);
+  assert.equal(node.widgets.filter((widget) => widget.name === "lfgg_crop_editor").length, 1);
+  assert.equal(installCropEditor({ comfyClass: "Other", widgets: [] }), undefined);
+  assert.equal(installCropEditor({ comfyClass: "LFGG_LoadAndCropImage", widgets: [] }), undefined);
+});
+
+test("loads an image, initializes the crop, and preserves saved width and loading height", () => {
+  const { node } = installedCropNode({ configuring: true });
+  const image = node.widgets[0];
+  image.callback(image.value);
+  assert.deepEqual(cropValues(node), [100, 0, 200, 200]);
+  assert.equal(node.size[0], 320);
+  assert.ok(node.size[1] >= 160);
+});
+
+test("normalizes numeric edits once and resets for local, constant, and computed ratios", () => {
+  const options = { graph: undefined };
+  const { node, preview } = installedCropNode(options);
+  node.widgets[0].callback("portrait.png");
+  const width = node.widgets.find((widget) => widget.name === "crop_width");
+  width.value = 137;
+  width.callback(width.value);
+  assert.deepEqual(cropValues(node), [100, 0, 137, 137]);
+  assert.equal(node.callbackValues.filter(([name]) => name === "crop_width").length, 1);
+  node.widgets.find((widget) => widget.name === "ratio_width").value = 2;
+  node.widgets.find((widget) => widget.name === "ratio_width").callback(2);
+  assert.deepEqual(cropValues(node), [0, 0, 400, 200]);
+  options.graph = graphWith({ id: 1, type: "PrimitiveNode", widgets: [{ value: 2 }] });
+  node.inputs.find((input) => input.name === "ratio_width").link = 1;
+  node.onConnectionsChange?.();
+  assert.deepEqual(cropValues(node), [0, 0, 400, 200]);
+  node.inputs.find((input) => input.name === "ratio_height").link = 2;
+  node.onConnectionsChange?.();
+  assert.equal(preview.getState().label, "Run to resolve connected ratio");
+});
+
+test("applies execution crop data, composes connection rules, and serializes only persisted widgets", () => {
+  const { node } = installedCropNode();
+  node.widgets[0].callback("portrait.png");
+  node.onExecuted({ crop: [{ ratio_width: 2, ratio_height: 1, x: 20, y: 0, width: 200, height: 100 }] });
+  assert.deepEqual(["ratio_width", "ratio_height", "crop_x", "crop_y", "crop_width", "crop_height"].map((name) => node.widgets.find((widget) => widget.name === name).value), [2, 1, 20, 0, 200, 100]);
+  assert.equal(node.onConnectInput(0, "INT", {}), "previous");
+  assert.equal(node.onConnectInput(2, "INT", {}), false);
+  const serialized = { widgets_values: ["portrait.png", null, 2, 1, 20, 0, 200, 100] };
+  node.onSerialize(serialized);
+  assert.deepEqual(serialized.widgets_values, ["portrait.png", 2, 1, 20, 0, 200, 100]);
+});
+
+test("draws image then four outside dims, border, handles, and label at normal quality", () => {
+  const { node, preview } = installedCropNode();
+  node.widgets[0].callback("portrait.png");
+  const detailed = cropContext();
+  const lowQuality = cropContext();
+  preview.draw(detailed, node, 320, 20, 360, false);
+  preview.draw(lowQuality, node, 320, 20, 360, true);
+  assert.equal(detailed.calls[0][0], "image");
+  assert.equal(detailed.calls.filter(([name]) => name === "dim").length, 4);
+  assert.equal(detailed.calls.filter(([name]) => name === "border").length, 1);
+  assert.equal(detailed.calls.filter(([name]) => name === "label").length, 1);
+  assert.equal(detailed.calls.filter(([name]) => name === "dim").slice(-4).length, 4);
+  assert.equal(lowQuality.calls.filter(([name]) => name === "label").length, 0);
+  assert.equal(lowQuality.calls.filter(([name]) => name === "border").length, 1);
+});
+
+test("moves from the interior and resizes from every corner handle", () => {
+  const { node, preview } = installedCropNode();
+  node.widgets[0].callback("portrait.png");
+  preview.draw(cropContext(), node, 320, 20, 360, false);
+  const initial = cropValues(node);
+  const move = dragEvent();
+  assert.equal(preview.onPointerDown(move, { x: 160, y: 220 }), true);
+  move.move({ x: 180, y: 220 });
+  assert.notDeepEqual(cropValues(node), initial);
+  for (const point of [{ x: 84, y: 140 }, { x: 236, y: 140 }, { x: 84, y: 292 }, { x: 236, y: 292 }]) {
+    node.widgets[0].callback("portrait.png");
+    preview.draw(cropContext(), node, 320, 20, 360, false);
+    const drag = dragEvent();
+    assert.equal(preview.onPointerDown(drag, point), true);
+    drag.move({ x: 20, y: 120 });
+  }
+  assert.equal(preview.onPointerDown(dragEvent(), { x: 1, y: 1 }), false);
 });
