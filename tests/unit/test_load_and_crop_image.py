@@ -1,10 +1,13 @@
+import os
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 import torch
 from PIL import Image
 
+import lfgg_nodes.load_and_crop_image as load_and_crop_image_module
 from lfgg_nodes.load_and_crop_image import LoadAndCropImage, resolve_crop
 
 
@@ -19,9 +22,9 @@ def install_folder_paths(monkeypatch, input_root, *, resolve_name=None):
     monkeypatch.setitem(sys.modules, "nodes", SimpleNamespace(MAX_RESOLUTION=16_384))
 
 
-def load_default_crop():
+def load_default_crop(image="source.png"):
     return LoadAndCropImage().load_and_crop(
-        image="source.png",
+        image=image,
         ratio_width=1,
         ratio_height=1,
         crop_x=0,
@@ -119,6 +122,11 @@ def test_rejects_images_above_the_axis_limit_before_tensor_conversion(
     Image.new("RGB", (4, 1)).save(tmp_path / "source.png")
     install_folder_paths(monkeypatch, tmp_path)
     monkeypatch.setitem(sys.modules, "nodes", SimpleNamespace(MAX_RESOLUTION=3))
+    monkeypatch.setattr(
+        torch,
+        "from_numpy",
+        lambda _pixels: pytest.fail("tensor conversion must not be reached"),
+    )
 
     with pytest.raises(ValueError, match="maximum supported resolution"):
         load_default_crop()
@@ -130,6 +138,11 @@ def test_rejects_images_above_the_pixel_limit_before_tensor_conversion(
     Image.new("RGB", (3, 3)).save(tmp_path / "source.png")
     install_folder_paths(monkeypatch, tmp_path)
     monkeypatch.setattr("lfgg_nodes.load_and_crop_image.MAX_IMAGE_PIXELS", 8)
+    monkeypatch.setattr(
+        torch,
+        "from_numpy",
+        lambda _pixels: pytest.fail("tensor conversion must not be reached"),
+    )
 
     with pytest.raises(ValueError, match="pixel limit"):
         load_default_crop()
@@ -164,6 +177,70 @@ def test_rejects_symlink_escapes_from_the_input_directory(monkeypatch, tmp_path)
 
     with pytest.raises(ValueError, match="ComfyUI input directory"):
         load_default_crop()
+
+
+@pytest.mark.parametrize("operation", ["load", "hash"])
+def test_rejects_file_replaced_by_external_symlink_before_open(
+    monkeypatch, tmp_path, operation
+):
+    source = tmp_path / "source.png"
+    outside = tmp_path.parent / "outside.png"
+    Image.new("RGB", (1, 1), (10, 20, 30)).save(source)
+    Image.new("RGB", (1, 1), (40, 50, 60)).save(outside)
+    install_folder_paths(monkeypatch, tmp_path)
+    original_input_path = load_and_crop_image_module._input_path
+
+    def replace_after_validation(image):
+        validated = original_input_path(image)
+        source.unlink()
+        try:
+            source.symlink_to(outside)
+        except OSError:
+            pytest.skip("symlinks are unavailable on this platform")
+        return validated
+
+    monkeypatch.setattr(
+        load_and_crop_image_module,
+        "_input_path",
+        replace_after_validation,
+    )
+
+    with pytest.raises(ValueError, match="ComfyUI input directory"):
+        if operation == "load":
+            load_default_crop()
+        else:
+            LoadAndCropImage.IS_CHANGED("source.png")
+
+
+def test_rejects_absolute_image_identifier_inside_input_directory(
+    monkeypatch, tmp_path
+):
+    source = tmp_path / "source.png"
+    Image.new("RGB", (1, 1)).save(source)
+    install_folder_paths(monkeypatch, tmp_path)
+
+    with pytest.raises(ValueError, match="relative"):
+        load_default_crop(str(source))
+    assert "relative" in LoadAndCropImage.VALIDATE_INPUTS(str(source))
+
+
+def test_fails_actionably_without_secure_descriptor_opening(monkeypatch, tmp_path):
+    Image.new("RGB", (1, 1)).save(tmp_path / "source.png")
+    install_folder_paths(monkeypatch, tmp_path)
+    monkeypatch.delattr(os, "O_NOFOLLOW")
+
+    with pytest.raises(ValueError, match="secure selected-image access"):
+        load_default_crop()
+
+
+@pytest.mark.parametrize("image", [None, b"source.png", Path("source.png")])
+def test_requires_image_identifier_to_be_a_string(monkeypatch, tmp_path, image):
+    Image.new("RGB", (1, 1)).save(tmp_path / "source.png")
+    install_folder_paths(monkeypatch, tmp_path)
+
+    with pytest.raises(ValueError, match="string"):
+        load_default_crop(image)
+    assert "string" in LoadAndCropImage.VALIDATE_INPUTS(image)
 
 
 def test_change_fingerprint_tracks_file_content(monkeypatch, tmp_path):

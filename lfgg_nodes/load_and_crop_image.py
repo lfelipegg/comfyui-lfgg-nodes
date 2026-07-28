@@ -6,25 +6,71 @@ MAX_IMAGE_PIXELS = 16_384**2
 
 
 def _input_path(image):
-    from pathlib import Path
+    from pathlib import Path, PureWindowsPath
 
     import folder_paths
 
+    if not isinstance(image, str):
+        raise ValueError("selected image identifier must be a string")
+    if not image or "\x00" in image:
+        raise ValueError("selected image identifier must be a non-empty string")
+    if Path(image).is_absolute() or PureWindowsPath(image).is_absolute():
+        raise ValueError("selected image identifier must be relative")
     try:
         root = Path(folder_paths.get_input_directory()).resolve(strict=True)
         path = Path(folder_paths.get_annotated_filepath(image)).resolve(strict=True)
-    except (OSError, TypeError):
+    except (OSError, TypeError, ValueError):
         raise ValueError("selected image is unavailable") from None
     if not root.is_dir() or not path.is_file() or not path.is_relative_to(root):
         raise ValueError("selected image must stay inside the ComfyUI input directory")
-    return path
+    return root, path
 
 
-def _content_hash(path):
+def _open_input_file(image):
+    import os
+    import stat
+
+    root, path = _input_path(image)
+    if (
+        not hasattr(os, "O_NOFOLLOW")
+        or not hasattr(os, "O_DIRECTORY")
+        or os.open not in os.supports_dir_fd
+    ):
+        raise ValueError("secure selected-image access is unavailable on this platform")
+
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_BINARY", 0)
+    directory_fd = None
+    file_fd = None
+    try:
+        directory_fd = os.open(root, directory_flags)
+        parts = path.relative_to(root).parts
+        for part in parts[:-1]:
+            next_fd = os.open(part, directory_flags, dir_fd=directory_fd)
+            os.close(directory_fd)
+            directory_fd = next_fd
+        file_fd = os.open(parts[-1], file_flags, dir_fd=directory_fd)
+        if not stat.S_ISREG(os.fstat(file_fd).st_mode):
+            raise OSError("selected input is not a regular file")
+        source = os.fdopen(file_fd, "rb")
+        file_fd = None
+        return source
+    except OSError:
+        raise ValueError(
+            "selected image changed or left the ComfyUI input directory before access"
+        ) from None
+    finally:
+        if file_fd is not None:
+            os.close(file_fd)
+        if directory_fd is not None:
+            os.close(directory_fd)
+
+
+def _content_hash(image):
     from hashlib import sha256
 
     digest = sha256()
-    with path.open("rb") as source:
+    with _open_input_file(image) as source:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
@@ -111,9 +157,8 @@ class LoadAndCropImage:
         from nodes import MAX_RESOLUTION
         from PIL import Image, ImageOps
 
-        path = _input_path(image)
         try:
-            with path.open("rb") as source, warnings.catch_warnings():
+            with _open_input_file(image) as source, warnings.catch_warnings():
                 warnings.simplefilter("error", Image.DecompressionBombWarning)
                 decoded = Image.open(source)
                 if getattr(decoded, "n_frames", 1) != 1:
@@ -189,7 +234,7 @@ class LoadAndCropImage:
 
     @classmethod
     def IS_CHANGED(cls, image):
-        return _content_hash(_input_path(image))
+        return _content_hash(image)
 
     @classmethod
     def VALIDATE_INPUTS(cls, image):
