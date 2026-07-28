@@ -214,6 +214,17 @@ const CROP_PREVIEW_INSET = 8;
 const installedCropEditor = Symbol("lfggCropEditor");
 const cropInputNames = new Set(["crop_x", "crop_y", "crop_width", "crop_height"]);
 
+export function buildInputViewUrl(value) {
+  const normalized = String(value).replace(/\s+\[input\]$/, "").replaceAll("\\", "/");
+  const slash = normalized.lastIndexOf("/");
+  const query = new URLSearchParams({
+    filename: normalized.slice(slash + 1),
+    subfolder: slash < 0 ? "" : normalized.slice(0, slash),
+    type: "input",
+  });
+  return `/view?${query}`;
+}
+
 function composeCallback(widget, update) {
   const original = widget.callback;
   widget.callback = function (...args) {
@@ -318,11 +329,15 @@ export function installCropEditor(
   cropHeight.disabled = true;
   cropHeight.readonly = true;
 
-  const controller = { source: undefined, frame: undefined, image: undefined, isConfiguring };
+  const controller = { source: undefined, frame: undefined, image: undefined, executionRatio: undefined, isConfiguring };
   const currentRatio = () => {
     const width = resolveStaticInt(node, "ratio_width", getGraph());
     const height = resolveStaticInt(node, "ratio_height", getGraph());
-    if (width.kind === "unresolved" || height.kind === "unresolved") return { kind: "dynamic" };
+    if (width.kind === "unresolved" || height.kind === "unresolved") {
+      return controller.executionRatio
+        ? { kind: "value", ...controller.executionRatio }
+        : { kind: "dynamic" };
+    }
     if (width.kind !== "value" || height.kind !== "value" || width.value < 1 || height.value < 1) return invalid;
     return { kind: "value", width: width.value, height: height.value };
   };
@@ -447,6 +462,7 @@ export function installCropEditor(
   node[installedCropEditor] = controller;
 
   composeCallback(image, () => {
+    controller.executionRatio = undefined;
     node.imgs = [];
     const loaded = createImage();
     controller.image = loaded;
@@ -460,28 +476,37 @@ export function installCropEditor(
     };
     loaded.src = buildViewUrl(image.value);
   });
-  for (const widget of [ratioWidth, ratioHeight]) composeCallback(widget, reset);
+  for (const widget of [ratioWidth, ratioHeight]) {
+    composeCallback(widget, () => {
+      controller.executionRatio = undefined;
+      reset();
+    });
+  }
   for (const widget of [cropX, cropY, cropWidth]) composeCallback(widget, normalize);
   const originalConnectionsChange = node.onConnectionsChange;
   node.onConnectionsChange = function (...args) {
     const result = originalConnectionsChange?.apply(this, args);
+    controller.executionRatio = undefined;
     reset();
     return result;
   };
   const originalConnectInput = node.onConnectInput;
   node.onConnectInput = function (inputIndex, ...args) {
     const input = this.inputs?.[inputIndex];
+    const result = originalConnectInput?.apply(this, [inputIndex, ...args]);
     if (cropInputNames.has(input?.name)) return false;
-    return originalConnectInput?.apply(this, [inputIndex, ...args]);
+    return result;
   };
   const originalExecuted = node.onExecuted;
   node.onExecuted = function (message) {
     const result = originalExecuted?.apply(this, arguments);
     const crop = message?.crop?.[0];
     if (!controller.source || !crop || ![crop.ratio_width, crop.ratio_height, crop.x, crop.y, crop.width, crop.height].every(Number.isInteger)) return result;
-    if (crop.ratio_width < 1 || crop.ratio_height < 1 || crop.width < 1 || crop.height < 1 || crop.x < 0 || crop.y < 0 || crop.width > controller.source.width || crop.height > controller.source.height) return result;
+    if (crop.ratio_width < 1 || crop.ratio_height < 1 || crop.width < 1 || crop.height < 1 || crop.x < 0 || crop.y < 0 || crop.width > controller.source.width || crop.height > controller.source.height || crop.x + crop.width > controller.source.width || crop.y + crop.height > controller.source.height) return result;
     ratioWidth.value = crop.ratio_width;
     ratioHeight.value = crop.ratio_height;
+    controller.executionRatio = { width: crop.ratio_width, height: crop.ratio_height };
+    setEditing(true);
     const frame = normalizeTypedFrame(controller.frame, crop.width, crop.x, crop.y, controller.source.width, controller.source.height, crop.ratio_width, crop.ratio_height);
     if (!frame.kind) sync(frame);
     return result;

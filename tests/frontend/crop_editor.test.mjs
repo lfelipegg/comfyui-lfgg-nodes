@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   fitPreviewImage,
+  buildInputViewUrl,
   initializeFrame,
   installCropEditor,
   moveFrame,
@@ -273,7 +274,8 @@ function cropContext() {
   const calls = [];
   return {
     calls,
-    save() {}, restore() {}, beginPath() {}, stroke() {}, fill() {},
+    save() {}, restore() {}, beginPath() {}, stroke() {},
+    fill() { calls.push(["handle"]); },
     drawImage(...args) { calls.push(["image", ...args]); },
     fillRect(...args) { calls.push(["dim", ...args]); },
     strokeRect(...args) { calls.push(["border", ...args]); },
@@ -357,8 +359,11 @@ test("applies execution crop data, composes connection rules, and serializes onl
   node.widgets[0].callback("portrait.png");
   node.onExecuted({ crop: [{ ratio_width: 2, ratio_height: 1, x: 20, y: 0, width: 200, height: 100 }] });
   assert.deepEqual(["ratio_width", "ratio_height", "crop_x", "crop_y", "crop_width", "crop_height"].map((name) => node.widgets.find((widget) => widget.name === name).value), [2, 1, 20, 0, 200, 100]);
+  assert.equal(node.executed, 1);
   assert.equal(node.onConnectInput(0, "INT", {}), "previous");
+  assert.equal(node.connected, 1);
   assert.equal(node.onConnectInput(2, "INT", {}), false);
+  assert.equal(node.connected, 2);
   const serialized = { widgets_values: ["portrait.png", null, 2, 1, 20, 0, 200, 100] };
   node.onSerialize(serialized);
   assert.deepEqual(serialized.widgets_values, ["portrait.png", 2, 1, 20, 0, 200, 100]);
@@ -375,8 +380,10 @@ test("draws image then four outside dims, border, handles, and label at normal q
   assert.equal(detailed.calls.filter(([name]) => name === "dim").length, 4);
   assert.equal(detailed.calls.filter(([name]) => name === "border").length, 1);
   assert.equal(detailed.calls.filter(([name]) => name === "label").length, 1);
+  assert.equal(detailed.calls.filter(([name]) => name === "handle").length, 4);
   assert.equal(detailed.calls.filter(([name]) => name === "dim").slice(-4).length, 4);
   assert.equal(lowQuality.calls.filter(([name]) => name === "label").length, 0);
+  assert.equal(lowQuality.calls.filter(([name]) => name === "handle").length, 0);
   assert.equal(lowQuality.calls.filter(([name]) => name === "border").length, 1);
 });
 
@@ -397,4 +404,43 @@ test("moves from the interior and resizes from every corner handle", () => {
     drag.move({ x: 20, y: 120 });
   }
   assert.equal(preview.onPointerDown(dragEvent(), { x: 1, y: 1 }), false);
+});
+
+test("rejects execution crops that overflow the source right or bottom edge", () => {
+  const { node } = installedCropNode();
+  node.widgets[0].callback("portrait.png");
+  const original = cropValues(node);
+  node.onExecuted({ crop: [{ ratio_width: 1, ratio_height: 1, x: 201, y: 0, width: 200, height: 200 }] });
+  node.onExecuted({ crop: [{ ratio_width: 1, ratio_height: 1, x: 0, y: 1, width: 200, height: 200 }] });
+  assert.deepEqual(cropValues(node), original);
+  assert.equal(node.executed, 2);
+});
+
+test("keeps execution-resolved dynamic ratios editable until the connection changes", () => {
+  const options = { graph: graphWith({ id: 1, type: "Math", widgets: [{ value: 2 }] }) };
+  const { node, preview } = installedCropNode(options);
+  node.widgets[0].callback("portrait.png");
+  node.inputs.find((input) => input.name === "ratio_width").link = 1;
+  node.inputs.find((input) => input.name === "ratio_height").link = 1;
+  node.onConnectionsChange();
+  assert.equal(preview.getState().label, "Run to resolve connected ratio");
+  assert.equal(node.widgets.find((widget) => widget.name === "crop_width").disabled, true);
+  node.onExecuted({ crop: [{ ratio_width: 2, ratio_height: 1, x: 0, y: 0, width: 400, height: 200 }] });
+  assert.equal(preview.getState().kind, "ready");
+  assert.equal(node.widgets.find((widget) => widget.name === "crop_width").disabled, false);
+  assert.equal(node.widgets.find((widget) => widget.name === "crop_height").disabled, true);
+  node.onConnectionsChange();
+  assert.equal(preview.getState().label, "Run to resolve connected ratio");
+  assert.equal(node.widgets.find((widget) => widget.name === "crop_width").disabled, true);
+});
+
+test("normalizes annotated input names into a confined view query", () => {
+  assert.equal(
+    buildInputViewUrl("nested\\photo name.png [input]"),
+    "/view?filename=photo+name.png&subfolder=nested&type=input",
+  );
+  assert.equal(
+    buildInputViewUrl("photo.png [input] extra"),
+    "/view?filename=photo.png+%5Binput%5D+extra&subfolder=&type=input",
+  );
 });
