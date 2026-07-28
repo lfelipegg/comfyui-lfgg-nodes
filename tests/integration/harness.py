@@ -492,9 +492,33 @@ def _exercise_comfyui(
     log_path = workspace / "comfyui.log"
     for directory in (output, input_directory, temp_directory, user_directory):
         directory.mkdir(parents=True, exist_ok=True)
-    fixture = Image.new("RGBA", (6, 4), (10, 20, 30, 255))
-    fixture.putpixel((1, 0), (100, 110, 120, 0))
-    fixture.save(input_directory / "lfgg_crop_fixture.png")
+    if crop_workflow := workflows.get("load_and_crop_image"):
+        asset_name = crop_workflow["1"]["inputs"]["image"]
+        if asset_name != "load_and_crop_image.png":
+            raise AssertionError("load and crop workflow input asset does not match")
+        custom_node = (checkout / "custom_nodes" / "lfgg-nodes").resolve(strict=True)
+        asset = (custom_node / "workflows" / asset_name).resolve(strict=True)
+        if not asset.is_file() or not asset.is_relative_to(custom_node):
+            raise AssertionError("load and crop workflow input asset is not packaged")
+        with Image.open(asset) as preview:
+            preview.load()
+            pixels = [
+                preview.getpixel((x, y))
+                for y in range(preview.height)
+                for x in range(preview.width)
+            ]
+        expected_pixels = [
+            (100, 110, 120, 0) if (x, y) == (1, 0) else (10, 20, 30, 255)
+            for y in range(4)
+            for x in range(6)
+        ]
+        if (
+            preview.mode != "RGBA"
+            or preview.size != (6, 4)
+            or pixels != expected_pixels
+        ):
+            raise AssertionError("load and crop workflow input asset is invalid")
+        (input_directory / asset_name).write_bytes(asset.read_bytes())
 
     if device == "cuda":
         _run(

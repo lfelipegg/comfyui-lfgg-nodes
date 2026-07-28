@@ -8,6 +8,7 @@ import types
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 ROOT = Path(__file__).parents[2]
 MAX_RESOLUTION = 16_384
@@ -540,11 +541,17 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
     workflow_path = ROOT / "workflows" / "sizing.json"
     save_workflow_path = ROOT / "workflows" / "save_image_dynamic.json"
     crop_workflow_path = ROOT / "workflows" / "load_and_crop_image.json"
+    crop_asset_path = ROOT / "workflows" / "load_and_crop_image.png"
+    crop_help_path = ROOT / "web" / "docs" / "LFGG_LoadAndCropImage" / "en.md"
     assert pyproject_path.exists(), "pyproject.toml is not implemented"
     assert manifest_path.exists(), "release schema manifest is not implemented"
     assert workflow_path.exists(), "complete sizing API workflow is not implemented"
     assert save_workflow_path.exists(), "dynamic save API workflow is not implemented"
     assert crop_workflow_path.exists(), "load and crop API workflow is not implemented"
+    assert crop_asset_path.exists(), (
+        "load and crop workflow input asset is not implemented"
+    )
+    assert crop_help_path.exists(), "load and crop embedded help is not implemented"
 
     try:
         import tomllib
@@ -606,18 +613,52 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         "Alpha-derived mask",
         "dynamic ratio",
         "frontend extension is unavailable",
+        "Stable ID `LFGG_LoadAndCropImage`",
+        "`image` (required selection)",
+        "`ratio_width` (default `1`)",
+        "`ratio_height` (default `1`)",
+        "`crop_x` (default `0`)",
+        "`crop_y` (default `0`)",
+        "`crop_width` (default `0`)",
+        "`crop_height` (default `0`)",
+        "Outputs: `image` (`IMAGE`) and `mask` (`MASK`)",
+        "`Run to resolve connected ratio`",
+        "`workflows/load_and_crop_image.png`",
+        "copy it to `ComfyUI/input/load_and_crop_image.png`",
+        "same selected image and resolved ratio",
     ]:
         assert claim in readme
 
     input_directory = tmp_path / "input"
     input_directory.mkdir()
-    (input_directory / "lfgg_crop_fixture.png").write_bytes(b"fixture")
+    (input_directory / "load_and_crop_image.png").write_bytes(b"fixture")
     monkeypatch.setitem(
         sys.modules,
         "folder_paths",
         types.SimpleNamespace(get_input_directory=lambda: str(input_directory)),
     )
     package = load_root_package(monkeypatch)
+    help_ids = {
+        path.name
+        for path in (ROOT / "web" / "docs").iterdir()
+        if (path / "en.md").is_file()
+    }
+    assert help_ids == {"LFGG_LoadAndCropImage"}
+    assert help_ids <= package.NODE_CLASS_MAPPINGS.keys()
+
+    with Image.open(crop_asset_path) as asset:
+        assert asset.mode == "RGBA"
+        assert asset.size == (6, 4)
+        assert [
+            asset.getpixel((x, y))
+            for y in range(asset.height)
+            for x in range(asset.width)
+        ] == [
+            (100, 110, 120, 0) if (x, y) == (1, 0) else (10, 20, 30, 255)
+            for y in range(4)
+            for x in range(6)
+        ]
+
     expected_nodes = {}
     for node_id, node in package.NODE_CLASS_MAPPINGS.items():
         expected_nodes[node_id] = {
@@ -714,7 +755,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         "1": {
             "class_type": "LFGG_LoadAndCropImage",
             "inputs": {
-                "image": "lfgg_crop_fixture.png",
+                "image": "load_and_crop_image.png",
                 "ratio_width": 1,
                 "ratio_height": 1,
                 "crop_x": 1,

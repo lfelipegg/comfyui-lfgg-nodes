@@ -19,7 +19,6 @@ FORBIDDEN_NAMES = {
     "build",
     "coverage.xml",
     "dist",
-    "docs",
     "node.zip",
     "reference",
     "release",
@@ -48,7 +47,7 @@ def _safe_path(name):
 
 
 def _forbidden(path):
-    return any(
+    return path.parts[0] == "docs" or any(
         part in FORBIDDEN_NAMES or part.endswith(".egg-info")
         for part in path.parts
     )

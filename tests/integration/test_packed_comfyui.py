@@ -310,6 +310,19 @@ def test_failure_traceback_redacts_error_and_log(monkeypatch, tmp_path):
 def test_creates_the_confined_crop_fixture_before_starting_comfyui(
     monkeypatch, tmp_path
 ):
+    packaged_asset = (
+        tmp_path
+        / "checkout"
+        / "custom_nodes"
+        / "lfgg-nodes"
+        / "workflows"
+        / "load_and_crop_image.png"
+    )
+    packaged_asset.parent.mkdir(parents=True)
+    packaged_asset.write_bytes(
+        (ROOT / "workflows" / "load_and_crop_image.png").read_bytes()
+    )
+
     def fail_start(*_args, **_kwargs):
         raise RuntimeError("stop after fixture setup")
 
@@ -323,15 +336,27 @@ def test_creates_the_confined_crop_fixture_before_starting_comfyui(
             device="cpu",
             workspace=tmp_path / "workspace",
             manifest={"nodes": {}},
-            workflows={},
+            workflows={
+                "load_and_crop_image": release_workflows()["load_and_crop_image"]
+            },
         )
 
-    fixture = tmp_path / "workspace" / "input" / "lfgg_crop_fixture.png"
+    workflow_input = release_workflows()["load_and_crop_image"]["1"]["inputs"]["image"]
+    assert workflow_input == packaged_asset.name
+    fixture = tmp_path / "workspace" / "input" / workflow_input
     assert fixture.is_relative_to(tmp_path / "workspace" / "input")
     with Image.open(fixture) as image:
         assert image.mode == "RGBA"
         assert image.size == (6, 4)
-        assert image.getpixel((1, 0)) == (100, 110, 120, 0)
+        assert [
+            image.getpixel((x, y))
+            for y in range(image.height)
+            for x in range(image.width)
+        ] == [
+            (100, 110, 120, 0) if (x, y) == (1, 0) else (10, 20, 30, 255)
+            for y in range(4)
+            for x in range(6)
+        ]
 
 
 def test_failure_traceback_redacts_error_without_log(monkeypatch, tmp_path):

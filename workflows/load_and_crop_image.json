@@ -2,7 +2,7 @@
   "1": {
     "class_type": "LFGG_LoadAndCropImage",
     "inputs": {
-      "image": "lfgg_crop_fixture.png",
+      "image": "load_and_crop_image.png",
       "ratio_width": 1,
       "ratio_height": 1,
       "crop_x": 1,

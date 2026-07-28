@@ -1,3 +1,4 @@
+import ctypes
 import io
 import os
 import sys
@@ -232,6 +233,161 @@ def test_fails_actionably_without_secure_descriptor_opening(monkeypatch, tmp_pat
 
     with pytest.raises(ValueError, match="secure selected-image access"):
         load_default_crop()
+
+
+class FakeNativeCall:
+    def __init__(self, function):
+        self.function = function
+
+    def __call__(self, *args):
+        return self.function(*args)
+
+
+def install_fake_windows_boundary(
+    monkeypatch,
+    *,
+    create_result=73,
+    attributes_ok=True,
+    final_length=None,
+    descriptor_result=41,
+    fdopen_result=None,
+):
+    closed_handles = []
+    closed_descriptors = []
+    final_path = r"\\?\C:\Comfy\input\source.png"
+
+    def get_final_path(_handle, buffer, _size, _flags):
+        if final_length is not None:
+            return final_length
+        buffer.value = final_path
+        return len(final_path)
+
+    kernel32 = SimpleNamespace(
+        CreateFileW=FakeNativeCall(lambda *_args: create_result),
+        GetFileInformationByHandleEx=FakeNativeCall(
+            lambda *_args: attributes_ok
+        ),
+        GetFileType=FakeNativeCall(lambda _handle: 1),
+        GetFinalPathNameByHandleW=FakeNativeCall(get_final_path),
+        CloseHandle=FakeNativeCall(
+            lambda handle: closed_handles.append(handle) or True
+        ),
+    )
+
+    def open_osfhandle(_handle, _flags):
+        if isinstance(descriptor_result, Exception):
+            raise descriptor_result
+        return descriptor_result
+
+    def fdopen(_descriptor, _mode):
+        if isinstance(fdopen_result, Exception):
+            raise fdopen_result
+        return fdopen_result or io.BytesIO(b"image")
+
+    monkeypatch.setattr(
+        ctypes,
+        "WinDLL",
+        lambda *_args, **_kwargs: kernel32,
+        raising=False,
+    )
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 5, raising=False)
+    monkeypatch.setattr(
+        ctypes,
+        "WinError",
+        lambda code: OSError(f"native Windows error {code}"),
+        raising=False,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "msvcrt",
+        SimpleNamespace(open_osfhandle=open_osfhandle),
+    )
+    monkeypatch.setattr(os, "O_BINARY", 0, raising=False)
+    monkeypatch.setattr(os, "O_NOINHERIT", 0, raising=False)
+    monkeypatch.setattr(os, "fdopen", fdopen)
+    monkeypatch.setattr(os, "close", closed_descriptors.append)
+    return SimpleNamespace(
+        closed_handles=closed_handles,
+        closed_descriptors=closed_descriptors,
+        final_path=final_path,
+    )
+
+
+def test_native_windows_open_failure_does_not_close_an_invalid_handle(monkeypatch):
+    boundary = install_fake_windows_boundary(
+        monkeypatch,
+        create_result=ctypes.c_void_p(-1).value,
+    )
+
+    with pytest.raises(OSError, match="native Windows error"):
+        load_and_crop_image_module._open_windows_handle(
+            PureWindowsPath(r"C:\Comfy\input\source.png")
+        )
+
+    assert boundary.closed_handles == []
+
+
+def test_native_windows_metadata_failure_closes_the_handle(monkeypatch):
+    boundary = install_fake_windows_boundary(monkeypatch, attributes_ok=False)
+
+    with pytest.raises(OSError, match="native Windows error"):
+        load_and_crop_image_module._open_windows_handle(
+            PureWindowsPath(r"C:\Comfy\input\source.png")
+        )
+
+    assert boundary.closed_handles == [73]
+
+
+def test_native_windows_oversized_final_path_closes_the_handle(monkeypatch):
+    boundary = install_fake_windows_boundary(monkeypatch, final_length=32_768)
+
+    with pytest.raises(OSError, match="Windows path limit"):
+        load_and_crop_image_module._open_windows_handle(
+            PureWindowsPath(r"C:\Comfy\input\source.png")
+        )
+
+    assert boundary.closed_handles == [73]
+
+
+@pytest.mark.parametrize("stage", ["descriptor", "file-object"])
+def test_native_windows_descriptor_failures_release_the_owned_resource(
+    monkeypatch, stage
+):
+    boundary = install_fake_windows_boundary(
+        monkeypatch,
+        descriptor_result=(
+            OSError("descriptor conversion failed") if stage == "descriptor" else 41
+        ),
+        fdopen_result=(
+            OSError("file object failed") if stage == "file-object" else None
+        ),
+    )
+
+    with pytest.raises(OSError, match="failed"):
+        load_and_crop_image_module._open_windows_handle(
+            PureWindowsPath(r"C:\Comfy\input\source.png")
+        )
+
+    assert boundary.closed_handles == ([73] if stage == "descriptor" else [])
+    assert boundary.closed_descriptors == ([41] if stage == "file-object" else [])
+
+
+def test_native_windows_success_transfers_handle_ownership_to_the_file(monkeypatch):
+    source = io.BytesIO(b"image")
+    boundary = install_fake_windows_boundary(monkeypatch, fdopen_result=source)
+
+    opened, final_path, attributes, file_type = (
+        load_and_crop_image_module._open_windows_handle(
+            PureWindowsPath(r"C:\Comfy\input\source.png")
+        )
+    )
+
+    assert opened is source
+    assert final_path == boundary.final_path
+    assert attributes == 0
+    assert file_type == 1
+    assert boundary.closed_handles == []
+    assert boundary.closed_descriptors == []
 
 
 def test_windows_open_accepts_regular_file_beneath_input_root(monkeypatch):

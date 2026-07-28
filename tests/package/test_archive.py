@@ -24,7 +24,9 @@ EXPECTED_PATHS = {
     "web/ratio_preview.mjs",
     "web/crop_editor.js",
     "web/crop_editor.mjs",
+    "web/docs/LFGG_LoadAndCropImage/en.md",
     "workflows/load_and_crop_image.json",
+    "workflows/load_and_crop_image.png",
     "workflows/save_image_dynamic.json",
     "workflows/sizing.json",
 }

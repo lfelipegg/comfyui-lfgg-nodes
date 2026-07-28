@@ -275,6 +275,7 @@ function cropContext() {
   return {
     calls,
     save() {}, restore() {}, beginPath() {}, stroke() {},
+    rect(...args) { calls.push(["rect", ...args]); },
     fill() { calls.push(["handle"]); },
     drawImage(...args) { calls.push(["image", ...args]); },
     fillRect(...args) { calls.push(["dim", ...args]); },
@@ -333,6 +334,52 @@ test("loads an image, initializes the crop, and preserves saved width and loadin
   assert.ok(node.size[1] >= 160);
 });
 
+test("loads the selected image on install and restores only a matching persisted crop", () => {
+  const install = (values) => {
+    const node = cropNode();
+    for (const [name, value] of Object.entries(values)) {
+      node.widgets.find((widget) => widget.name === name).value = value;
+    }
+    const requests = [];
+    const preview = installCropEditor(node, {
+      createImage: () => loadedImage(),
+      buildViewUrl(value) {
+        requests.push(value);
+        return `/view?filename=${value}`;
+      },
+    });
+    return { node, preview, requests };
+  };
+
+  const restored = install({
+    crop_x: 25,
+    crop_y: 50,
+    crop_width: 100,
+    crop_height: 100,
+  });
+  assert.deepEqual(restored.requests, ["portrait.png"]);
+  assert.deepEqual(cropValues(restored.node), [25, 50, 100, 100]);
+  const context = cropContext();
+  restored.preview.draw(context, restored.node, 320, 20, 360, false);
+  assert.equal(context.calls[0][0], "image");
+
+  assert.deepEqual(cropValues(install({}).node), [100, 0, 200, 200]);
+  assert.deepEqual(
+    cropValues(install({
+      ratio_width: 2,
+      crop_x: 25,
+      crop_y: 50,
+      crop_width: 100,
+      crop_height: 100,
+    }).node),
+    [0, 0, 400, 200],
+  );
+
+  restored.node.widgets[0].value = "replacement.png";
+  restored.node.widgets[0].callback("replacement.png");
+  assert.deepEqual(cropValues(restored.node), [100, 0, 200, 200]);
+});
+
 test("normalizes numeric edits once and resets for local, constant, and computed ratios", () => {
   const options = { graph: undefined };
   const { node, preview } = installedCropNode(options);
@@ -352,6 +399,113 @@ test("normalizes numeric edits once and resets for local, constant, and computed
   node.inputs.find((input) => input.name === "ratio_height").link = 2;
   node.onConnectionsChange?.();
   assert.equal(preview.getState().label, "Run to resolve connected ratio");
+});
+
+test("watches a primitive numeric widget through reroutes once and resets later edits", () => {
+  let originalCalls = 0;
+  const numeric = {
+    value: 2,
+    callback() {
+      originalCalls += 1;
+    },
+  };
+  const primitive = { id: 1, type: "PrimitiveNode", widgets: [numeric] };
+  const reroute = { id: 2, type: "Reroute", inputs: [{ link: 1 }] };
+  const graph = {
+    links: {
+      1: [1, 0, 2, 0, "INT"],
+      2: [2, 0, 99, 0, "INT"],
+    },
+    getNodeById(id) {
+      return [primitive, reroute].find((candidate) => candidate.id === id);
+    },
+  };
+  const { node } = installedCropNode({ graph });
+  node.inputs.find((input) => input.name === "ratio_width").link = 2;
+  node.onConnectionsChange();
+  node.onConnectionsChange();
+  node.onExecuted({
+    crop: [{
+      ratio_width: 2,
+      ratio_height: 1,
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 200,
+    }],
+  });
+
+  numeric.value = 1;
+  numeric.callback(1);
+
+  assert.equal(originalCalls, 1);
+  assert.deepEqual(cropValues(node), [100, 0, 200, 200]);
+});
+
+test("idempotent graph reload restores persisted state and attaches primitive listeners", () => {
+  let originalCalls = 0;
+  const numeric = {
+    value: 2,
+    callback() {
+      originalCalls += 1;
+    },
+  };
+  const primitive = { id: 1, type: "PrimitiveNode", widgets: [numeric] };
+  const reroute = { id: 2, type: "Reroute", inputs: [{ link: 1 }] };
+  const graph = {
+    links: {
+      1: [1, 0, 2, 0, "INT"],
+      2: [2, 0, 99, 0, "INT"],
+    },
+    getNodeById(id) {
+      return [primitive, reroute].find((candidate) => candidate.id === id);
+    },
+  };
+  const node = cropNode();
+  const options = {
+    createImage: () => loadedImage(),
+    buildViewUrl: (value) => `/view?filename=${value}`,
+    getGraph: () => graph,
+  };
+  const preview = installCropEditor(node, options);
+  for (const [name, value] of Object.entries({
+    crop_x: 25,
+    crop_y: 50,
+    crop_width: 100,
+    crop_height: 50,
+  })) {
+    node.widgets.find((widget) => widget.name === name).value = value;
+  }
+  node.inputs.find((input) => input.name === "ratio_width").link = 2;
+
+  assert.equal(installCropEditor(node, options), preview);
+  assert.equal(installCropEditor(node, options), preview);
+  const context = cropContext();
+  preview.draw(context, node, 320, 20, 360, false);
+  assert.equal(
+    context.calls.find(([name]) => name === "label")?.[1],
+    "100 × 50",
+  );
+
+  numeric.value = 1;
+  numeric.callback(1);
+  assert.equal(originalCalls, 1);
+  assert.deepEqual(cropValues(node), [100, 0, 200, 200]);
+  assert.equal(
+    node.widgets.filter((widget) => widget.name === "lfgg_crop_editor").length,
+    1,
+  );
+});
+
+test("does not watch numeric widgets on computed ratio origins", () => {
+  const callback = () => {};
+  const computed = { id: 1, type: "Math", widgets: [{ value: 2, callback }] };
+  const { node } = installedCropNode({ graph: graphWith(computed) });
+  node.inputs.find((input) => input.name === "ratio_width").link = 1;
+
+  node.onConnectionsChange();
+
+  assert.equal(computed.widgets[0].callback, callback);
 });
 
 test("applies execution crop data, composes connection rules, and serializes only persisted widgets", () => {
@@ -387,6 +541,22 @@ test("draws image then four outside dims, border, handles, and label at normal q
   assert.equal(lowQuality.calls.filter(([name]) => name === "border").length, 1);
 });
 
+test("draws the unresolved connected-ratio message at normal quality", () => {
+  const computed = { id: 1, type: "Math", widgets: [{ value: 2 }] };
+  const { node, preview } = installedCropNode({ graph: graphWith(computed) });
+  node.inputs.find((input) => input.name === "ratio_width").link = 1;
+  node.onConnectionsChange();
+
+  const context = cropContext();
+  preview.draw(context, node, 320, 20, 360, false);
+
+  assert.equal(context.calls[0][0], "image");
+  assert.deepEqual(
+    context.calls.find(([name]) => name === "label")?.slice(1),
+    ["Run to resolve connected ratio", 160, 200],
+  );
+});
+
 test("moves from the interior and resizes from every corner handle", () => {
   const { node, preview } = installedCropNode();
   node.widgets[0].callback("portrait.png");
@@ -404,6 +574,42 @@ test("moves from the interior and resizes from every corner handle", () => {
     drag.move({ x: 20, y: 120 });
   }
   assert.equal(preview.onPointerDown(dragEvent(), { x: 1, y: 1 }), false);
+});
+
+test("keeps tiny-frame handles fixed and gives every corner a partitioned hit target", () => {
+  const { node, preview } = installedCropNode();
+  const setTinyFrame = () => node.onExecuted({
+    crop: [{
+      ratio_width: 1,
+      ratio_height: 1,
+      x: 200,
+      y: 100,
+      width: 1,
+      height: 1,
+    }],
+  });
+  setTinyFrame();
+  const context = cropContext();
+  preview.draw(context, node, 320, 20, 360, false);
+  assert.deepEqual(
+    context.calls.filter(([name]) => name === "rect").slice(-4).map((call) => call.slice(-2)),
+    [[12, 12], [12, 12], [12, 12], [12, 12]],
+  );
+
+  const sourcePoint = (x, y) => ({ x: 8 + x * 0.76, y: 124 + y * 0.76 });
+  const cases = [
+    [{ x: 145, y: 185 }, sourcePoint(151, 51), [151, 51, 50, 50]],
+    [{ x: 176, y: 185 }, sourcePoint(250, 51), [200, 51, 50, 50]],
+    [{ x: 145, y: 216 }, sourcePoint(151, 150), [151, 100, 50, 50]],
+    [{ x: 176, y: 216 }, sourcePoint(250, 150), [200, 100, 50, 50]],
+  ];
+  for (const [down, moved, expected] of cases) {
+    setTinyFrame();
+    const drag = dragEvent();
+    assert.equal(preview.onPointerDown(drag, down), true);
+    drag.move(moved);
+    assert.deepEqual(cropValues(node), expected);
+  }
 });
 
 test("rejects execution crops that overflow the source right or bottom edge", () => {

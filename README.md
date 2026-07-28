@@ -65,11 +65,34 @@ allocate, copy, cast, mutate, or move the image.
 the ComfyUI input directory, accepts images up to `16384 × 16384` pixels and
 268,435,456 total pixels, and returns the selected exact-ratio source rectangle
 without resampling. Alpha produces an Alpha-derived mask using ComfyUI's
-transparent-is-white convention. Its ratio inputs support dynamic ratio
-connections; an unresolved connection falls back to normal execution before
-the frontend enables crop editing. If the frontend extension is unavailable,
-the standard image and numeric inputs remain usable. The node does not access
-the network and writes no files.
+transparent-is-white convention. Stable ID `LFGG_LoadAndCropImage`.
+
+Persisted inputs, in order, are:
+
+- `image` (required selection)
+- `ratio_width` (default `1`)
+- `ratio_height` (default `1`)
+- `crop_x` (default `0`)
+- `crop_y` (default `0`)
+- `crop_width` (default `0`)
+- `crop_height` (default `0`); derived by the frontend
+
+Outputs: `image` (`IMAGE`) and `mask` (`MASK`). The source must be a relative,
+contained file beneath ComfyUI's input directory; URLs, arbitrary paths,
+symlink escapes, corrupt images, and multi-frame images are rejected. EXIF
+orientation is applied before source-pixel coordinates. Ratio components must
+be positive, are reduced before use, and must fit as a whole-pixel crop.
+
+The all-zero crop initializes the largest centered exact-ratio frame. A
+positive, contained frame persists for the same selected image and resolved
+ratio; selecting another image or changing the ratio resets it. Primitive
+numeric ratios through reroutes update immediately. Other dynamic ratio
+connections display `Run to resolve connected ratio` until backend execution
+returns a resolved centered crop. Resizing the graph node changes only the
+preview. If the frontend extension is unavailable, the same seven standard
+inputs remain as the numeric fallback. The frontend uses ComfyUI's native input
+view endpoint and adds no route. The node does not access the network and writes
+no files.
 
 `LFGG Save Image Dynamic` is in `LFGG/Image`. It saves one PNG per batch frame
 with separate output-relative path and filename templates. Supported brace
@@ -93,6 +116,12 @@ execution. It never overwrites or removes a pre-existing file. Imports and
 schema discovery do not write files. The tracked
 [dynamic-save API workflow](workflows/save_image_dynamic.json) writes small
 example PNGs beneath that output root.
+
+The tracked [load-and-crop API workflow](workflows/load_and_crop_image.json)
+requires the redistributable same-stem asset
+`workflows/load_and_crop_image.png`; copy it to
+`ComfyUI/input/load_and_crop_image.png` before opening or running the workflow.
+The loader reads that input file but performs no file writes.
 
 ## Migrate legacy workflows
 
