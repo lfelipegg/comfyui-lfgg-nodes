@@ -873,6 +873,7 @@ def _assert_sizing_result(result):
         "LFGG_ImageDimensionsByLongSide",
         "LFGG_ImageDimensionsByPixelBudget",
         "LFGG_LoadAndCropImage",
+        "LFGG_ResizeImageByLongSide",
         "LFGG_SaveImageDynamic",
     ]
     assert result["output_files"] == [
@@ -884,6 +885,18 @@ def _assert_sizing_result(result):
         "lfgg/sizing/aspect_ratio_00001_.latent": [1, 4, 72, 128],
         "lfgg/sizing/long_side_00001_.latent": [2, 4, 36, 64],
         "lfgg/sizing/pixel_budget_00001_.latent": [2, 4, 27, 48],
+    }
+    assert result["image_details"]["lfgg/sizing/resized_00001_.png"] == {
+        "mode": "RGB",
+        "size": [512, 288],
+        "pixel": [0, 0, 0],
+        "text_keys": ["prompt", "workflow"],
+    }
+    assert result["image_details"]["lfgg/sizing/resized_00002_.png"] == {
+        "mode": "RGB",
+        "size": [512, 288],
+        "pixel": [0, 0, 0],
+        "text_keys": ["prompt", "workflow"],
     }
 
 
@@ -915,6 +928,8 @@ def _assert_crop_result(result):
         "lfgg/dynamic/metadata_off_00002_.png",
         "lfgg/dynamic/metadata_on_00001_.png",
         "lfgg/dynamic/metadata_on_00002_.png",
+        "lfgg/sizing/resized_00001_.png",
+        "lfgg/sizing/resized_00002_.png",
     ]
     assert result["image_details"]["lfgg/crop/image_00001_.png"] == {
         "mode": "RGB",
@@ -948,7 +963,7 @@ def test_packed_comfyui_schema_and_workflow(integration_options, tmp_path):
         archive=archive,
         device=integration_options["device"],
         workspace=tmp_path,
-        manifest=json.loads((ROOT / "release" / "1.3.0-schema.json").read_text()),
+        manifest=json.loads((ROOT / "release" / "1.4.0-schema.json").read_text()),
         workflows=release_workflows(),
     )
 
@@ -968,7 +983,7 @@ def test_installed_comfyui_schema_and_workflow(integration_options, tmp_path):
         installed_comfyui=integration_options["installed_comfyui"],
         device=integration_options["device"],
         workspace=tmp_path,
-        manifest=json.loads((ROOT / "release" / "1.3.0-schema.json").read_text()),
+        manifest=json.loads((ROOT / "release" / "1.4.0-schema.json").read_text()),
         workflows=release_workflows(),
     )
 

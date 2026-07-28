@@ -111,5 +111,27 @@
       ],
       "filename_prefix": "lfgg/sizing/pixel_budget"
     }
+  },
+  "11": {
+    "class_type": "LFGG_ResizeImageByLongSide",
+    "inputs": {
+      "image": [
+        "4",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "long_side": 512,
+      "divisible_by": 8
+    }
+  },
+  "12": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "11",
+        0
+      ],
+      "filename_prefix": "lfgg/sizing/resized"
+    }
   }
 }

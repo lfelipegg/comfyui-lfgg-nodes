@@ -1,6 +1,9 @@
 from .dimensions_by_aspect_ratio import _max_resolution
 from .sizing import _bounded_int, fit_source_dimensions
 
+UPSCALE_METHODS = ("lanczos", "nearest-exact", "bilinear", "area", "bicubic")
+MAX_RESIZE_PIXELS = 16_384**2
+
 
 def _image_dimensions(image):
     from torch import Tensor
@@ -24,6 +27,26 @@ def _divisible_by_input(max_resolution):
             "tooltip": "Aligns both output dimensions to this exact multiple.",
         },
     )
+
+
+def _validate_resize_image(image):
+    width, height = _image_dimensions(image)
+    if image.shape[3] not in {1, 3, 4}:
+        raise ValueError(
+            "IMAGE must be shaped [B,H,W,C] with C equal to 1, 3, or 4"
+        )
+    if image.shape[0] * height * width > MAX_RESIZE_PIXELS:
+        raise ValueError(
+            f"IMAGE batch must contain at most {MAX_RESIZE_PIXELS} pixels"
+        )
+    if not image.is_floating_point():
+        raise ValueError("IMAGE values must have a floating-point dtype")
+
+    from torch import isfinite
+
+    if not isfinite(image).all().item():
+        raise ValueError("IMAGE values must all be finite")
+    return width, height
 
 
 class ImageDimensionsByLongSide:
@@ -92,6 +115,68 @@ class ImageDimensionsByLongSide:
             divisible_by=divisible_by,
             max_resolution=max_resolution,
         )
+
+
+class ResizeImageByLongSide(ImageDimensionsByLongSide):
+    DESCRIPTION = (
+        "Resizes an image to aligned dimensions without upscaling or exceeding "
+        "the selected long-side limit."
+    )
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        sizing_inputs = super().INPUT_TYPES()["required"]
+        return {
+            "required": {
+                "image": (
+                    "IMAGE",
+                    {"tooltip": "Image batch to resize."},
+                ),
+                "upscale_method": (
+                    list(UPSCALE_METHODS),
+                    {
+                        "tooltip": (
+                            "Interpolation method used when resizing the image."
+                        )
+                    },
+                ),
+                "long_side": sizing_inputs["long_side"],
+                "divisible_by": sizing_inputs["divisible_by"],
+            }
+        }
+
+    RETURN_TYPES = ("IMAGE", "INT", "INT")
+    RETURN_NAMES = ("image", "width", "height")
+    OUTPUT_TOOLTIPS = (
+        "Image resized to the aligned dimensions.",
+        "Aligned output width in pixels.",
+        "Aligned output height in pixels.",
+    )
+    FUNCTION = "resize"
+    CATEGORY = "LFGG/image"
+
+    def resize(self, image, long_side, divisible_by, upscale_method):
+        if upscale_method not in UPSCALE_METHODS:
+            raise ValueError(
+                f"upscale_method must be one of: {', '.join(UPSCALE_METHODS)}"
+            )
+        source_dimensions = _validate_resize_image(image)
+        width, height = self.calculate(image, long_side, divisible_by)
+        if (width, height) == source_dimensions:
+            return image, width, height
+
+        from comfy.utils import common_upscale
+
+        resized = common_upscale(
+            image.movedim(-1, 1),
+            width,
+            height,
+            upscale_method,
+            "disabled",
+        )
+        if image.shape[3] == 1 and resized.ndim == 3:
+            resized = resized.unsqueeze(1)
+        return resized.movedim(1, -1), width, height
 
 
 class ImageDimensionsByPixelBudget:

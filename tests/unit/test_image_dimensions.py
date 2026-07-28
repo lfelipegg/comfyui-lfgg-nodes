@@ -25,6 +25,117 @@ def image_nodes():
     return module.ImageDimensionsByLongSide(), module.ImageDimensionsByPixelBudget()
 
 
+def resize_node():
+    try:
+        module = import_module("lfgg_nodes.image_dimensions")
+        return module.ResizeImageByLongSide()
+    except (AttributeError, ModuleNotFoundError):
+        pytest.fail("resize-by-long-side node is not implemented")
+
+
+def test_resize_by_long_side_uses_shared_dimensions_and_native_method(monkeypatch):
+    calls = []
+
+    def common_upscale(image, width, height, method, crop):
+        calls.append((image.shape, width, height, method, crop))
+        return torch.empty((image.shape[0], image.shape[1], height, width))
+
+    comfy_utils = types.ModuleType("comfy.utils")
+    comfy_utils.common_upscale = common_upscale
+    comfy = types.ModuleType("comfy")
+    comfy.utils = comfy_utils
+    monkeypatch.setitem(sys.modules, "comfy", comfy)
+    monkeypatch.setitem(sys.modules, "comfy.utils", comfy_utils)
+    image = torch.zeros((2, 108, 192, 3))
+
+    resized, width, height = resize_node().resize(
+        image,
+        long_side=128,
+        divisible_by=8,
+        upscale_method="lanczos",
+    )
+
+    assert calls == [(torch.Size([2, 3, 108, 192]), 128, 72, "lanczos", "disabled")]
+    assert resized.shape == (2, 72, 128, 3)
+    assert (width, height) == (128, 72)
+
+
+def test_resize_by_long_side_restores_lanczos_grayscale_channel(monkeypatch):
+    def common_upscale(image, width, height, method, crop):
+        assert image.shape[1] == 1
+        assert (method, crop) == ("lanczos", "disabled")
+        return torch.zeros((image.shape[0], height, width))
+
+    comfy_utils = types.ModuleType("comfy.utils")
+    comfy_utils.common_upscale = common_upscale
+    comfy = types.ModuleType("comfy")
+    comfy.utils = comfy_utils
+    monkeypatch.setitem(sys.modules, "comfy", comfy)
+    monkeypatch.setitem(sys.modules, "comfy.utils", comfy_utils)
+
+    resized, width, height = resize_node().resize(
+        torch.zeros((1, 32, 64, 1)),
+        long_side=32,
+        divisible_by=1,
+        upscale_method="lanczos",
+    )
+
+    assert resized.shape == (1, 16, 32, 1)
+    assert (width, height) == (32, 16)
+
+
+def test_resize_by_long_side_returns_aligned_source_without_resampling(monkeypatch):
+    monkeypatch.delitem(sys.modules, "comfy", raising=False)
+    monkeypatch.delitem(sys.modules, "comfy.utils", raising=False)
+    image = torch.rand((2, 240, 320, 3))
+
+    resized, width, height = resize_node().resize(
+        image,
+        long_side=1024,
+        divisible_by=8,
+        upscale_method="lanczos",
+    )
+
+    assert resized is image
+    assert (width, height) == (320, 240)
+
+
+def test_resize_by_long_side_rejects_unknown_upscale_method():
+    with pytest.raises(ValueError, match="upscale_method"):
+        resize_node().resize(
+            torch.empty((1, 240, 320, 3)),
+            long_side=1024,
+            divisible_by=8,
+            upscale_method="unknown",
+        )
+
+
+@pytest.mark.parametrize(
+    ("image", "message"),
+    [
+        (torch.empty((1, 2, 2, 2)), "C equal to 1, 3, or 4"),
+        (torch.empty((1, 2, 2, 3), dtype=torch.int64), "floating-point"),
+        (torch.full((1, 2, 2, 3), float("nan")), "finite"),
+        (torch.empty((1, 3, 3, 3)), "at most 8 pixels"),
+    ],
+)
+def test_resize_by_long_side_rejects_unsafe_image_boundaries(
+    monkeypatch,
+    image,
+    message,
+):
+    module = import_module("lfgg_nodes.image_dimensions")
+    monkeypatch.setattr(module, "MAX_RESIZE_PIXELS", 8, raising=False)
+
+    with pytest.raises(ValueError, match=message):
+        resize_node().resize(
+            image,
+            long_side=16,
+            divisible_by=1,
+            upscale_method="lanczos",
+        )
+
+
 def test_long_side_downscales_a_batch_without_growing_either_axis():
     long_side, _ = image_nodes()
     image = torch.empty((2, 1080, 1920, 3))

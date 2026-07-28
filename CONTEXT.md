@@ -20,6 +20,11 @@ A successor node that computes pixel width and height under a sizing policy
 without resizing an image or creating a latent.
 _Avoid_: Latent sizing node
 
+**Resize successor**:
+A successor node that resamples an image to dimensions selected by a sizing
+policy without enlarging either source axis.
+_Avoid_: Upscaler, sizing successor
+
 **Ratio preview**:
 A visual representation of the requested width-to-height proportion, independent
 of the aligned dimensions produced during execution.

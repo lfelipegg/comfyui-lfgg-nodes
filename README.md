@@ -22,7 +22,7 @@ dependency. The pack includes a build-free frontend extension.
 
 ## Compatibility
 
-The required 1.3.0 release qualification covers:
+The required 1.4.0 release qualification covers:
 
 - ComfyUI `>=0.28.0`, tested at exact stable tags rather than `master`
 - ComfyUI frontend `>=1.45.21`
@@ -40,6 +40,7 @@ accelerators are not claimed.
 | LFGG Dimensions by Aspect Ratio | preset/custom ratio, long-side cap, alignment | width, height |
 | LFGG Image Dimensions by Long Side | IMAGE, long-side cap, alignment | width, height |
 | LFGG Image Dimensions by Pixel Budget | IMAGE, exact pixel cap, alignment | width, height |
+| LFGG Resize Image by Long Side | IMAGE, interpolation method, long-side cap, alignment | resized image, width, height |
 | LFGG Load and Crop Image | one still image, ratio, exact source-pixel crop | cropped image, alpha-derived mask |
 | LFGG Save Image Dynamic | IMAGE, path/filename templates, metadata toggle, optional model label | saved-image previews |
 
@@ -60,6 +61,16 @@ the node still executes normally.
 The two image-derived nodes are downscale-only and inspect the shared
 `[B,H,W,C]` tensor shape. Batch count does not change the result. They do not
 allocate, copy, cast, mutate, or move the image.
+
+`LFGG Resize Image by Long Side` is in `LFGG/image`. It uses the same
+downscale-only dimensions as `LFGG Image Dimensions by Long Side`, then
+resamples the complete image with cropping disabled. Its `upscale_method`
+defaults to `lanczos`; the other native choices are `nearest-exact`, `bilinear`,
+`area`, and `bicubic`. It preserves the batch and returns the resized `IMAGE`,
+`width`, and `height`. When the aligned dimensions already match the source, it
+returns the original tensor without resampling. Inputs must contain finite
+floating-point values with 1, 3, or 4 channels and at most 268,435,456 pixels
+across the batch.
 
 `LFGG Load and Crop Image` is in `LFGG/image`. It reads one still image from
 the ComfyUI input directory, accepts images up to `16384 × 16384` pixels and
@@ -107,7 +118,9 @@ standard output-relative saved-image previews. One execution is limited to
 The sizing nodes use standard-library integer math plus tensor shape
 inspection. They do not access the network and do not read or write files.
 The tracked [sizing API workflow](workflows/sizing.json) uses native
-`SaveLatent` nodes, which do write example `.latent` files.
+`SaveLatent` and `SaveImage` nodes, which do write example `.latent` and `.png`
+files. The resize node uses ComfyUI's in-memory image resampler and does not
+itself access the network or filesystem.
 
 The dynamic saver does not access the network. Its only writes are creation of
 output subdirectories beneath ComfyUI's resolved output root, exclusive

@@ -65,6 +65,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_ImageDimensionsByPixelBudget": (
             "LFGG Image Dimensions by Pixel Budget"
         ),
+        "LFGG_ResizeImageByLongSide": "LFGG Resize Image by Long Side",
         "LFGG_LoadAndCropImage": "LFGG Load and Crop Image",
         "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
     }
@@ -72,6 +73,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_DimensionsByAspectRatio",
         "LFGG_ImageDimensionsByLongSide",
         "LFGG_ImageDimensionsByPixelBudget",
+        "LFGG_ResizeImageByLongSide",
         "LFGG_LoadAndCropImage",
         "LFGG_SaveImageDynamic",
     ]
@@ -421,6 +423,58 @@ def test_image_derived_v1_schemas_are_exact(monkeypatch):
     }
 
 
+def test_resize_image_by_long_side_v1_schema_is_exact(monkeypatch):
+    package = load_root_package(monkeypatch)
+    node = package.NODE_CLASS_MAPPINGS["LFGG_ResizeImageByLongSide"]
+
+    assert (
+        package.NODE_DISPLAY_NAME_MAPPINGS["LFGG_ResizeImageByLongSide"]
+        == "LFGG Resize Image by Long Side"
+    )
+    assert node.CATEGORY == "LFGG/image"
+    assert node.DESCRIPTION == (
+        "Resizes an image to aligned dimensions without upscaling or exceeding "
+        "the selected long-side limit."
+    )
+    assert node.FUNCTION == "resize"
+    assert node.RETURN_TYPES == ("IMAGE", "INT", "INT")
+    assert node.RETURN_NAMES == ("image", "width", "height")
+    assert node.OUTPUT_TOOLTIPS == (
+        "Image resized to the aligned dimensions.",
+        "Aligned output width in pixels.",
+        "Aligned output height in pixels.",
+    )
+    assert node.INPUT_TYPES()["required"] == {
+        "image": (
+            "IMAGE",
+            {"tooltip": "Image batch to resize."},
+        ),
+        "upscale_method": (
+            ["lanczos", "nearest-exact", "bilinear", "area", "bicubic"],
+            {"tooltip": "Interpolation method used when resizing the image."},
+        ),
+        "long_side": (
+            "INT",
+            {
+                "default": 1024,
+                "min": 16,
+                "max": MAX_RESOLUTION,
+                "step": 8,
+                "tooltip": "Maximum size in pixels for the longer output axis.",
+            },
+        ),
+        "divisible_by": (
+            "INT",
+            {
+                "default": 8,
+                "min": 1,
+                "max": MAX_RESOLUTION,
+                "tooltip": "Aligns both output dimensions to this exact multiple.",
+            },
+        ),
+    }
+
+
 def test_save_image_dynamic_v1_schema_is_exact(monkeypatch):
     node = load_root_package(monkeypatch).NODE_CLASS_MAPPINGS[
         "LFGG_SaveImageDynamic"
@@ -510,6 +564,9 @@ def test_schema_uses_comfyui_max_resolution(monkeypatch, tmp_path):
     long_required = package.NODE_CLASS_MAPPINGS[
         "LFGG_ImageDimensionsByLongSide"
     ].INPUT_TYPES()["required"]
+    resize_required = package.NODE_CLASS_MAPPINGS[
+        "LFGG_ResizeImageByLongSide"
+    ].INPUT_TYPES()["required"]
     pixel_required = package.NODE_CLASS_MAPPINGS[
         "LFGG_ImageDimensionsByPixelBudget"
     ].INPUT_TYPES()["required"]
@@ -523,6 +580,8 @@ def test_schema_uses_comfyui_max_resolution(monkeypatch, tmp_path):
     assert aspect_required["custom_ratio_height"][1]["max"] == 4096
     assert long_required["long_side"][1]["max"] == 4096
     assert long_required["divisible_by"][1]["max"] == 4096
+    assert resize_required["long_side"][1]["max"] == 4096
+    assert resize_required["divisible_by"][1]["max"] == 4096
     assert pixel_required["max_pixels"][1]["max"] == 4096**2
     assert pixel_required["divisible_by"][1]["max"] == 4096
     assert crop_required["ratio_width"][1]["max"] == 4096
@@ -537,7 +596,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
     monkeypatch, tmp_path
 ):
     pyproject_path = ROOT / "pyproject.toml"
-    manifest_path = ROOT / "release" / "1.3.0-schema.json"
+    manifest_path = ROOT / "release" / "1.4.0-schema.json"
     workflow_path = ROOT / "workflows" / "sizing.json"
     save_workflow_path = ROOT / "workflows" / "save_image_dynamic.json"
     crop_workflow_path = ROOT / "workflows" / "load_and_crop_image.json"
@@ -562,7 +621,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
     project = metadata["project"]
     comfy = metadata["tool"]["comfy"]
     assert project["name"] == "lfgg-nodes"
-    assert project["version"] == "1.3.0"
+    assert project["version"] == "1.4.0"
     assert project["requires-python"] == ">=3.10,<3.14"
     assert project["dependencies"] == [
         "Pillow",
@@ -623,10 +682,17 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         "`crop_height` (default `0`)",
         "Outputs: `image` (`IMAGE`) and `mask` (`MASK`)",
         "`Run to resolve connected ratio`",
-        "`workflows/load_and_crop_image.png`",
-        "copy it to `ComfyUI/input/load_and_crop_image.png`",
-        "same selected image and resolved ratio",
-    ]:
+            "`workflows/load_and_crop_image.png`",
+            "copy it to `ComfyUI/input/load_and_crop_image.png`",
+            "same selected image and resolved ratio",
+            "LFGG Resize Image by Long Side",
+            "`lanczos`",
+            "`nearest-exact`",
+            "`bilinear`",
+            "`area`",
+            "`bicubic`",
+            "returns the original tensor",
+        ]:
         assert claim in readme
 
     input_directory = tmp_path / "input"
@@ -671,7 +737,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
             "output_tooltips": list(getattr(node, "OUTPUT_TOOLTIPS", ())),
         }
     assert json.loads(manifest_path.read_text()) == {
-        "version": "1.3.0",
+        "version": "1.4.0",
         "nodes": expected_nodes,
     }
 
@@ -718,6 +784,22 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
     assert workflow["10"]["inputs"] == {
         "samples": ["9", 0],
         "filename_prefix": "lfgg/sizing/pixel_budget",
+    }
+    assert workflow["11"] == {
+        "class_type": "LFGG_ResizeImageByLongSide",
+        "inputs": {
+            "image": ["4", 0],
+            "upscale_method": "lanczos",
+            "long_side": 512,
+            "divisible_by": 8,
+        },
+    }
+    assert workflow["12"] == {
+        "class_type": "SaveImage",
+        "inputs": {
+            "images": ["11", 0],
+            "filename_prefix": "lfgg/sizing/resized",
+        },
     }
 
     save_workflow = json.loads(save_workflow_path.read_text())
