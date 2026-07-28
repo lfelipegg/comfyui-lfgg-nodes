@@ -304,15 +304,15 @@ function cornerAtPoint(point, rectangle) {
   const halfTarget = 20;
   const midpointX = rectangle.x + rectangle.width / 2;
   const midpointY = rectangle.y + rectangle.height / 2;
-  const moveHalfWidth = Math.min(4, rectangle.width / 4);
-  const moveHalfHeight = Math.min(4, rectangle.height / 4);
+  const moveHalfWidth = 8;
+  const moveHalfHeight = 8;
   if (pointInRectangle(point, {
     x: midpointX - moveHalfWidth,
     y: midpointY - moveHalfHeight,
     width: moveHalfWidth * 2,
     height: moveHalfHeight * 2,
   })) {
-    return undefined;
+    return "move";
   }
   const horizontal = point.x < midpointX ? "left" : "right";
   const vertical = point.y < midpointY ? "top" : "bottom";
@@ -383,10 +383,10 @@ export function installCropEditor(
   const staticRatioKey = () => {
     const width = resolveStaticInt(node, "ratio_width", getGraph());
     const height = resolveStaticInt(node, "ratio_height", getGraph());
-    return width.kind === "value" && width.value > 0 &&
-      height.kind === "value" && height.value > 0
-      ? `${width.value}:${height.value}`
-      : `${width.kind}:${height.kind}`;
+    const part = (resolved) => resolved.kind === "value"
+      ? `value:${resolved.value}`
+      : resolved.kind;
+    return `${part(width)}|${part(height)}`;
   };
   const rememberStaticRatio = () => {
     controller.observedStaticRatio = staticRatioKey();
@@ -547,8 +547,9 @@ export function installCropEditor(
         width: controller.frame.width * contained.width / controller.source.width,
         height: controller.frame.height * contained.height / controller.source.height,
       };
-      const corner = cornerAtPoint(position, display);
-      if (!corner && !pointInRectangle(position, display)) return false;
+      const target = cornerAtPoint(position, display);
+      if (!target && !pointInRectangle(position, display)) return false;
+      const corner = target === "move" ? undefined : target;
       const start = { ...controller.frame };
       const sourcePoint = (point) => ({
         x: (point.x - contained.x) * controller.source.width / contained.width,

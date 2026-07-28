@@ -648,7 +648,7 @@ test("moves from the interior and resizes from every corner handle", () => {
   assert.equal(preview.onPointerDown(dragEvent(), { x: 1, y: 1 }), false);
 });
 
-test("keeps tiny-frame handles fixed and gives every corner a partitioned hit target", () => {
+test("keeps tiny-frame move and corner targets practical and deterministic", () => {
   const { node, preview } = installedCropNode();
   const setTinyFrame = () => node.onExecuted({
     crop: [{
@@ -685,11 +685,16 @@ test("keeps tiny-frame handles fixed and gives every corner a partitioned hit ta
 
   setTinyFrame();
   const move = dragEvent();
+  const center = sourcePoint(200.5, 100.5);
+  const expandedMovePoint = { x: center.x + 5, y: center.y + 4 };
   assert.equal(
-    preview.onPointerDown(move, sourcePoint(200.5, 100.5)),
+    preview.onPointerDown(move, expandedMovePoint),
     true,
   );
-  move.move(sourcePoint(220.5, 110.5));
+  move.move({
+    x: expandedMovePoint.x + 20 * 0.76,
+    y: expandedMovePoint.y + 10 * 0.76,
+  });
   assert.deepEqual(cropValues(node), [220, 110, 1, 1]);
 });
 
@@ -719,6 +724,63 @@ test("keeps execution-resolved dynamic ratios editable until the connection chan
   node.onConnectionsChange();
   assert.equal(preview.getState().label, "Run to resolve connected ratio");
   assert.equal(node.widgets.find((widget) => widget.name === "crop_width").disabled, true);
+});
+
+test("invalidates execution when one resolved side of a mixed ratio changes", () => {
+  const computed = { id: 1, type: "Math", widgets: [{ value: 2 }] };
+  const numeric = { value: 1, callback() {} };
+  const primitive = { id: 2, type: "PrimitiveNode", widgets: [numeric] };
+  const graph = {
+    links: {
+      1: [1, 0, 99, 0, "INT"],
+      2: [2, 0, 99, 1, "INT"],
+    },
+    getNodeById(id) {
+      return [computed, primitive].find((candidate) => candidate.id === id);
+    },
+  };
+  const { node, preview } = installedCropNode({ graph });
+  node.widgets[0].callback("portrait.png");
+  node.inputs.find((input) => input.name === "ratio_width").link = 1;
+  node.inputs.find((input) => input.name === "ratio_height").link = 2;
+  node.onConnectionsChange();
+  node.onExecuted({
+    crop: [{
+      ratio_width: 2,
+      ratio_height: 1,
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 200,
+    }],
+  });
+  assert.equal(preview.getState().kind, "ready");
+
+  numeric.value = 2;
+  preview.draw(cropContext(), node, 320, 20, 360, false);
+  assert.equal(preview.getState().label, "Run to resolve connected ratio");
+  assert.equal(node.widgets.find((widget) => widget.name === "crop_width").disabled, true);
+  const dirtyAfterChange = node.dirty;
+  preview.draw(cropContext(), node, 320, 20, 360, false);
+  assert.equal(node.dirty, dirtyAfterChange);
+
+  node.inputs.find((input) => input.name === "ratio_height").link = null;
+  node.onConnectionsChange();
+  node.onExecuted({
+    crop: [{
+      ratio_width: 2,
+      ratio_height: 1,
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 200,
+    }],
+  });
+  numeric.value = 3;
+  preview.draw(cropContext(), node, 320, 20, 360, false);
+  assert.equal(preview.getState().kind, "ready");
+  assert.equal(node.widgets.find((widget) => widget.name === "crop_width").disabled, false);
+  assert.deepEqual(cropValues(node), [0, 0, 400, 200]);
 });
 
 test("normalizes annotated input names into a confined view query", () => {
