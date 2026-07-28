@@ -22,7 +22,7 @@ const ASPECT_RATIO_LABELS = {
   Custom: "Custom — Custom ratio",
 };
 
-function greatestCommonDivisor(left, right) {
+export function greatestCommonDivisor(left, right) {
   while (right) {
     [left, right] = [right, left % right];
   }
