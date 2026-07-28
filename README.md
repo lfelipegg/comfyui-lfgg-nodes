@@ -22,7 +22,7 @@ dependency. The pack includes a build-free frontend extension.
 
 ## Compatibility
 
-The required 1.2.0 release qualification covers:
+The required 1.3.0 release qualification covers:
 
 - ComfyUI `>=0.28.0`, tested at exact stable tags rather than `master`
 - ComfyUI frontend `>=1.45.21`
@@ -40,6 +40,7 @@ accelerators are not claimed.
 | LFGG Dimensions by Aspect Ratio | preset/custom ratio, long-side cap, alignment | width, height |
 | LFGG Image Dimensions by Long Side | IMAGE, long-side cap, alignment | width, height |
 | LFGG Image Dimensions by Pixel Budget | IMAGE, exact pixel cap, alignment | width, height |
+| LFGG Load and Crop Image | one still image, ratio, exact source-pixel crop | cropped image, alpha-derived mask |
 | LFGG Save Image Dynamic | IMAGE, path/filename templates, metadata toggle, optional model label | saved-image previews |
 
 All three nodes are in `LFGG/sizing`. They return positive dimensions aligned
@@ -59,6 +60,16 @@ the node still executes normally.
 The two image-derived nodes are downscale-only and inspect the shared
 `[B,H,W,C]` tensor shape. Batch count does not change the result. They do not
 allocate, copy, cast, mutate, or move the image.
+
+`LFGG Load and Crop Image` is in `LFGG/image`. It reads one still image from
+the ComfyUI input directory, accepts images up to `16384 × 16384` pixels and
+268,435,456 total pixels, and returns the selected exact-ratio source rectangle
+without resampling. Alpha produces an Alpha-derived mask using ComfyUI's
+transparent-is-white convention. Its ratio inputs support dynamic ratio
+connections; an unresolved connection falls back to normal execution before
+the frontend enables crop editing. If the frontend extension is unavailable,
+the standard image and numeric inputs remain usable. The node does not access
+the network and writes no files.
 
 `LFGG Save Image Dynamic` is in `LFGG/Image`. It saves one PNG per batch frame
 with separate output-relative path and filename templates. Supported brace
@@ -125,6 +136,7 @@ Additional dispositions:
 ```bash
 python -m pip install -e ".[dev]"
 node --test tests/frontend/ratio_preview.test.mjs
+node --test tests/frontend/crop_editor.test.mjs
 python -m ruff check .
 python -m pytest -q tests/unit
 comfy node validate

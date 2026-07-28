@@ -532,15 +532,19 @@ def test_schema_uses_comfyui_max_resolution(monkeypatch, tmp_path):
     assert crop_required["crop_height"][1]["max"] == 4096
 
 
-def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
+def test_metadata_manifest_and_workflow_match_the_release_contract(
+    monkeypatch, tmp_path
+):
     pyproject_path = ROOT / "pyproject.toml"
-    manifest_path = ROOT / "release" / "1.2.0-schema.json"
+    manifest_path = ROOT / "release" / "1.3.0-schema.json"
     workflow_path = ROOT / "workflows" / "sizing.json"
     save_workflow_path = ROOT / "workflows" / "save_image_dynamic.json"
+    crop_workflow_path = ROOT / "workflows" / "load_and_crop_image.json"
     assert pyproject_path.exists(), "pyproject.toml is not implemented"
     assert manifest_path.exists(), "release schema manifest is not implemented"
     assert workflow_path.exists(), "complete sizing API workflow is not implemented"
     assert save_workflow_path.exists(), "dynamic save API workflow is not implemented"
+    assert crop_workflow_path.exists(), "load and crop API workflow is not implemented"
 
     try:
         import tomllib
@@ -551,7 +555,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
     project = metadata["project"]
     comfy = metadata["tool"]["comfy"]
     assert project["name"] == "lfgg-nodes"
-    assert project["version"] == "1.2.0"
+    assert project["version"] == "1.3.0"
     assert project["requires-python"] == ">=3.10,<3.14"
     assert project["dependencies"] == [
         "Pillow",
@@ -575,6 +579,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
         "requested aspect ratio",
         "custom ratio controls",
         "node --test tests/frontend/ratio_preview.test.mjs",
+        "node --test tests/frontend/crop_editor.test.mjs",
         "do not read or write files",
         "exclusive creation of final PNG files",
         "cleanup of PNG files created by a failed execution",
@@ -593,14 +598,28 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
         "Remove `compress_level`",
         "Remove downstream uses of `saved_paths`",
         "No legacy workflow ID alias",
+        "LFGG Load and Crop Image",
+        "one still image",
+        "ComfyUI input directory",
+        "does not access the network and writes no files",
+        "without resampling",
+        "Alpha-derived mask",
+        "dynamic ratio",
+        "frontend extension is unavailable",
     ]:
         assert claim in readme
 
+    input_directory = tmp_path / "input"
+    input_directory.mkdir()
+    (input_directory / "lfgg_crop_fixture.png").write_bytes(b"fixture")
+    monkeypatch.setitem(
+        sys.modules,
+        "folder_paths",
+        types.SimpleNamespace(get_input_directory=lambda: str(input_directory)),
+    )
     package = load_root_package(monkeypatch)
     expected_nodes = {}
     for node_id, node in package.NODE_CLASS_MAPPINGS.items():
-        if node_id == "LFGG_LoadAndCropImage":
-            continue
         expected_nodes[node_id] = {
             "display_name": package.NODE_DISPLAY_NAME_MAPPINGS[node_id],
             "description": node.DESCRIPTION,
@@ -611,7 +630,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
             "output_tooltips": list(getattr(node, "OUTPUT_TOOLTIPS", ())),
         }
     assert json.loads(manifest_path.read_text()) == {
-        "version": "1.2.0",
+        "version": "1.3.0",
         "nodes": expected_nodes,
     }
 
@@ -686,6 +705,43 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
                 "images": ["1", 0],
                 "path_template": "lfgg/dynamic",
                 "filename_template": "metadata_off",
+                "save_metadata": False,
+            },
+        },
+    }
+
+    assert json.loads(crop_workflow_path.read_text()) == {
+        "1": {
+            "class_type": "LFGG_LoadAndCropImage",
+            "inputs": {
+                "image": "lfgg_crop_fixture.png",
+                "ratio_width": 1,
+                "ratio_height": 1,
+                "crop_x": 1,
+                "crop_y": 0,
+                "crop_width": 4,
+                "crop_height": 4,
+            },
+        },
+        "2": {
+            "class_type": "LFGG_SaveImageDynamic",
+            "inputs": {
+                "images": ["1", 0],
+                "path_template": "lfgg/crop",
+                "filename_template": "image",
+                "save_metadata": False,
+            },
+        },
+        "3": {
+            "class_type": "MaskToImage",
+            "inputs": {"mask": ["1", 1]},
+        },
+        "4": {
+            "class_type": "LFGG_SaveImageDynamic",
+            "inputs": {
+                "images": ["3", 0],
+                "path_template": "lfgg/crop",
+                "filename_template": "mask",
                 "save_metadata": False,
             },
         },

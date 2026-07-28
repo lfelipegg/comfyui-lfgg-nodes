@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from PIL import Image
 
 ROOT = Path(__file__).parents[2]
 
@@ -304,6 +305,33 @@ def test_failure_traceback_redacts_error_and_log(monkeypatch, tmp_path):
     assert secret not in rendered
     assert str(workspace) not in rendered
     assert "ComfyUI log:" in rendered
+
+
+def test_creates_the_confined_crop_fixture_before_starting_comfyui(
+    monkeypatch, tmp_path
+):
+    def fail_start(*_args, **_kwargs):
+        raise RuntimeError("stop after fixture setup")
+
+    monkeypatch.setattr(harness(), "reserve_loopback_port", lambda: 8188)
+    monkeypatch.setattr(harness().subprocess, "Popen", fail_start)
+
+    with pytest.raises(AssertionError, match="stop after fixture setup"):
+        harness()._exercise_comfyui(
+            checkout=tmp_path / "checkout",
+            python=tmp_path / "environment" / "bin" / "python",
+            device="cpu",
+            workspace=tmp_path / "workspace",
+            manifest={"nodes": {}},
+            workflows={},
+        )
+
+    fixture = tmp_path / "workspace" / "input" / "lfgg_crop_fixture.png"
+    assert fixture.is_relative_to(tmp_path / "workspace" / "input")
+    with Image.open(fixture) as image:
+        assert image.mode == "RGBA"
+        assert image.size == (6, 4)
+        assert image.getpixel((1, 0)) == (100, 110, 120, 0)
 
 
 def test_failure_traceback_redacts_error_without_log(monkeypatch, tmp_path):
@@ -819,6 +847,7 @@ def _assert_sizing_result(result):
         "LFGG_DimensionsByAspectRatio",
         "LFGG_ImageDimensionsByLongSide",
         "LFGG_ImageDimensionsByPixelBudget",
+        "LFGG_LoadAndCropImage",
         "LFGG_SaveImageDynamic",
     ]
     assert result["output_files"] == [
@@ -840,8 +869,7 @@ def _assert_dynamic_save_result(result):
         "lfgg/dynamic/metadata_on_00001_.png",
         "lfgg/dynamic/metadata_on_00002_.png",
     ]
-    assert result["image_files"] == expected_files
-    assert result["image_details"] == {
+    assert {
         filename: {
             "mode": "RGB",
             "size": [3, 2],
@@ -851,13 +879,36 @@ def _assert_dynamic_save_result(result):
             ),
         }
         for filename in expected_files
+    }.items() <= result["image_details"].items()
+
+
+def _assert_crop_result(result):
+    assert result["image_files"] == [
+        "lfgg/crop/image_00001_.png",
+        "lfgg/crop/mask_00001_.png",
+        "lfgg/dynamic/metadata_off_00001_.png",
+        "lfgg/dynamic/metadata_off_00002_.png",
+        "lfgg/dynamic/metadata_on_00001_.png",
+        "lfgg/dynamic/metadata_on_00002_.png",
+    ]
+    assert result["image_details"]["lfgg/crop/image_00001_.png"] == {
+        "mode": "RGB",
+        "size": [4, 4],
+        "pixel": [100, 110, 120],
+        "text_keys": [],
+    }
+    assert result["image_details"]["lfgg/crop/mask_00001_.png"] == {
+        "mode": "RGB",
+        "size": [4, 4],
+        "pixel": [255, 255, 255],
+        "text_keys": [],
     }
 
 
 def release_workflows():
     return {
         name: json.loads((ROOT / "workflows" / f"{name}.json").read_text())
-        for name in ("sizing", "save_image_dynamic")
+        for name in ("sizing", "save_image_dynamic", "load_and_crop_image")
     }
 
 
@@ -872,12 +923,13 @@ def test_packed_comfyui_schema_and_workflow(integration_options, tmp_path):
         archive=archive,
         device=integration_options["device"],
         workspace=tmp_path,
-        manifest=json.loads((ROOT / "release" / "1.2.0-schema.json").read_text()),
+        manifest=json.loads((ROOT / "release" / "1.3.0-schema.json").read_text()),
         workflows=release_workflows(),
     )
 
     _assert_sizing_result(result)
     _assert_dynamic_save_result(result)
+    _assert_crop_result(result)
 
 
 def test_installed_comfyui_schema_and_workflow(integration_options, tmp_path):
@@ -891,9 +943,10 @@ def test_installed_comfyui_schema_and_workflow(integration_options, tmp_path):
         installed_comfyui=integration_options["installed_comfyui"],
         device=integration_options["device"],
         workspace=tmp_path,
-        manifest=json.loads((ROOT / "release" / "1.2.0-schema.json").read_text()),
+        manifest=json.loads((ROOT / "release" / "1.3.0-schema.json").read_text()),
         workflows=release_workflows(),
     )
 
     _assert_sizing_result(result)
     _assert_dynamic_save_result(result)
+    _assert_crop_result(result)

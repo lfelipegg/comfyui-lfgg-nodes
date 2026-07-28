@@ -1,0 +1,38 @@
+{
+  "1": {
+    "class_type": "LFGG_LoadAndCropImage",
+    "inputs": {
+      "image": "lfgg_crop_fixture.png",
+      "ratio_width": 1,
+      "ratio_height": 1,
+      "crop_x": 1,
+      "crop_y": 0,
+      "crop_width": 4,
+      "crop_height": 4
+    }
+  },
+  "2": {
+    "class_type": "LFGG_SaveImageDynamic",
+    "inputs": {
+      "images": ["1", 0],
+      "path_template": "lfgg/crop",
+      "filename_template": "image",
+      "save_metadata": false
+    }
+  },
+  "3": {
+    "class_type": "MaskToImage",
+    "inputs": {
+      "mask": ["1", 1]
+    }
+  },
+  "4": {
+    "class_type": "LFGG_SaveImageDynamic",
+    "inputs": {
+      "images": ["3", 0],
+      "path_template": "lfgg/crop",
+      "filename_template": "mask",
+      "save_metadata": false
+    }
+  }
+}

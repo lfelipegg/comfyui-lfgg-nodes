@@ -492,6 +492,9 @@ def _exercise_comfyui(
     log_path = workspace / "comfyui.log"
     for directory in (output, input_directory, temp_directory, user_directory):
         directory.mkdir(parents=True, exist_ok=True)
+    fixture = Image.new("RGBA", (6, 4), (10, 20, 30, 255))
+    fixture.putpixel((1, 0), (100, 110, 120, 0))
+    fixture.save(input_directory / "lfgg_crop_fixture.png")
 
     if device == "cuda":
         _run(
