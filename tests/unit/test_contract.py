@@ -1,5 +1,8 @@
+import builtins
 import importlib.util
+import io
 import json
+import os
 import sys
 import types
 from pathlib import Path
@@ -152,7 +155,66 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
     }
 
 
-def test_load_and_crop_image_v1_schema_is_exact_and_lazy(monkeypatch, tmp_path):
+def test_load_and_crop_image_import_is_lazy_and_side_effect_free(
+    monkeypatch, tmp_path
+):
+    input_directory = tmp_path / "input"
+    input_directory.mkdir()
+    source = input_directory / "source.png"
+    source.write_bytes(b"unchanged")
+    stub_directory = tmp_path / "stubs"
+    stub_directory.mkdir()
+    (stub_directory / "folder_paths.py").write_text(
+        f"def get_input_directory():\n    return {str(input_directory)!r}\n"
+    )
+    monkeypatch.syspath_prepend(str(stub_directory))
+    target = source.resolve()
+    before_content = source.read_bytes()
+    before_stat = source.stat()
+    before_entries = sorted(input_directory.iterdir())
+
+    def reject_target_access(original):
+        def guarded(path, *args, **kwargs):
+            if isinstance(path, (str, bytes, os.PathLike)):
+                try:
+                    opened = Path(os.fsdecode(path)).resolve()
+                except (OSError, TypeError):
+                    opened = None
+                if opened == target:
+                    pytest.fail("root package import opened an input image")
+            return original(path, *args, **kwargs)
+
+        return guarded
+
+    with monkeypatch.context() as import_guard:
+        for module_name in tuple(sys.modules):
+            if module_name == "lfgg_custom_node" or module_name.startswith(
+                "lfgg_custom_node."
+            ):
+                import_guard.delitem(sys.modules, module_name)
+        for owner, name in (
+            (builtins, "open"),
+            (io, "open"),
+            (os, "open"),
+        ):
+            import_guard.setattr(
+                owner,
+                name,
+                reject_target_access(getattr(owner, name)),
+            )
+        load_root_package(import_guard)
+
+    assert "folder_paths" not in sys.modules
+    assert sorted(input_directory.iterdir()) == before_entries
+    assert source.read_bytes() == before_content
+    after_stat = source.stat()
+    assert (after_stat.st_size, after_stat.st_mtime_ns) == (
+        before_stat.st_size,
+        before_stat.st_mtime_ns,
+    )
+
+
+def test_load_and_crop_image_v1_schema_is_exact(monkeypatch, tmp_path):
     input_directory = tmp_path / "input"
     input_directory.mkdir()
     (input_directory / "zebra.png").write_bytes(b"zebra")
@@ -162,16 +224,8 @@ def test_load_and_crop_image_v1_schema_is_exact_and_lazy(monkeypatch, tmp_path):
     external = tmp_path / "external.png"
     external.write_bytes(b"external")
     (input_directory / "outside.png").symlink_to(external)
-    before = sorted(
-        path.relative_to(input_directory) for path in input_directory.rglob("*")
-    )
 
     package = load_root_package(monkeypatch)
-
-    assert "folder_paths" not in sys.modules
-    assert sorted(
-        path.relative_to(input_directory) for path in input_directory.rglob("*")
-    ) == before
 
     monkeypatch.setitem(
         sys.modules,
@@ -196,7 +250,18 @@ def test_load_and_crop_image_v1_schema_is_exact_and_lazy(monkeypatch, tmp_path):
         "Selected source region without resampling.",
         "Alpha-derived mask cropped to the same region.",
     )
-    assert node.INPUT_TYPES() == {
+    schema = node.INPUT_TYPES()
+    required = schema["required"]
+    assert list(required) == [
+        "image",
+        "ratio_width",
+        "ratio_height",
+        "crop_x",
+        "crop_y",
+        "crop_width",
+        "crop_height",
+    ]
+    assert schema == {
         "required": {
             "image": (
                 "COMBO",
