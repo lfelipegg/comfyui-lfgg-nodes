@@ -25,6 +25,21 @@ A visual representation of the requested width-to-height proportion, independent
 of the aligned dimensions produced during execution.
 _Avoid_: Dimension preview, output preview
 
+**Crop frame**:
+A movable, resizable region over a source image whose fixed aspect ratio defines
+the pixels retained in the cropped image.
+_Avoid_: Ratio box, selection box
+
+**Crop ratio**:
+The width-to-height proportion enforced by a crop frame, expressed as two
+positive components and independent of the cropped image's pixel dimensions.
+_Avoid_: Output size, crop dimensions
+
+**Cropped image**:
+The contiguous whole-pixel region retained from a source image by a crop frame,
+without resizing or resampling.
+_Avoid_: Resized image, fitted image
+
 **Latent initializer**:
 A ComfyUI node that creates an empty latent in the format required by a model
 family. Sizing successors leave this job to native ComfyUI nodes.
