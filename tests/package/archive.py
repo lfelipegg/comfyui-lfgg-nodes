@@ -39,6 +39,7 @@ def _safe_path(name):
     if (
         not normalized
         or normalized.startswith("/")
+        or not path.parts
         or any(part in {"", ".", ".."} for part in path.parts)
         or (path.parts and path.parts[0].endswith(":"))
     ):

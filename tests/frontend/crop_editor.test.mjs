@@ -270,6 +270,19 @@ function loadedImage(width = 400, height = 200) {
   };
 }
 
+function deferredImage() {
+  return {
+    set src(value) {
+      this.requested = value;
+    },
+    resolve(width, height) {
+      this.naturalWidth = width;
+      this.naturalHeight = height;
+      this.onload?.();
+    },
+  };
+}
+
 function cropContext() {
   const calls = [];
   return {
@@ -380,6 +393,45 @@ test("loads the selected image on install and restores only a matching persisted
   assert.deepEqual(cropValues(restored.node), [100, 0, 200, 200]);
 });
 
+test("ignores an older image request that resolves after graph reload", () => {
+  const node = cropNode();
+  node.widgets[0].value = "old.png";
+  const requests = [];
+  const options = {
+    createImage() {
+      const request = deferredImage();
+      requests.push(request);
+      return request;
+    },
+    buildViewUrl: (value) => `/view?filename=${value}`,
+  };
+  installCropEditor(node, options);
+
+  node.widgets[0].value = "portrait.png";
+  for (const [name, value] of Object.entries({
+    crop_x: 25,
+    crop_y: 50,
+    crop_width: 100,
+    crop_height: 100,
+  })) {
+    node.widgets.find((widget) => widget.name === name).value = value;
+  }
+  const preview = installCropEditor(node, options);
+  assert.deepEqual(
+    requests.map((request) => request.requested),
+    ["/view?filename=old.png", "/view?filename=portrait.png"],
+  );
+
+  requests[1].resolve(400, 200);
+  assert.deepEqual(cropValues(node), [25, 50, 100, 100]);
+  requests[0].resolve(80, 80);
+  assert.deepEqual(cropValues(node), [25, 50, 100, 100]);
+
+  const context = cropContext();
+  preview.draw(context, node, 320, 20, 360, false);
+  assert.deepEqual(context.calls[0].slice(2), [8, 124, 304, 152]);
+});
+
 test("normalizes numeric edits once and resets for local, constant, and computed ratios", () => {
   const options = { graph: undefined };
   const { node, preview } = installedCropNode(options);
@@ -401,7 +453,7 @@ test("normalizes numeric edits once and resets for local, constant, and computed
   assert.equal(preview.getState().label, "Run to resolve connected ratio");
 });
 
-test("watches a primitive numeric widget through reroutes once and resets later edits", () => {
+test("observes primitive edits locally without wrapping upstream callbacks", () => {
   let originalCalls = 0;
   const numeric = {
     value: 2,
@@ -420,7 +472,8 @@ test("watches a primitive numeric widget through reroutes once and resets later 
       return [primitive, reroute].find((candidate) => candidate.id === id);
     },
   };
-  const { node } = installedCropNode({ graph });
+  const originalCallback = numeric.callback;
+  const { node, preview } = installedCropNode({ graph });
   node.inputs.find((input) => input.name === "ratio_width").link = 2;
   node.onConnectionsChange();
   node.onConnectionsChange();
@@ -438,18 +491,37 @@ test("watches a primitive numeric widget through reroutes once and resets later 
   numeric.value = 1;
   numeric.callback(1);
 
+  assert.equal(numeric.callback, originalCallback);
   assert.equal(originalCalls, 1);
+  assert.deepEqual(cropValues(node), [0, 0, 400, 200]);
+  preview.draw(cropContext(), node, 320, 20, 360, false);
   assert.deepEqual(cropValues(node), [100, 0, 200, 200]);
+
+  const width = node.widgets.find((widget) => widget.name === "crop_width");
+  width.value = 100;
+  width.callback(100);
+  const dirtyAfterFirstObservation = node.dirty;
+  preview.draw(cropContext(), node, 320, 20, 360, false);
+  assert.deepEqual(cropValues(node), [100, 0, 100, 100]);
+  assert.equal(node.dirty, dirtyAfterFirstObservation);
+
+  node.inputs.find((input) => input.name === "ratio_width").link = null;
+  node.onConnectionsChange();
+  width.value = 100;
+  width.callback(100);
+  numeric.value = 3;
+  numeric.callback(3);
+  preview.draw(cropContext(), node, 320, 20, 360, false);
+  assert.equal(originalCalls, 2);
+  assert.deepEqual(cropValues(node), [0, 0, 100, 50]);
 });
 
-test("idempotent graph reload restores persisted state and attaches primitive listeners", () => {
-  let originalCalls = 0;
+test("idempotent graph reload restores persisted state without upstream listeners", () => {
   const numeric = {
     value: 2,
-    callback() {
-      originalCalls += 1;
-    },
+    callback() {},
   };
+  const originalCallback = numeric.callback;
   const primitive = { id: 1, type: "PrimitiveNode", widgets: [numeric] };
   const reroute = { id: 2, type: "Reroute", inputs: [{ link: 1 }] };
   const graph = {
@@ -488,8 +560,8 @@ test("idempotent graph reload restores persisted state and attaches primitive li
   );
 
   numeric.value = 1;
-  numeric.callback(1);
-  assert.equal(originalCalls, 1);
+  preview.draw(cropContext(), node, 320, 20, 360, false);
+  assert.equal(numeric.callback, originalCallback);
   assert.deepEqual(cropValues(node), [100, 0, 200, 200]);
   assert.equal(
     node.widgets.filter((widget) => widget.name === "lfgg_crop_editor").length,
@@ -610,6 +682,15 @@ test("keeps tiny-frame handles fixed and gives every corner a partitioned hit ta
     drag.move(moved);
     assert.deepEqual(cropValues(node), expected);
   }
+
+  setTinyFrame();
+  const move = dragEvent();
+  assert.equal(
+    preview.onPointerDown(move, sourcePoint(200.5, 100.5)),
+    true,
+  );
+  move.move(sourcePoint(220.5, 110.5));
+  assert.deepEqual(cropValues(node), [220, 110, 1, 1]);
 });
 
 test("rejects execution crops that overflow the source right or bottom edge", () => {

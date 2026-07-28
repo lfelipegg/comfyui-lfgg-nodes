@@ -183,7 +183,7 @@ function staticInteger(value) {
     : { kind: "invalid" };
 }
 
-function resolveStaticIntSource(node, name, graph) {
+export function resolveStaticInt(node, name, graph) {
   const input = node?.inputs?.find((candidate) => candidate.name === name);
   if (!input || input.link == null) {
     const widget = node?.widgets?.find((candidate) => candidate.name === name);
@@ -200,19 +200,12 @@ function resolveStaticIntSource(node, name, graph) {
       const widget = origin.widgets?.find(
         (candidate) => typeof candidate.value === "number",
       );
-      return widget
-        ? { ...staticInteger(widget.value), widget }
-        : { kind: "unresolved" };
+      return widget ? staticInteger(widget.value) : { kind: "unresolved" };
     }
     if (origin.type !== "Reroute") return { kind: "unresolved" };
     linkId = origin.inputs?.[0]?.link;
   }
   return { kind: "unresolved" };
-}
-
-export function resolveStaticInt(node, name, graph) {
-  const { widget: _widget, ...resolved } = resolveStaticIntSource(node, name, graph);
-  return resolved;
 }
 
 const CROP_NODE_ID = "LFGG_LoadAndCropImage";
@@ -311,6 +304,16 @@ function cornerAtPoint(point, rectangle) {
   const halfTarget = 20;
   const midpointX = rectangle.x + rectangle.width / 2;
   const midpointY = rectangle.y + rectangle.height / 2;
+  const moveHalfWidth = Math.min(4, rectangle.width / 4);
+  const moveHalfHeight = Math.min(4, rectangle.height / 4);
+  if (pointInRectangle(point, {
+    x: midpointX - moveHalfWidth,
+    y: midpointY - moveHalfHeight,
+    width: moveHalfWidth * 2,
+    height: moveHalfHeight * 2,
+  })) {
+    return undefined;
+  }
   const horizontal = point.x < midpointX ? "left" : "right";
   const vertical = point.y < midpointY ? "top" : "bottom";
   const cornerX = horizontal === "left"
@@ -368,7 +371,26 @@ export function installCropEditor(
   cropHeight.disabled = true;
   cropHeight.readonly = true;
 
-  const controller = { source: undefined, frame: undefined, image: undefined, executionRatio: undefined, isConfiguring };
+  const controller = {
+    source: undefined,
+    frame: undefined,
+    image: undefined,
+    executionRatio: undefined,
+    loadRequest: 0,
+    observedStaticRatio: undefined,
+    isConfiguring,
+  };
+  const staticRatioKey = () => {
+    const width = resolveStaticInt(node, "ratio_width", getGraph());
+    const height = resolveStaticInt(node, "ratio_height", getGraph());
+    return width.kind === "value" && width.value > 0 &&
+      height.kind === "value" && height.value > 0
+      ? `${width.value}:${height.value}`
+      : `${width.kind}:${height.kind}`;
+  };
+  const rememberStaticRatio = () => {
+    controller.observedStaticRatio = staticRatioKey();
+  };
   const currentRatio = () => {
     const width = resolveStaticInt(node, "ratio_width", getGraph());
     const height = resolveStaticInt(node, "ratio_height", getGraph());
@@ -407,6 +429,17 @@ export function installCropEditor(
     }
     sync(frame);
   };
+  const observeStaticRatio = () => {
+    const observed = staticRatioKey();
+    if (controller.observedStaticRatio === undefined) {
+      controller.observedStaticRatio = observed;
+      return;
+    }
+    if (observed === controller.observedStaticRatio) return;
+    controller.observedStaticRatio = observed;
+    controller.executionRatio = undefined;
+    reset();
+  };
   const normalize = () => {
     const resolved = currentRatio();
     if (!controller.source || resolved.kind !== "value") return reset();
@@ -422,24 +455,14 @@ export function installCropEditor(
     );
     if (!frame.kind) sync(frame);
   };
-  const watchedOrigins = new WeakSet();
-  const watchStaticRatioOrigins = () => {
-    for (const name of ["ratio_width", "ratio_height"]) {
-      const { widget } = resolveStaticIntSource(node, name, getGraph());
-      if (!widget || watchedOrigins.has(widget)) continue;
-      watchedOrigins.add(widget);
-      composeCallback(widget, () => {
-        controller.executionRatio = undefined;
-        reset();
-      });
-    }
-  };
   const loadSelectedImage = (restorePersisted) => {
+    const request = ++controller.loadRequest;
     controller.executionRatio = undefined;
     node.imgs = [];
     const loaded = createImage();
     controller.image = loaded;
     loaded.onload = () => {
+      if (request !== controller.loadRequest) return;
       const width = loaded.naturalWidth ?? loaded.width;
       const height = loaded.naturalHeight ?? loaded.height;
       if (!positiveInteger(width) || !positiveInteger(height)) return;
@@ -479,6 +502,7 @@ export function installCropEditor(
       return resolved.kind === "value" ? { kind: "ready" } : invalid;
     },
     draw(ctx, _node, width, y, _height, lowQuality) {
+      observeStaticRatio();
       if (!controller.image || !controller.source) return;
       controller.drawY = y;
       controller.drawWidth = width;
@@ -546,7 +570,10 @@ export function installCropEditor(
     },
   };
   controller.widget = preview;
-  controller.update = (shrink) => resizeNode(node, shrink && !controller.isConfiguring());
+  controller.update = (shrink) => {
+    observeStaticRatio();
+    resizeNode(node, shrink && !controller.isConfiguring());
+  };
   node.addCustomWidget(preview);
   node.widgets.splice(node.widgets.indexOf(preview), 1);
   node.widgets.splice(node.widgets.indexOf(image) + 1, 0, preview);
@@ -556,6 +583,7 @@ export function installCropEditor(
   for (const widget of [ratioWidth, ratioHeight]) {
     composeCallback(widget, () => {
       controller.executionRatio = undefined;
+      rememberStaticRatio();
       reset();
     });
   }
@@ -564,7 +592,7 @@ export function installCropEditor(
   node.onConnectionsChange = function (...args) {
     const result = originalConnectionsChange?.apply(this, args);
     controller.executionRatio = undefined;
-    watchStaticRatioOrigins();
+    rememberStaticRatio();
     reset();
     return result;
   };
@@ -584,6 +612,7 @@ export function installCropEditor(
     ratioWidth.value = crop.ratio_width;
     ratioHeight.value = crop.ratio_height;
     controller.executionRatio = { width: crop.ratio_width, height: crop.ratio_height };
+    rememberStaticRatio();
     setEditing(true);
     const frame = normalizeTypedFrame(controller.frame, crop.width, crop.x, crop.y, controller.source.width, controller.source.height, crop.ratio_width, crop.ratio_height);
     if (!frame.kind) sync(frame);
@@ -598,7 +627,7 @@ export function installCropEditor(
     return result;
   };
   controller.refresh = () => {
-    watchStaticRatioOrigins();
+    rememberStaticRatio();
     loadSelectedImage(true);
   };
   controller.update(false);

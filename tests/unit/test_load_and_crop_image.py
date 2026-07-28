@@ -249,12 +249,12 @@ def install_fake_windows_boundary(
     create_result=73,
     attributes_ok=True,
     final_length=None,
+    final_path=r"\\?\C:\Comfy\input\source.png",
     descriptor_result=41,
     fdopen_result=None,
 ):
     closed_handles = []
     closed_descriptors = []
-    final_path = r"\\?\C:\Comfy\input\source.png"
 
     def get_final_path(_handle, buffer, _size, _flags):
         if final_length is not None:
@@ -349,6 +349,17 @@ def test_native_windows_oversized_final_path_closes_the_handle(monkeypatch):
     assert boundary.closed_handles == [73]
 
 
+def test_native_windows_zero_length_final_path_closes_the_handle(monkeypatch):
+    boundary = install_fake_windows_boundary(monkeypatch, final_length=0)
+
+    with pytest.raises(OSError, match="native Windows error"):
+        load_and_crop_image_module._open_windows_handle(
+            PureWindowsPath(r"C:\Comfy\input\source.png")
+        )
+
+    assert boundary.closed_handles == [73]
+
+
 @pytest.mark.parametrize("stage", ["descriptor", "file-object"])
 def test_native_windows_descriptor_failures_release_the_owned_resource(
     monkeypatch, stage
@@ -410,6 +421,24 @@ def test_windows_open_accepts_regular_file_beneath_input_root(monkeypatch):
     )
 
     assert opened.read() == b"image"
+
+
+def test_native_windows_open_accepts_unc_path_beneath_input_root(monkeypatch):
+    source = io.BytesIO(b"image")
+    boundary = install_fake_windows_boundary(
+        monkeypatch,
+        final_path=r"\\?\UNC\server\share\input\source.png",
+        fdopen_result=source,
+    )
+
+    opened = load_and_crop_image_module._open_windows_input_file(
+        PureWindowsPath(r"\\server\share\input"),
+        PureWindowsPath(r"\\server\share\input\source.png"),
+    )
+
+    assert opened.read() == b"image"
+    assert boundary.closed_handles == []
+    assert boundary.closed_descriptors == []
 
 
 @pytest.mark.parametrize(

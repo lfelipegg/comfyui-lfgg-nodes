@@ -52,6 +52,7 @@ def write_zip(path, members):
 @pytest.mark.parametrize(
     "member",
     [
+        ".",
         "/absolute.py",
         "../traversal.py",
         "nested/../../traversal.py",
