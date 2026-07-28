@@ -270,6 +270,107 @@ def resolve_crop(
 
 
 class LoadAndCropImage:
+    CATEGORY = "LFGG/image"
+    DESCRIPTION = (
+        "Loads one still image from the ComfyUI input directory and crops it "
+        "without resampling."
+    )
+    FUNCTION = "load_and_crop"
+    RETURN_TYPES = ("IMAGE", "MASK")
+    RETURN_NAMES = ("image", "mask")
+    OUTPUT_TOOLTIPS = (
+        "Selected source region without resampling.",
+        "Alpha-derived mask cropped to the same region.",
+    )
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        from pathlib import Path
+
+        import folder_paths
+        from nodes import MAX_RESOLUTION
+
+        root = Path(folder_paths.get_input_directory()).resolve()
+        images = sorted(
+            path.relative_to(root).as_posix()
+            for path in root.rglob("*")
+            if path.is_file() and path.resolve().is_relative_to(root)
+        )
+        return {
+            "required": {
+                "image": (
+                    "COMBO",
+                    {
+                        "options": images,
+                        "image_upload": True,
+                        "allow_batch": False,
+                        "tooltip": "Still image beneath the ComfyUI input directory.",
+                    },
+                ),
+                "ratio_width": (
+                    "INT",
+                    {
+                        "default": 1,
+                        "min": 1,
+                        "max": MAX_RESOLUTION,
+                        "tooltip": "Positive width component of the crop ratio.",
+                    },
+                ),
+                "ratio_height": (
+                    "INT",
+                    {
+                        "default": 1,
+                        "min": 1,
+                        "max": MAX_RESOLUTION,
+                        "tooltip": "Positive height component of the crop ratio.",
+                    },
+                ),
+                "crop_x": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": MAX_RESOLUTION,
+                        "tooltip": "Left edge in oriented source-image pixels.",
+                    },
+                ),
+                "crop_y": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": MAX_RESOLUTION,
+                        "tooltip": "Top edge in oriented source-image pixels.",
+                    },
+                ),
+                "crop_width": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": MAX_RESOLUTION,
+                        "tooltip": (
+                            "Crop width in source-image pixels. Zero width and height "
+                            "initialize the largest centered crop."
+                        ),
+                    },
+                ),
+                "crop_height": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": MAX_RESOLUTION,
+                        "tooltip": (
+                            "Derived crop height in source-image pixels. Zero width "
+                            "and "
+                            "height initialize the largest centered crop."
+                        ),
+                    },
+                ),
+            }
+        }
+
     def load_and_crop(
         self,
         image,

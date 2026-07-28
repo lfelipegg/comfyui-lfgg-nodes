@@ -61,12 +61,14 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_ImageDimensionsByPixelBudget": (
             "LFGG Image Dimensions by Pixel Budget"
         ),
+        "LFGG_LoadAndCropImage": "LFGG Load and Crop Image",
         "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
     }
     assert list(package.NODE_CLASS_MAPPINGS) == [
         "LFGG_DimensionsByAspectRatio",
         "LFGG_ImageDimensionsByLongSide",
         "LFGG_ImageDimensionsByPixelBudget",
+        "LFGG_LoadAndCropImage",
         "LFGG_SaveImageDynamic",
     ]
 
@@ -147,6 +149,125 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
                 ),
             },
         ),
+    }
+
+
+def test_load_and_crop_image_v1_schema_is_exact_and_lazy(monkeypatch, tmp_path):
+    input_directory = tmp_path / "input"
+    input_directory.mkdir()
+    (input_directory / "zebra.png").write_bytes(b"zebra")
+    nested = input_directory / "nested"
+    nested.mkdir()
+    (nested / "apple.png").write_bytes(b"apple")
+    external = tmp_path / "external.png"
+    external.write_bytes(b"external")
+    (input_directory / "outside.png").symlink_to(external)
+    before = sorted(
+        path.relative_to(input_directory) for path in input_directory.rglob("*")
+    )
+
+    package = load_root_package(monkeypatch)
+
+    assert "folder_paths" not in sys.modules
+    assert sorted(
+        path.relative_to(input_directory) for path in input_directory.rglob("*")
+    ) == before
+
+    monkeypatch.setitem(
+        sys.modules,
+        "folder_paths",
+        types.SimpleNamespace(
+            get_input_directory=lambda: str(input_directory),
+        ),
+    )
+    node = package.NODE_CLASS_MAPPINGS["LFGG_LoadAndCropImage"]
+    assert package.NODE_DISPLAY_NAME_MAPPINGS["LFGG_LoadAndCropImage"] == (
+        "LFGG Load and Crop Image"
+    )
+    assert node.CATEGORY == "LFGG/image"
+    assert node.DESCRIPTION == (
+        "Loads one still image from the ComfyUI input directory and crops it "
+        "without resampling."
+    )
+    assert node.FUNCTION == "load_and_crop"
+    assert node.RETURN_TYPES == ("IMAGE", "MASK")
+    assert node.RETURN_NAMES == ("image", "mask")
+    assert node.OUTPUT_TOOLTIPS == (
+        "Selected source region without resampling.",
+        "Alpha-derived mask cropped to the same region.",
+    )
+    assert node.INPUT_TYPES() == {
+        "required": {
+            "image": (
+                "COMBO",
+                {
+                    "options": ["nested/apple.png", "zebra.png"],
+                    "image_upload": True,
+                    "allow_batch": False,
+                    "tooltip": "Still image beneath the ComfyUI input directory.",
+                },
+            ),
+            "ratio_width": (
+                "INT",
+                {
+                    "default": 1,
+                    "min": 1,
+                    "max": MAX_RESOLUTION,
+                    "tooltip": "Positive width component of the crop ratio.",
+                },
+            ),
+            "ratio_height": (
+                "INT",
+                {
+                    "default": 1,
+                    "min": 1,
+                    "max": MAX_RESOLUTION,
+                    "tooltip": "Positive height component of the crop ratio.",
+                },
+            ),
+            "crop_x": (
+                "INT",
+                {
+                    "default": 0,
+                    "min": 0,
+                    "max": MAX_RESOLUTION,
+                    "tooltip": "Left edge in oriented source-image pixels.",
+                },
+            ),
+            "crop_y": (
+                "INT",
+                {
+                    "default": 0,
+                    "min": 0,
+                    "max": MAX_RESOLUTION,
+                    "tooltip": "Top edge in oriented source-image pixels.",
+                },
+            ),
+            "crop_width": (
+                "INT",
+                {
+                    "default": 0,
+                    "min": 0,
+                    "max": MAX_RESOLUTION,
+                    "tooltip": (
+                        "Crop width in source-image pixels. Zero width and height "
+                        "initialize the largest centered crop."
+                    ),
+                },
+            ),
+            "crop_height": (
+                "INT",
+                {
+                    "default": 0,
+                    "min": 0,
+                    "max": MAX_RESOLUTION,
+                    "tooltip": (
+                        "Derived crop height in source-image pixels. Zero width and "
+                        "height initialize the largest centered crop."
+                    ),
+                },
+            ),
+        }
     }
 
 
@@ -304,8 +425,13 @@ def test_root_registration_rejects_duplicate_ids(monkeypatch):
         )
 
 
-def test_schema_uses_comfyui_max_resolution(monkeypatch):
+def test_schema_uses_comfyui_max_resolution(monkeypatch, tmp_path):
     package = load_root_package(monkeypatch, max_resolution=4096)
+    monkeypatch.setitem(
+        sys.modules,
+        "folder_paths",
+        types.SimpleNamespace(get_input_directory=lambda: str(tmp_path)),
+    )
     aspect_required = package.NODE_CLASS_MAPPINGS[
         "LFGG_DimensionsByAspectRatio"
     ].INPUT_TYPES()["required"]
@@ -314,6 +440,9 @@ def test_schema_uses_comfyui_max_resolution(monkeypatch):
     ].INPUT_TYPES()["required"]
     pixel_required = package.NODE_CLASS_MAPPINGS[
         "LFGG_ImageDimensionsByPixelBudget"
+    ].INPUT_TYPES()["required"]
+    crop_required = package.NODE_CLASS_MAPPINGS[
+        "LFGG_LoadAndCropImage"
     ].INPUT_TYPES()["required"]
 
     assert aspect_required["long_side"][1]["max"] == 4096
@@ -324,6 +453,12 @@ def test_schema_uses_comfyui_max_resolution(monkeypatch):
     assert long_required["divisible_by"][1]["max"] == 4096
     assert pixel_required["max_pixels"][1]["max"] == 4096**2
     assert pixel_required["divisible_by"][1]["max"] == 4096
+    assert crop_required["ratio_width"][1]["max"] == 4096
+    assert crop_required["ratio_height"][1]["max"] == 4096
+    assert crop_required["crop_x"][1]["max"] == 4096
+    assert crop_required["crop_y"][1]["max"] == 4096
+    assert crop_required["crop_width"][1]["max"] == 4096
+    assert crop_required["crop_height"][1]["max"] == 4096
 
 
 def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
@@ -393,6 +528,8 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(monkeypatch):
     package = load_root_package(monkeypatch)
     expected_nodes = {}
     for node_id, node in package.NODE_CLASS_MAPPINGS.items():
+        if node_id == "LFGG_LoadAndCropImage":
+            continue
         expected_nodes[node_id] = {
             "display_name": package.NODE_DISPLAY_NAME_MAPPINGS[node_id],
             "description": node.DESCRIPTION,
