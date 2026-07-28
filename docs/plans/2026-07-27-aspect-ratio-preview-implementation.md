@@ -15,6 +15,11 @@ serialized state.
 **Tech Stack:** Plain JavaScript ES modules, Canvas 2D, Node's built-in test
 runner, ComfyUI V1 registration, pytest package/contract tests.
 
+> **Revision:** The fixed background grid and display-only selector labels
+> accepted after this plan are specified in
+> `2026-07-27-aspect-ratio-preview-polish-implementation.md`, which supersedes
+> this plan's internal-grid drawing details.
+
 ---
 
 ### Task 1: Specify the frontend behavior in a failing Node test

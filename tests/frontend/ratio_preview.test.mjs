@@ -9,13 +9,15 @@ import {
 
 function fakeNode() {
   let callbackCalls = 0;
+  const callbackValues = [];
   let connectionCalls = 0;
   const widgets = [
     {
       name: "aspect_ratio",
       value: "16:9",
-      callback() {
+      callback(value) {
         callbackCalls += 1;
+        callbackValues.push(value);
       },
     },
     { name: "long_side", value: 1024 },
@@ -52,6 +54,7 @@ function fakeNode() {
       connectionCalls += 1;
     },
     callbackCalls: () => callbackCalls,
+    callbackValues,
     connectionCalls: () => connectionCalls,
   };
 }
@@ -66,9 +69,15 @@ function recordingContext() {
     roundRect(...args) {
       calls.push(["roundRect", ...args]);
     },
-    fill() {},
-    stroke() {},
-    clip() {},
+    fill() {
+      calls.push(["fill"]);
+    },
+    stroke() {
+      calls.push(["stroke"]);
+    },
+    clip() {
+      calls.push(["clip"]);
+    },
     moveTo(...args) {
       calls.push(["moveTo", ...args]);
     },
@@ -189,7 +198,7 @@ test("installs a derived preview and conditionally hides custom controls", () =>
   });
 });
 
-test("draws a 6x6 grid only when canvas detail is legible", () => {
+test("draws a fixed panel grid behind the ratio shape at legible detail", () => {
   const node = fakeNode();
   const preview = installRatioPreview(node);
   const detailed = recordingContext();
@@ -198,9 +207,25 @@ test("draws a 6x6 grid only when canvas detail is legible", () => {
   preview.draw(detailed, node, 320, 10, 20, false);
   preview.draw(lowQuality, node, 320, 10, 20, true);
 
+  const shape = detailed.calls.filter(([name]) => name === "roundRect")[1];
+  const gridMoves = detailed.calls.filter(([name]) => name === "moveTo");
+  const gridLines = detailed.calls.filter(([name]) => name === "lineTo");
+  assert.equal(gridLines.length, 10);
+  assert.ok(gridMoves[1][1] < shape[1]);
+  assert.ok(gridLines[1][1] > shape[1] + shape[3]);
+  const firstGridLine = detailed.calls.findIndex(
+    ([name]) => name === "lineTo",
+  );
+  const gridStroke = detailed.calls.findIndex(
+    ([name], index) => index > firstGridLine && name === "stroke",
+  );
+  const shapeFill = detailed.calls.findIndex(
+    ([name], index) => index > gridStroke && name === "fill",
+  );
+  assert.ok(gridStroke < shapeFill);
   assert.equal(
-    detailed.calls.filter(([name]) => name === "lineTo").length,
-    10,
+    detailed.calls.filter(([name]) => name === "clip").length,
+    0,
   );
   assert.equal(
     detailed.calls.filter(([name]) => name === "fillText").length,
@@ -216,7 +241,7 @@ test("draws a 6x6 grid only when canvas detail is legible", () => {
   );
 });
 
-test("draws an invalid ratio as a neutral label without a grid", () => {
+test("draws the fixed grid behind an invalid ratio label", () => {
   const node = fakeNode();
   node.widgets.find((widget) => widget.name === "aspect_ratio").value = "Custom";
   node.widgets.find(
@@ -234,8 +259,66 @@ test("draws an invalid ratio as a neutral label without a grid", () => {
   );
   assert.equal(
     context.calls.filter(([name]) => name === "lineTo").length,
-    0,
+    10,
   );
+});
+
+test("draws the fixed grid behind a dynamic ratio label", () => {
+  const node = fakeNode();
+  node.inputs = [{ name: "aspect_ratio", link: 7 }];
+  const preview = installRatioPreview(node);
+  const context = recordingContext();
+
+  preview.draw(context, node, 320, 10, 20, false);
+
+  assert.ok(
+    context.calls.some(
+      ([name, text]) => name === "fillText" && text === "Dynamic ratio",
+    ),
+  );
+  assert.equal(
+    context.calls.filter(([name]) => name === "lineTo").length,
+    10,
+  );
+});
+
+test("shows descriptive selector labels while retaining raw values", () => {
+  const node = fakeNode();
+  installRatioPreview(node);
+  const ratio = node.widgets.find((widget) => widget.name === "aspect_ratio");
+  const expected = {
+    "1:1": "1:1 — Square",
+    "4:5": "4:5 — Social portrait",
+    "5:4": "5:4 — Landscape print",
+    "3:4": "3:4 — Portrait",
+    "4:3": "4:3 — Standard landscape",
+    "2:3": "2:3 — Poster",
+    "3:2": "3:2 — Photography",
+    "5:7": "5:7 — Portrait print",
+    "7:5": "7:5 — Landscape print",
+    "9:16": "9:16 — Vertical video",
+    "16:9": "16:9 — Widescreen",
+    "9:21": "9:21 — Phone wallpaper",
+    "21:9": "21:9 — Ultrawide",
+    Custom: "Custom — Custom ratio",
+  };
+
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.keys(expected).map((value) => [
+        value,
+        ratio.options.getOptionLabel(value),
+      ]),
+    ),
+    expected,
+  );
+  assert.equal(ratio.options.getOptionLabel("3:1"), "3:1");
+  assert.equal(ratio.value, "16:9");
+
+  ratio.value = "9:16";
+  ratio.callback(ratio.value);
+  assert.deepEqual(node.callbackValues, ["9:16"]);
+  assert.equal(ratio.value, "9:16");
 });
 
 test("moves labels below a ratio shape when they cannot fit inside", () => {

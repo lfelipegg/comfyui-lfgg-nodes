@@ -5,6 +5,22 @@ const PANEL_INSET = 8;
 const PANEL_PADDING = 12;
 const LABEL_HEIGHT = 32;
 const CORNER_RADIUS = 6;
+const ASPECT_RATIO_LABELS = {
+  "1:1": "1:1 — Square",
+  "4:5": "4:5 — Social portrait",
+  "5:4": "5:4 — Landscape print",
+  "3:4": "3:4 — Portrait",
+  "4:3": "4:3 — Standard landscape",
+  "2:3": "2:3 — Poster",
+  "3:2": "3:2 — Photography",
+  "5:7": "5:7 — Portrait print",
+  "7:5": "7:5 — Landscape print",
+  "9:16": "9:16 — Vertical video",
+  "16:9": "16:9 — Widescreen",
+  "9:21": "9:21 — Phone wallpaper",
+  "21:9": "21:9 — Ultrawide",
+  Custom: "Custom — Custom ratio",
+};
 
 function greatestCommonDivisor(left, right) {
   while (right) {
@@ -86,6 +102,30 @@ function drawPreview(ctx, preview, width, y, lowQuality) {
     ctx.restore();
   }
 
+  const content = {
+    x: panel.x + PANEL_PADDING,
+    y: panel.y + PANEL_PADDING,
+    width: Math.max(1, panel.width - PANEL_PADDING * 2),
+    height: Math.max(1, panel.height - PANEL_PADDING * 2),
+  };
+  if (!lowQuality) {
+    ctx.save();
+    ctx.beginPath();
+    for (let index = 1; index < 6; index += 1) {
+      const x = content.x + (content.width * index) / 6;
+      const gridY = content.y + (content.height * index) / 6;
+      ctx.moveTo(x, content.y);
+      ctx.lineTo(x, content.y + content.height);
+      ctx.moveTo(content.x, gridY);
+      ctx.lineTo(content.x + content.width, gridY);
+    }
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = colors.outline;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+
   if (state.kind !== "ratio") {
     if (!lowQuality) {
       ctx.fillStyle = colors.text;
@@ -101,12 +141,6 @@ function drawPreview(ctx, preview, width, y, lowQuality) {
     return;
   }
 
-  const content = {
-    x: panel.x + PANEL_PADDING,
-    y: panel.y + PANEL_PADDING,
-    width: Math.max(1, panel.width - PANEL_PADDING * 2),
-    height: Math.max(1, panel.height - PANEL_PADDING * 2),
-  };
   let shape = fitRatio(state.width, state.height, content);
 
   ctx.font = "600 14px sans-serif";
@@ -131,26 +165,9 @@ function drawPreview(ctx, preview, width, y, lowQuality) {
     return;
   }
 
-  ctx.save();
   roundedRectangle(ctx, shape);
-  ctx.globalAlpha = 0.18;
-  ctx.fillStyle = colors.outline;
+  ctx.fillStyle = colors.panel;
   ctx.fill();
-  ctx.clip();
-  ctx.beginPath();
-  for (let index = 1; index < 6; index += 1) {
-    const x = shape.x + (shape.width * index) / 6;
-    const gridY = shape.y + (shape.height * index) / 6;
-    ctx.moveTo(x, shape.y);
-    ctx.lineTo(x, shape.y + shape.height);
-    ctx.moveTo(shape.x, gridY);
-    ctx.lineTo(shape.x + shape.width, gridY);
-  }
-  ctx.globalAlpha = 0.35;
-  ctx.strokeStyle = colors.outline;
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  ctx.restore();
 
   roundedRectangle(ctx, shape);
   ctx.strokeStyle = colors.outline;
@@ -194,6 +211,9 @@ export function installRatioPreview(
   if (!aspectRatio || !customWidth || !customHeight) {
     return undefined;
   }
+  aspectRatio.options ??= {};
+  aspectRatio.options.getOptionLabel = (value) =>
+    ASPECT_RATIO_LABELS[value] ?? value;
 
   const preview = {
     type: "lfgg_ratio_preview",

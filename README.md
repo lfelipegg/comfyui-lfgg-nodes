@@ -48,11 +48,13 @@ a deterministic side-size tie-break. Limits are hard ceilings and impossible
 alignments raise actionable errors.
 
 `LFGG Dimensions by Aspect Ratio` shows a theme-aware preview of the requested
-aspect ratio directly below its selector. Presets hide the custom ratio
-controls; selecting `Custom` or connecting a dynamic ratio reveals them without
-resetting their values. The preview adds no workflow state and does not affect
-backend sizing. If the frontend extension is unavailable, all inputs remain
-visible and the node still executes normally.
+aspect ratio directly below its selector, with the ratio shape above a fixed
+background grid. The selector adds common-use descriptions while workflows
+continue to store the raw ratio values. Presets hide the custom ratio controls;
+selecting `Custom` or connecting a dynamic ratio reveals them without resetting
+their values. The preview adds no workflow state and does not affect backend
+sizing. If the frontend extension is unavailable, all inputs remain visible and
+the node still executes normally.
 
 The two image-derived nodes are downscale-only and inspect the shared
 `[B,H,W,C]` tensor shape. Batch count does not change the result. They do not
