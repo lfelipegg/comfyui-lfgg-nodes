@@ -2,14 +2,13 @@
 
 ## Purpose and Current State
 
-This repository is the future `comfyui-lfgg-nodes` custom-node pack. It
-currently contains research only; the first nodes and compatibility target have
-not been selected.
+This repository contains the implemented LFGG Nodes successor pack for ComfyUI.
+`README.md` is the source of truth for current nodes, behavior, and qualification
+requirements. `pyproject.toml` is the source of truth for package metadata,
+dependencies, and compatibility floors.
 
 - Do not treat `reference/custom-nodes/` as project source. It is ignored,
   locally modified reference material with mixed licenses and dated patterns.
-- Before scaffolding or implementing nodes, identify the requested node set,
-  minimum supported ComfyUI/frontend versions, and registration generation.
 
 ## Context and Source Order
 
@@ -24,6 +23,14 @@ first, then read only the relevant chunks from:
 The research snapshot is dated 2026-07-26. Recheck moving API and Registry facts
 before implementation or release. Prefer current/pinned ComfyUI source, current
 official docs, official examples, then local reference nodes.
+
+## Subagent Routing
+
+- Do not delegate small, sequential tasks; the primary agent completes them
+  directly.
+- For standard or critical work, follow `agents/orchestrator.md`.
+- Use one writer by default.
+- Treat `.codex/agents/` as the source of truth for project agent profiles.
 
 ## Pack Invariants
 
@@ -83,16 +90,6 @@ official docs, official examples, then local reference nodes.
 - After meaningful Markdown changes, ingest the context index.
 - Finish with changed files, checks run, limitations, and deferred work. Never
   claim an unrun check passed.
-
-## Assumptions to Confirm
-
-These decisions are intentionally unresolved and must be confirmed before use:
-
-- first public nodes and their acceptance criteria;
-- compatibility floor and whether a demonstrated V3-only need overrides V1;
-- minimum/current ComfyUI, frontend, Python, OS, and accelerator matrix;
-- package name, publisher ID, license, repository URLs, and release process;
-- canonical development, lint, test, integration, pack, and CI commands.
 
 ## Agent skills
 
