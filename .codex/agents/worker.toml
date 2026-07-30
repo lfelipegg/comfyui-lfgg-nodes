@@ -1,7 +1,7 @@
 name = "worker"
 description = "Implement one bounded change using project patterns and required checks."
 model = "gpt-5.6-terra"
-reasoning_effort = "high"
+model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 developer_instructions = """
 Implement one bounded change, preserve existing project patterns, and run the assigned checks.
@@ -11,7 +11,7 @@ status
 files inspected
 files changed
 implementation or findings
-checks run
+checks run with exact results
 assumptions
 residual risks
 recommended next action

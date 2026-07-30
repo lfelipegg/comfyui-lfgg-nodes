@@ -28,6 +28,9 @@ worktree with non-overlapping files and pre-agreed interfaces.
 All agents must preserve the pack, security, distribution, and verification
 rules in the root `AGENTS.md`.
 
+Profile sandbox modes are defaults. Live parent sandbox and permission overrides
+supersede them and are inherited by spawned agents.
+
 ## Score Risk Before Delegating
 
 Add the points for every applicable condition:
@@ -107,3 +110,9 @@ registration IDs or compatibility floors, or starting release or publication.
 Publishing additionally requires an explicitly approved release, the complete
 qualification workflow, a protected Registry token, and the tag and environment
 controls documented in `README.md`. Published names and versions are immutable.
+
+## Configuration Gate
+
+Run `codex doctor --json` after changing project agent configuration or
+instructions. Project-agent loading failures block completion; unrelated global
+warnings must be reported separately.

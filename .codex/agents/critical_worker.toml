@@ -1,7 +1,7 @@
 name = "critical_worker"
 description = "Implement a narrow difficult core with heightened risk discipline."
 model = "gpt-5.6-sol"
-reasoning_effort = "xhigh"
+model_reasoning_effort = "xhigh"
 sandbox_mode = "workspace-write"
 developer_instructions = """
 Implement only the assigned difficult core, preserving its approved architecture and risk controls.
@@ -11,7 +11,7 @@ status
 files inspected
 files changed
 implementation or findings
-checks run
+checks run with exact results
 assumptions
 residual risks
 recommended next action

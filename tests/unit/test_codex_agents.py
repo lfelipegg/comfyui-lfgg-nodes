@@ -28,10 +28,30 @@ RETURN_FIELDS = {
     "files inspected",
     "files changed",
     "implementation or findings",
-    "checks run",
+    "checks run with exact results",
     "assumptions",
     "residual risks",
     "recommended next action",
+}
+READ_ONLY_AGENTS = {"planner", "explorer", "reviewer"}
+REVIEW_CATEGORIES = {
+    "correctness",
+    "security",
+    "data loss",
+    "regression",
+    "contracts",
+    "critical error handling",
+    "material performance",
+    "maintainability",
+    "important test gaps",
+}
+FINDING_FIELDS = {
+    "severity",
+    "location",
+    "concrete failure path",
+    "evidence",
+    "impact",
+    "smallest correction",
 }
 
 
@@ -58,17 +78,30 @@ def test_codex_agent_profiles_match_the_approved_contract():
         assert profile["description"].strip()
         assert profile["developer_instructions"].strip()
         assert profile["model"] in {"gpt-5.6-sol", "gpt-5.6-terra"}
-        assert profile["reasoning_effort"] in {"medium", "high", "xhigh"}
+        assert profile["model_reasoning_effort"] in {"medium", "high", "xhigh"}
+        assert "reasoning_effort" not in profile
         assert profile["sandbox_mode"] in {"read-only", "workspace-write"}
         instructions = profile["developer_instructions"].lower()
         assert RETURN_FIELDS <= set(instructions.splitlines())
         assert "stop" in instructions
 
+    for name in READ_ONLY_AGENTS:
+        instructions = profiles[name]["developer_instructions"].lower()
+        assert "do not modify files or external state" in instructions
+
+    reviewer_instructions = profiles["reviewer"]["developer_instructions"].lower()
+    assert all(category in reviewer_instructions for category in REVIEW_CATEGORIES)
+    assert all(field in reviewer_instructions for field in FINDING_FIELDS)
+
     assert {
         name: (
             profile["model"],
-            profile["reasoning_effort"],
+            profile["model_reasoning_effort"],
             profile["sandbox_mode"],
         )
         for name, profile in profiles.items()
     } == PROFILE_SETTINGS
+
+    orchestrator = (ROOT / "agents" / "orchestrator.md").read_text().lower()
+    assert "live parent sandbox and permission overrides" in orchestrator
+    assert "codex doctor --json" in orchestrator
