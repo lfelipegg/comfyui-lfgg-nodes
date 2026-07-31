@@ -443,6 +443,26 @@ def test_rejects_resolved_symlink_escape(monkeypatch, tmp_path):
         )
 
 
+def test_ignores_an_unavailable_unused_lora_root(monkeypatch, tmp_path):
+    calls = install_comfy_stubs(monkeypatch, tmp_path, ["valid.safetensors"])
+    folder_paths = sys.modules["folder_paths"]
+    folder_paths.get_folder_paths = lambda _category: [
+        str(tmp_path / "missing"),
+        str(tmp_path / "loras"),
+    ]
+
+    result = power_lora.PowerLoraLoaderFolder().load_loras(
+        "model",
+        "clip",
+        ALL_LORAS,
+        "valid.safetensors",
+        lora_1=row("valid.safetensors"),
+    )
+
+    assert result == ("model|valid", "clip|valid")
+    assert [call["name"] for call in calls] == ["valid.safetensors"]
+
+
 def test_current_folder_does_not_limit_existing_rows(monkeypatch, tmp_path):
     calls = install_comfy_stubs(
         monkeypatch,

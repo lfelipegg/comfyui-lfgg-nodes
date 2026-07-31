@@ -130,13 +130,18 @@ def _validate_active_files(rows):
         raise ValueError("LFGG LoRA catalog contains an invalid filename") from None
 
     try:
-        roots = [
-            Path(root).resolve(strict=True)
-            for root in folder_paths.get_folder_paths("loras")
-        ]
+        configured_roots = folder_paths.get_folder_paths("loras")
     except (OSError, TypeError, ValueError):
         raise ValueError("LFGG LoRA root is missing or unavailable") from None
-    if not roots or any(not root.is_dir() for root in roots):
+    roots = []
+    for root in configured_roots:
+        try:
+            resolved = Path(root).resolve(strict=True)
+        except (OSError, TypeError, ValueError):
+            continue
+        if resolved.is_dir():
+            roots.append(resolved)
+    if not roots:
         raise ValueError("LFGG LoRA root is missing or unavailable")
 
     for _on, name, _strength_model, _strength_clip in rows:
