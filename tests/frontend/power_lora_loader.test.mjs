@@ -226,13 +226,13 @@ test("handles ComfyUI pointer clicks for toggles and strength prompts", () => {
     toggleAll.onClick(toggleAll.eDown);
     assert.equal(controls.rows[0].on, true);
 
-    const model = pointerAt(node, 210);
+    const model = pointerAt(node, 170);
     assert.equal(rowWidget.onPointerDown(model, node), true);
     model.onClick(model.eDown);
     assert.deepEqual(prompts[0], { label: "Model strength", value: "1" });
     assert.equal(controls.rows[0].strengthModel, 0.25);
 
-    const clip = pointerAt(node, 270);
+    const clip = pointerAt(node, 254);
     assert.equal(rowWidget.onPointerDown(clip, node), true);
     clip.onClick(clip.eDown);
     assert.deepEqual(prompts[1], { label: "CLIP strength", value: "1" });
@@ -272,7 +272,7 @@ test("opens row LoRA choices as a searchable combo menu", () => {
   }
 });
 
-test("labels model and CLIP strengths without compact M1/C1 text", () => {
+test("labels strengths and draws decrement and increment arrows", () => {
   const node = fakeNode();
   const controls = installPowerLoraLoader(node);
   controls.add("characters/anime/hero.safetensors");
@@ -286,11 +286,40 @@ test("labels model and CLIP strengths without compact M1/C1 text", () => {
   controls.headerWidget.draw(context, node, node.size[0], 0);
   controls.rowWidgets[0].draw(context, node, node.size[0], 24);
 
-  assert.ok(labels.includes("Model"));
-  assert.ok(labels.includes("CLIP"));
+  assert.ok(labels.includes("Model strength"));
+  assert.ok(labels.includes("CLIP strength"));
+  assert.equal(labels.filter((label) => label === "◀").length, 2);
+  assert.equal(labels.filter((label) => label === "▶").length, 2);
   assert.equal(labels.filter((label) => label === "1.00").length, 2);
   assert.ok(!labels.includes("M 1"));
   assert.ok(!labels.includes("C 1"));
+});
+
+test("strength arrows adjust by 0.05 and keep direct entry", () => {
+  const node = fakeNode();
+  const controls = installPowerLoraLoader(node);
+  controls.add("characters/anime/hero.safetensors");
+  const rowWidget = controls.rowWidgets[0];
+
+  const modelDecrease = pointerAt(node, 136);
+  rowWidget.onPointerDown(modelDecrease, node);
+  modelDecrease.onClick(modelDecrease.eDown);
+  assert.equal(controls.rows[0].strengthModel, 0.95);
+
+  const modelIncrease = pointerAt(node, 204);
+  rowWidget.onPointerDown(modelIncrease, node);
+  modelIncrease.onClick(modelIncrease.eDown);
+  assert.equal(controls.rows[0].strengthModel, 1);
+
+  const clipDecrease = pointerAt(node, 220);
+  rowWidget.onPointerDown(clipDecrease, node);
+  clipDecrease.onClick(clipDecrease.eDown);
+  assert.equal(controls.rows[0].strengthClip, 0.95);
+
+  const clipIncrease = pointerAt(node, 288);
+  rowWidget.onPointerDown(clipIncrease, node);
+  clipIncrease.onClick(clipIncrease.eDown);
+  assert.equal(controls.rows[0].strengthClip, 1);
 });
 
 test("reorder renumbers prompt widgets without changing row values", () => {

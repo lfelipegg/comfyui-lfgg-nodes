@@ -4,7 +4,9 @@ const NODE_ID = "LFGG_PowerLoraLoaderFolder";
 const NO_LORAS = "<no LoRAs found>";
 const ROW_HEIGHT = 24;
 const TOGGLE_WIDTH = 24;
-const STRENGTH_WIDTH = 60;
+const STRENGTH_WIDTH = 84;
+const STRENGTH_ARROW_WIDTH = 18;
+const STRENGTH_STEP = 0.05;
 const MENU_WIDTH = 24;
 const installed = Symbol("lfggPowerLoraLoader");
 
@@ -115,6 +117,19 @@ function rowValue(row) {
   };
 }
 
+function drawStrength(ctx, value, x, y, enabled, theme) {
+  ctx.fillStyle = theme.secondary;
+  ctx.fillText("◀", x + STRENGTH_ARROW_WIDTH / 2, y + ROW_HEIGHT / 2);
+  ctx.fillStyle = enabled ? theme.text : theme.secondary;
+  ctx.fillText(value.toFixed(2), x + STRENGTH_WIDTH / 2, y + ROW_HEIGHT / 2);
+  ctx.fillStyle = theme.secondary;
+  ctx.fillText(
+    "▶",
+    x + STRENGTH_WIDTH - STRENGTH_ARROW_WIDTH / 2,
+    y + ROW_HEIGHT / 2,
+  );
+}
+
 function drawRow(ctx, row, width, y, folder) {
   const theme = colors();
   const nameWidth = Math.max(
@@ -138,17 +153,10 @@ function drawRow(ctx, row, width, y, folder) {
   ctx.fillText(relative, TOGGLE_WIDTH + 4, y + ROW_HEIGHT / 2, nameWidth - 8);
   ctx.textAlign = "center";
   const modelX = TOGGLE_WIDTH + nameWidth;
-  ctx.fillText(
-    row.strengthModel.toFixed(2),
-    modelX + STRENGTH_WIDTH / 2,
-    y + 12,
-  );
+  drawStrength(ctx, row.strengthModel, modelX, y, row.on, theme);
   const clipX = modelX + STRENGTH_WIDTH;
-  ctx.fillText(
-    row.strengthClip.toFixed(2),
-    clipX + STRENGTH_WIDTH / 2,
-    y + 12,
-  );
+  drawStrength(ctx, row.strengthClip, clipX, y, row.on, theme);
+  ctx.fillStyle = row.on ? theme.text : theme.secondary;
   ctx.fillText("⋮", width - MENU_WIDTH / 2, y + 12);
 }
 
@@ -251,6 +259,31 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
         const clipStart = menuStart - STRENGTH_WIDTH;
         const modelStart = clipStart - STRENGTH_WIDTH;
         pointer.onClick = (upEvent) => {
+          const adjustStrength = (target, value, start) => {
+            const offset = x - start;
+            const direction =
+              offset < STRENGTH_ARROW_WIDTH
+                ? -1
+                : offset >= STRENGTH_WIDTH - STRENGTH_ARROW_WIDTH
+                  ? 1
+                  : 0;
+            if (direction) {
+              controls.setStrength(
+                rows.indexOf(row),
+                target,
+                Math.round((value + direction * STRENGTH_STEP) * 100) / 100,
+              );
+            } else {
+              numericPrompt(
+                node,
+                `${target === "model" ? "Model" : "CLIP"} strength`,
+                value,
+                upEvent,
+                (number) =>
+                  controls.setStrength(rows.indexOf(row), target, number),
+              );
+            }
+          };
           if (x < TOGGLE_WIDTH) {
             row.on = !row.on;
             dirty();
@@ -259,23 +292,9 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
               controls.replace(rows.indexOf(row), name),
             );
           } else if (x < clipStart) {
-            numericPrompt(
-              node,
-              "Model strength",
-              row.strengthModel,
-              upEvent,
-              (number) =>
-                controls.setStrength(rows.indexOf(row), "model", number),
-            );
+            adjustStrength("model", row.strengthModel, modelStart);
           } else if (x < menuStart) {
-            numericPrompt(
-              node,
-              "CLIP strength",
-              row.strengthClip,
-              upEvent,
-              (number) =>
-                controls.setStrength(rows.indexOf(row), "clip", number),
-            );
+            adjustStrength("clip", row.strengthClip, clipStart);
           } else {
             const index = rows.indexOf(row);
             const items = [];
@@ -315,8 +334,17 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
       const modelStart = clipStart - STRENGTH_WIDTH;
       ctx.fillText("Toggle all", 8, y + ROW_HEIGHT / 2, modelStart - 16);
       ctx.textAlign = "center";
-      ctx.fillText("Model", modelStart + STRENGTH_WIDTH / 2, y + 12);
-      ctx.fillText("CLIP", clipStart + STRENGTH_WIDTH / 2, y + 12);
+      ctx.font = "10px sans-serif";
+      ctx.fillText(
+        "Model strength",
+        modelStart + STRENGTH_WIDTH / 2,
+        y + 12,
+      );
+      ctx.fillText(
+        "CLIP strength",
+        clipStart + STRENGTH_WIDTH / 2,
+        y + 12,
+      );
     },
     onPointerDown(pointer) {
       pointer.onClick = () => controls.toggleAll();

@@ -6,8 +6,9 @@ complete catalog. Changing folders never removes or changes existing rows.
 
 Choose a LoRA and click `Add LoRA`. Each row has an enabled toggle, separate
 model and CLIP strengths, and a menu to move up, move down, or remove it.
-Click the filename to replace it from the current folder choices. Toggle all is
-available above the rows.
+Use the arrows around either strength for 0.05 adjustments, or click its value
+for direct numeric entry. Click the filename to replace it from the current
+folder choices. Toggle all is available above the rows.
 
 Enabled rows run from top to bottom. A row is skipped when disabled or when
 both strengths are zero. The outputs are the final `model` and `clip` after
