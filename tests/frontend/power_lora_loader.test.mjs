@@ -13,6 +13,7 @@ const LORAS = [
   "characters/photo.safetensors",
   "styles/ink.safetensors",
 ];
+const SEPARATE_STRENGTHS = "Separate Model and Clip strength";
 
 function fakeNode({
   loras = LORAS,
@@ -23,6 +24,7 @@ function fakeNode({
   let folderCallbacks = 0;
   let addCallbacks = 0;
   let serializations = 0;
+  const addedProperties = [];
   const widgets = [
     {
       name: "folder",
@@ -51,6 +53,10 @@ function fakeNode({
       this.widgets.push(widget);
       return widget;
     },
+    addProperty(name, value, type) {
+      this.properties[name] = value;
+      addedProperties.push({ name, value, type });
+    },
     computeSize() {
       return [
         this.size[0],
@@ -73,13 +79,15 @@ function fakeNode({
     },
     folderCallbacks: () => folderCallbacks,
     addCallbacks: () => addCallbacks,
+    addedProperties: () => addedProperties,
     serializations: () => serializations,
   };
 }
 
-function pointerAt(node, x) {
+function pointerAt(node, x, button = 0) {
   return {
     eDown: {
+      button,
       canvasX: node.pos[0] + x,
       canvasY: node.pos[1],
     },
@@ -174,7 +182,7 @@ test("edits rows and keeps unique sequential prompt keys", () => {
 
   controls.replace(0, "characters/photo.safetensors");
   controls.setEnabled(1, false);
-  controls.toggleStrengthLink();
+  node.onPropertyChanged(SEPARATE_STRENGTHS, true);
   controls.setStrength(0, "model", 200);
   controls.setStrength(0, "clip", -200);
   controls.setStrength(0, "model", Number.POSITIVE_INFINITY);
@@ -217,6 +225,7 @@ test("handles ComfyUI pointer clicks for toggles and strength prompts", () => {
   };
 
   try {
+    node.onPropertyChanged(SEPARATE_STRENGTHS, true);
     const toggle = pointerAt(node, 12);
     assert.equal(rowWidget.onPointerDown(toggle, node), true);
     toggle.onClick(toggle.eDown);
@@ -236,11 +245,21 @@ test("handles ComfyUI pointer clicks for toggles and strength prompts", () => {
     const clip = pointerAt(node, 254);
     assert.equal(rowWidget.onPointerDown(clip, node), true);
     clip.onClick(clip.eDown);
-    assert.deepEqual(prompts[1], { label: "CLIP strength", value: "0.25" });
+    assert.deepEqual(prompts[1], { label: "CLIP strength", value: "1" });
     assert.equal(controls.rows[0].strengthClip, 0.25);
   } finally {
     globalThis.LGraphCanvas = previousCanvas;
   }
+});
+
+test("does not capture right-clicks on row controls", () => {
+  const node = fakeNode();
+  const controls = installPowerLoraLoader(node);
+  controls.add("characters/anime/hero.safetensors");
+  const pointer = pointerAt(node, 254, 2);
+
+  assert.equal(controls.rowWidgets[0].onPointerDown(pointer, node), false);
+  assert.equal(pointer.onClick, undefined);
 });
 
 test("opens row LoRA choices as a searchable combo menu", () => {
@@ -268,22 +287,45 @@ test("opens row LoRA choices as a searchable combo menu", () => {
       menus[0].items.map(({ content }) => content),
       ["anime/hero.safetensors", "photo.safetensors"],
     );
+    assert.equal(
+      menus[0].options.callback(menus[0].items[1]),
+      undefined,
+    );
+    assert.equal(
+      controls.rows[0].lora,
+      "characters/photo.safetensors",
+    );
   } finally {
     globalThis.LiteGraph = previousLiteGraph;
   }
 });
 
-test("labels strengths and draws decrement and increment arrows", () => {
+test("adds an off-by-default setting that controls separate strengths", () => {
   const node = fakeNode();
   const controls = installPowerLoraLoader(node);
   controls.add("characters/anime/hero.safetensors");
-  const labels = [];
+  let labels = [];
   const context = {
     fillText(text) {
       labels.push(text);
     },
   };
 
+  controls.headerWidget.draw(context, node, node.size[0], 0);
+  controls.rowWidgets[0].draw(context, node, node.size[0], 24);
+
+  assert.deepEqual(node.addedProperties(), [
+    { name: SEPARATE_STRENGTHS, value: false, type: "boolean" },
+  ]);
+  assert.ok(labels.includes("Strength"));
+  assert.ok(!labels.includes("Model strength"));
+  assert.ok(!labels.includes("CLIP strength"));
+  assert.equal(labels.filter((label) => label === "◀").length, 1);
+  assert.equal(labels.filter((label) => label === "▶").length, 1);
+  assert.equal(labels.filter((label) => label === "1.00").length, 1);
+
+  node.onPropertyChanged(SEPARATE_STRENGTHS, true);
+  labels = [];
   controls.headerWidget.draw(context, node, node.size[0], 0);
   controls.rowWidgets[0].draw(context, node, node.size[0], 24);
 
@@ -302,6 +344,19 @@ test("strength arrows adjust by 0.05 and keep direct entry", () => {
   controls.add("characters/anime/hero.safetensors");
   const rowWidget = controls.rowWidgets[0];
 
+  const combinedDecrease = pointerAt(node, 220);
+  rowWidget.onPointerDown(combinedDecrease, node);
+  combinedDecrease.onClick(combinedDecrease.eDown);
+  assert.equal(controls.rows[0].strengthModel, 0.95);
+  assert.equal(controls.rows[0].strengthClip, 0.95);
+
+  const combinedIncrease = pointerAt(node, 288);
+  rowWidget.onPointerDown(combinedIncrease, node);
+  combinedIncrease.onClick(combinedIncrease.eDown);
+  assert.equal(controls.rows[0].strengthModel, 1);
+  assert.equal(controls.rows[0].strengthClip, 1);
+
+  node.onPropertyChanged(SEPARATE_STRENGTHS, true);
   const modelDecrease = pointerAt(node, 136);
   rowWidget.onPointerDown(modelDecrease, node);
   modelDecrease.onClick(modelDecrease.eDown);
@@ -323,7 +378,7 @@ test("strength arrows adjust by 0.05 and keep direct entry", () => {
   assert.equal(controls.rows[0].strengthClip, 1);
 });
 
-test("links model and CLIP strengths by default and allows unlinking", () => {
+test("combines strengths by default and separates them when enabled", () => {
   const node = fakeNode();
   const controls = installPowerLoraLoader(node);
   controls.add("characters/anime/hero.safetensors");
@@ -332,31 +387,50 @@ test("links model and CLIP strengths by default and allows unlinking", () => {
   assert.equal(controls.rows[0].strengthModel, 0.75);
   assert.equal(controls.rows[0].strengthClip, 0.75);
 
-  controls.toggleStrengthLink();
+  node.onPropertyChanged(SEPARATE_STRENGTHS, true);
   controls.setStrength(0, "clip", 0.25);
   assert.equal(controls.rows[0].strengthModel, 0.75);
   assert.equal(controls.rows[0].strengthClip, 0.25);
+
+  node.onPropertyChanged(SEPARATE_STRENGTHS, false);
+  assert.equal(controls.rows[0].strengthModel, 0.75);
+  assert.equal(controls.rows[0].strengthClip, 0.75);
 });
 
-test("persists an unlinked strength option", () => {
+test("persists the separate-strength setting", () => {
   const node = fakeNode();
   const controls = installPowerLoraLoader(node);
-  controls.toggleStrengthLink();
+  node.onPropertyChanged(SEPARATE_STRENGTHS, true);
   const serialized = { widgets_values: [] };
 
   node.onSerialize(serialized);
 
-  assert.equal(node.properties.lfgg_link_strengths, false);
-  assert.equal(serialized.properties.lfgg_link_strengths, false);
+  assert.equal(node.properties[SEPARATE_STRENGTHS], true);
+  assert.equal(serialized.properties[SEPARATE_STRENGTHS], true);
 
   const restored = fakeNode({
     properties: {
-      lfgg_link_strengths: false,
+      [SEPARATE_STRENGTHS]: true,
       lfgg_lora_rows: [],
     },
   });
   const restoredControls = installPowerLoraLoader(restored, { restore: true });
-  assert.equal(restoredControls.linkStrengths, false);
+  assert.equal(restoredControls.separateStrengths, true);
+});
+
+test("migrates the saved linked-strength option", () => {
+  const node = fakeNode();
+  const controls = installPowerLoraLoader(node);
+  node.properties = {
+    lfgg_link_strengths: false,
+    lfgg_lora_rows: [],
+  };
+
+  installPowerLoraLoader(node, { restore: true });
+
+  assert.equal(controls.separateStrengths, true);
+  assert.equal(node.properties[SEPARATE_STRENGTHS], true);
+  assert.equal("lfgg_link_strengths" in node.properties, false);
 });
 
 test("colors toggles and darkens disabled rows", () => {
@@ -375,13 +449,10 @@ test("colors toggles and darkens disabled rows", () => {
     },
   };
 
-  controls.linkWidget.draw(context, node, node.size[0], 0);
   controls.rowWidgets[0].draw(context, node, node.size[0], 24);
   assert.ok(text.some(({ value, color }) => value === "●" && color === "#66bb6a"));
 
-  controls.toggleStrengthLink();
   controls.setEnabled(0, false);
-  controls.linkWidget.draw(context, node, node.size[0], 0);
   controls.rowWidgets[0].draw(context, node, node.size[0], 24);
   assert.ok(text.some(({ value, color }) => value === "●" && color === "#ef5350"));
   assert.ok(fills.includes("rgba(0, 0, 0, 0.35)"));
@@ -418,7 +489,6 @@ test("serializes exact backend rows without positional workflow values", () => {
   };
 
   assert.deepEqual(controls.rowWidgets[0].serializeValue(), serializedRow);
-  assert.equal(controls.linkWidget.serialize, false);
   assert.equal(controls.headerWidget.serialize, false);
   assert.equal(controls.footerWidget.serialize, false);
 
@@ -430,6 +500,7 @@ test("serializes exact backend rows without positional workflow values", () => {
   assert.equal(node.serializations(), 1);
   assert.deepEqual(node.properties.lfgg_lora_rows, [serializedRow]);
   assert.deepEqual(serialized.properties.lfgg_lora_rows, [serializedRow]);
+  assert.equal(serialized.properties[SEPARATE_STRENGTHS], false);
   assert.deepEqual(serialized.widgets_values, ["characters", LORAS[0]]);
 });
 
@@ -449,7 +520,10 @@ test("restores ordered rows on the loaded-node install and stays idempotent", ()
     },
   ];
   const node = fakeNode({
-    properties: { lfgg_lora_rows: savedRows },
+    properties: {
+      [SEPARATE_STRENGTHS]: true,
+      lfgg_lora_rows: savedRows,
+    },
   });
   const controls = installPowerLoraLoader(node);
   assert.deepEqual(controls.rows, []);
@@ -471,11 +545,7 @@ test("restores ordered rows on the loaded-node install and stays idempotent", ()
     node.widgets.filter((widget) => widget.name === "lfgg_lora_header").length,
     1,
   );
-  assert.equal(
-    node.widgets.filter((widget) => widget.name === "lfgg_lora_strength_link")
-      .length,
-    1,
-  );
+  assert.equal(node.addedProperties().length, 1);
 });
 
 test("preserves a missing saved folder and exposes no add choices", () => {

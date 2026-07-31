@@ -11,6 +11,7 @@ const MENU_WIDTH = 24;
 const ENABLED_COLOR = "#66bb6a";
 const DISABLED_COLOR = "#ef5350";
 const DISABLED_OVERLAY = "rgba(0, 0, 0, 0.35)";
+const SEPARATE_STRENGTHS = "Separate Model and Clip strength";
 const installed = Symbol("lfggPowerLoraLoader");
 
 function normalizeName(value) {
@@ -94,9 +95,26 @@ function menu(items, event, select) {
     {
       className: "dark",
       event: event?.eDown ?? event?.e ?? event,
-      callback: (item) => select(item?.value ?? item?.content ?? item),
+      callback: (item) => {
+        select(item?.value ?? item?.content ?? item);
+      },
     },
   );
+}
+
+function primaryPointer(pointer) {
+  const button = pointer?.eDown?.button;
+  return button == null || button === 0;
+}
+
+function migrateStrengthSetting(node) {
+  node.properties ??= {};
+  const separate =
+    node.properties[SEPARATE_STRENGTHS] ??
+    (node.properties.lfgg_link_strengths === false);
+  node.properties[SEPARATE_STRENGTHS] = Boolean(separate);
+  delete node.properties.lfgg_link_strengths;
+  return Boolean(separate);
 }
 
 function numericPrompt(node, label, value, event, apply) {
@@ -133,12 +151,28 @@ function drawStrength(ctx, value, x, y, enabled, theme) {
   );
 }
 
-function drawRow(ctx, row, width, y, folder) {
-  const theme = colors();
+function rowLayout(width, separateStrengths) {
+  const strengthCount = separateStrengths ? 2 : 1;
   const nameWidth = Math.max(
     40,
-    width - TOGGLE_WIDTH - STRENGTH_WIDTH * 2 - MENU_WIDTH,
+    width -
+      TOGGLE_WIDTH -
+      STRENGTH_WIDTH * strengthCount -
+      MENU_WIDTH,
   );
+  const modelStart = TOGGLE_WIDTH + nameWidth;
+  const clipStart = modelStart + STRENGTH_WIDTH;
+  return {
+    nameWidth,
+    modelStart,
+    clipStart,
+    menuStart: clipStart + (separateStrengths ? STRENGTH_WIDTH : 0),
+  };
+}
+
+function drawRow(ctx, row, width, y, folder, separateStrengths) {
+  const theme = colors();
+  const layout = rowLayout(width, separateStrengths);
   ctx.fillStyle = theme.background;
   ctx.fillRect?.(0, y, width, ROW_HEIGHT);
   if (!row.on) {
@@ -158,12 +192,17 @@ function drawRow(ctx, row, width, y, folder) {
     folder === ALL_LORAS || !row.lora.startsWith(`${folder}/`)
       ? row.lora
       : row.lora.slice(folder.length + 1);
-  ctx.fillText(relative, TOGGLE_WIDTH + 4, y + ROW_HEIGHT / 2, nameWidth - 8);
+  ctx.fillText(
+    relative,
+    TOGGLE_WIDTH + 4,
+    y + ROW_HEIGHT / 2,
+    layout.nameWidth - 8,
+  );
   ctx.textAlign = "center";
-  const modelX = TOGGLE_WIDTH + nameWidth;
-  drawStrength(ctx, row.strengthModel, modelX, y, row.on, theme);
-  const clipX = modelX + STRENGTH_WIDTH;
-  drawStrength(ctx, row.strengthClip, clipX, y, row.on, theme);
+  drawStrength(ctx, row.strengthModel, layout.modelStart, y, row.on, theme);
+  if (separateStrengths) {
+    drawStrength(ctx, row.strengthClip, layout.clipStart, y, row.on, theme);
+  }
   ctx.fillStyle = row.on ? theme.text : theme.secondary;
   ctx.fillText("⋮", width - MENU_WIDTH / 2, y + 12);
 }
@@ -193,6 +232,15 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
   );
   if (!folder || !addWidget) return undefined;
 
+  const separateStrengths = migrateStrengthSetting(node);
+  node.addProperty?.(
+    SEPARATE_STRENGTHS,
+    Boolean(separateStrengths),
+    "boolean",
+  );
+  node.properties[SEPARATE_STRENGTHS] = Boolean(separateStrengths);
+  delete node.properties.lfgg_link_strengths;
+
   const allLoras = loraNames(optionValues(addWidget));
   const availableFolders = folderChoices(allLoras);
   const previousFolderLabel = folder.options?.getOptionLabel;
@@ -209,8 +257,10 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
     addWidget,
     rows,
     rowWidgets,
-    linkStrengths: node.properties?.lfgg_link_strengths !== false,
   };
+  Object.defineProperty(controls, "separateStrengths", {
+    get: () => node.properties[SEPARATE_STRENGTHS] === true,
+  });
 
   const dirty = () => node.setDirtyCanvas?.(true, true);
   const syncWidgetOrder = () => {
@@ -258,15 +308,21 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
       computeSize: () => [0, ROW_HEIGHT],
       serializeValue: () => rowValue(row),
       draw: (ctx, _node, width, y) =>
-        drawRow(ctx, row, width, y, folder.value),
+        drawRow(
+          ctx,
+          row,
+          width,
+          y,
+          folder.value,
+          controls.separateStrengths,
+        ),
       onPointerDown(pointer, pointerNode) {
+        if (!primaryPointer(pointer)) return false;
         const event = pointer?.eDown;
         const x = event?.canvasX - pointerNode.pos[0];
         if (!Number.isFinite(x)) return false;
         const width = pointerNode.size[0];
-        const menuStart = width - MENU_WIDTH;
-        const clipStart = menuStart - STRENGTH_WIDTH;
-        const modelStart = clipStart - STRENGTH_WIDTH;
+        const layout = rowLayout(width, controls.separateStrengths);
         pointer.onClick = (upEvent) => {
           const adjustStrength = (target, value, start) => {
             const offset = x - start;
@@ -285,7 +341,9 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
             } else {
               numericPrompt(
                 node,
-                `${target === "model" ? "Model" : "CLIP"} strength`,
+                controls.separateStrengths
+                  ? `${target === "model" ? "Model" : "CLIP"} strength`
+                  : "Strength",
                 value,
                 upEvent,
                 (number) =>
@@ -296,14 +354,14 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
           if (x < TOGGLE_WIDTH) {
             row.on = !row.on;
             dirty();
-          } else if (x < modelStart) {
+          } else if (x < layout.modelStart) {
             menu(choices(), upEvent, (name) =>
               controls.replace(rows.indexOf(row), name),
             );
-          } else if (x < clipStart) {
-            adjustStrength("model", row.strengthModel, modelStart);
-          } else if (x < menuStart) {
-            adjustStrength("clip", row.strengthClip, clipStart);
+          } else if (x < layout.clipStart) {
+            adjustStrength("model", row.strengthModel, layout.modelStart);
+          } else if (x < layout.menuStart) {
+            adjustStrength("clip", row.strengthClip, layout.clipStart);
           } else {
             const index = rows.indexOf(row);
             const items = [];
@@ -327,34 +385,6 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
     node.addCustomWidget(widget);
   };
 
-  controls.linkWidget = node.addCustomWidget({
-    type: "lfgg_lora_strength_link",
-    name: "lfgg_lora_strength_link",
-    serialize: false,
-    options: { serialize: false },
-    computeSize: () => [0, ROW_HEIGHT],
-    draw(ctx, _node, width, y) {
-      const theme = colors();
-      ctx.font = "12px sans-serif";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "middle";
-      ctx.fillStyle = controls.linkStrengths
-        ? ENABLED_COLOR
-        : DISABLED_COLOR;
-      ctx.fillText("●", 12, y + ROW_HEIGHT / 2);
-      ctx.fillStyle = controls.linkStrengths ? theme.text : theme.secondary;
-      ctx.fillText(
-        `Link model + CLIP strengths: ${controls.linkStrengths ? "On" : "Off"}`,
-        24,
-        y + ROW_HEIGHT / 2,
-        width - 32,
-      );
-    },
-    onPointerDown(pointer) {
-      pointer.onClick = () => controls.toggleStrengthLink();
-      return true;
-    },
-  });
   controls.headerWidget = node.addCustomWidget({
     type: "lfgg_lora_header",
     name: "lfgg_lora_header",
@@ -366,24 +396,30 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
       ctx.font = "12px sans-serif";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      const menuStart = width - MENU_WIDTH;
-      const clipStart = menuStart - STRENGTH_WIDTH;
-      const modelStart = clipStart - STRENGTH_WIDTH;
-      ctx.fillText("Toggle all", 8, y + ROW_HEIGHT / 2, modelStart - 16);
+      const layout = rowLayout(width, controls.separateStrengths);
+      ctx.fillText(
+        "Toggle all",
+        8,
+        y + ROW_HEIGHT / 2,
+        layout.modelStart - 16,
+      );
       ctx.textAlign = "center";
       ctx.font = "10px sans-serif";
       ctx.fillText(
-        "Model strength",
-        modelStart + STRENGTH_WIDTH / 2,
+        controls.separateStrengths ? "Model strength" : "Strength",
+        layout.modelStart + STRENGTH_WIDTH / 2,
         y + 12,
       );
-      ctx.fillText(
-        "CLIP strength",
-        clipStart + STRENGTH_WIDTH / 2,
-        y + 12,
-      );
+      if (controls.separateStrengths) {
+        ctx.fillText(
+          "CLIP strength",
+          layout.clipStart + STRENGTH_WIDTH / 2,
+          y + 12,
+        );
+      }
     },
     onPointerDown(pointer) {
+      if (!primaryPointer(pointer)) return false;
       pointer.onClick = () => controls.toggleAll();
       return true;
     },
@@ -406,6 +442,7 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
       );
     },
     onPointerDown(pointer) {
+      if (!primaryPointer(pointer)) return false;
       pointer.onClick = () => controls.add(addWidget.value);
       return true;
     },
@@ -445,20 +482,13 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
     const strength = clampStrength(value);
     if (!rows[index] || strength === undefined) return false;
     if (target !== "model" && target !== "clip") return false;
-    if (controls.linkStrengths || target === "model") {
+    if (!controls.separateStrengths) {
       rows[index].strengthModel = strength;
-    }
-    if (controls.linkStrengths || target === "clip") {
       rows[index].strengthClip = strength;
-    }
+    } else if (target === "model") rows[index].strengthModel = strength;
+    else rows[index].strengthClip = strength;
     dirty();
     return true;
-  };
-  controls.toggleStrengthLink = () => {
-    controls.linkStrengths = !controls.linkStrengths;
-    node.properties ??= {};
-    node.properties.lfgg_link_strengths = controls.linkStrengths;
-    dirty();
   };
   controls.remove = (index) => {
     if (!rows[index]) return false;
@@ -489,7 +519,7 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
   };
   controls.refresh = refresh;
   controls.restore = () => {
-    controls.linkStrengths = node.properties?.lfgg_link_strengths !== false;
+    migrateStrengthSetting(node);
     for (const widget of rowWidgets) {
       node.widgets.splice(node.widgets.indexOf(widget), 1);
     }
@@ -499,21 +529,36 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
     if (Array.isArray(saved)) {
       for (const value of saved) createRow(value);
     }
+    if (!controls.separateStrengths) {
+      for (const row of rows) row.strengthClip = row.strengthModel;
+    }
     changed();
   };
 
   composeCallback(folder, refresh);
   composeCallback(addWidget, dirty);
+  const originalPropertyChanged = node.onPropertyChanged;
+  node.onPropertyChanged = function (name, value) {
+    const result = originalPropertyChanged?.apply(this, arguments);
+    if (result === false) return false;
+    if (name === SEPARATE_STRENGTHS) {
+      node.properties[SEPARATE_STRENGTHS] = Boolean(value);
+      if (!value) {
+        for (const row of rows) row.strengthClip = row.strengthModel;
+      }
+      dirty();
+    }
+    return result;
+  };
   const originalSerialize = node.onSerialize;
   node.onSerialize = function (serialized) {
     const result = originalSerialize?.apply(this, arguments);
     const savedRows = rows.map(rowValue);
-    node.properties ??= {};
     node.properties.lfgg_lora_rows = savedRows;
-    node.properties.lfgg_link_strengths = controls.linkStrengths;
     serialized.properties ??= {};
     serialized.properties.lfgg_lora_rows = savedRows;
-    serialized.properties.lfgg_link_strengths = controls.linkStrengths;
+    serialized.properties[SEPARATE_STRENGTHS] =
+      controls.separateStrengths;
     if (Array.isArray(serialized.widgets_values)) {
       serialized.widgets_values.splice(2);
     }
