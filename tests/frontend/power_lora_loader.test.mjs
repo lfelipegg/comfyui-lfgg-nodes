@@ -45,6 +45,7 @@ function fakeNode({
     comfyClass,
     widgets,
     properties: { ...properties },
+    pos: [100, 50],
     size: [320, 500],
     addCustomWidget(widget) {
       this.widgets.push(widget);
@@ -73,6 +74,15 @@ function fakeNode({
     folderCallbacks: () => folderCallbacks,
     addCallbacks: () => addCallbacks,
     serializations: () => serializations,
+  };
+}
+
+function pointerAt(node, x) {
+  return {
+    eDown: {
+      canvasX: node.pos[0] + x,
+      canvasY: node.pos[1],
+    },
   };
 }
 
@@ -187,6 +197,100 @@ test("edits rows and keeps unique sequential prompt keys", () => {
   ]);
   assert.equal(controls.rowWidgets[0].computeSize()[1], 24);
   assert.equal(node.size[1], 500);
+});
+
+test("handles ComfyUI pointer clicks for toggles and strength prompts", () => {
+  const node = fakeNode();
+  const controls = installPowerLoraLoader(node);
+  controls.add("characters/anime/hero.safetensors");
+  const rowWidget = controls.rowWidgets[0];
+  const prompts = [];
+  const previousCanvas = globalThis.LGraphCanvas;
+  globalThis.LGraphCanvas = {
+    active_canvas: {
+      prompt(label, value, apply) {
+        prompts.push({ label, value });
+        apply("0.25");
+      },
+    },
+  };
+
+  try {
+    const toggle = pointerAt(node, 12);
+    assert.equal(rowWidget.onPointerDown(toggle, node), true);
+    toggle.onClick(toggle.eDown);
+    assert.equal(controls.rows[0].on, false);
+
+    const toggleAll = pointerAt(node, 12);
+    assert.equal(controls.headerWidget.onPointerDown(toggleAll, node), true);
+    toggleAll.onClick(toggleAll.eDown);
+    assert.equal(controls.rows[0].on, true);
+
+    const model = pointerAt(node, 210);
+    assert.equal(rowWidget.onPointerDown(model, node), true);
+    model.onClick(model.eDown);
+    assert.deepEqual(prompts[0], { label: "Model strength", value: "1" });
+    assert.equal(controls.rows[0].strengthModel, 0.25);
+
+    const clip = pointerAt(node, 270);
+    assert.equal(rowWidget.onPointerDown(clip, node), true);
+    clip.onClick(clip.eDown);
+    assert.deepEqual(prompts[1], { label: "CLIP strength", value: "1" });
+    assert.equal(controls.rows[0].strengthClip, 0.25);
+  } finally {
+    globalThis.LGraphCanvas = previousCanvas;
+  }
+});
+
+test("opens row LoRA choices as a searchable combo menu", () => {
+  const node = fakeNode();
+  const controls = installPowerLoraLoader(node);
+  controls.add("characters/anime/hero.safetensors");
+  const menus = [];
+  const previousLiteGraph = globalThis.LiteGraph;
+  globalThis.LiteGraph = {
+    ContextMenu: class {
+      constructor(items, options) {
+        menus.push({ items, options });
+      }
+    },
+  };
+
+  try {
+    const pointer = pointerAt(node, 80);
+    controls.rowWidgets[0].onPointerDown(pointer, node);
+    pointer.onClick(pointer.eDown);
+
+    assert.equal(menus.length, 1);
+    assert.equal(menus[0].options.className, "dark");
+    assert.deepEqual(
+      menus[0].items.map(({ content }) => content),
+      ["anime/hero.safetensors", "photo.safetensors"],
+    );
+  } finally {
+    globalThis.LiteGraph = previousLiteGraph;
+  }
+});
+
+test("labels model and CLIP strengths without compact M1/C1 text", () => {
+  const node = fakeNode();
+  const controls = installPowerLoraLoader(node);
+  controls.add("characters/anime/hero.safetensors");
+  const labels = [];
+  const context = {
+    fillText(text) {
+      labels.push(text);
+    },
+  };
+
+  controls.headerWidget.draw(context, node, node.size[0], 0);
+  controls.rowWidgets[0].draw(context, node, node.size[0], 24);
+
+  assert.ok(labels.includes("Model"));
+  assert.ok(labels.includes("CLIP"));
+  assert.equal(labels.filter((label) => label === "1.00").length, 2);
+  assert.ok(!labels.includes("M 1"));
+  assert.ok(!labels.includes("C 1"));
 });
 
 test("reorder renumbers prompt widgets without changing row values", () => {

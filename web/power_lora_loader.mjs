@@ -3,6 +3,9 @@ export const ALL_LORAS = "All LoRAs";
 const NODE_ID = "LFGG_PowerLoraLoaderFolder";
 const NO_LORAS = "<no LoRAs found>";
 const ROW_HEIGHT = 24;
+const TOGGLE_WIDTH = 24;
+const STRENGTH_WIDTH = 60;
+const MENU_WIDTH = 24;
 const installed = Symbol("lfggPowerLoraLoader");
 
 function normalizeName(value) {
@@ -84,7 +87,8 @@ function menu(items, event, select) {
   new ContextMenu(
     items.map((item) => ({ content: item.label, value: item.value })),
     {
-      event: event?.e ?? event,
+      className: "dark",
+      event: event?.eDown ?? event?.e ?? event,
       callback: (item) => select(item?.value ?? item?.content ?? item),
     },
   );
@@ -94,7 +98,12 @@ function numericPrompt(node, label, value, event, apply) {
   const canvas =
     globalThis.LGraphCanvas?.active_canvas ??
     node.graph?.list_of_graphcanvas?.[0];
-  canvas?.prompt?.(label, String(value), apply, event?.e ?? event);
+  canvas?.prompt?.(
+    label,
+    String(value),
+    apply,
+    event?.eDown ?? event?.e ?? event,
+  );
 }
 
 function rowValue(row) {
@@ -108,12 +117,9 @@ function rowValue(row) {
 
 function drawRow(ctx, row, width, y, folder) {
   const theme = colors();
-  const toggleWidth = 24;
-  const strengthWidth = 52;
-  const menuWidth = 24;
   const nameWidth = Math.max(
     40,
-    width - toggleWidth - strengthWidth * 2 - menuWidth,
+    width - TOGGLE_WIDTH - STRENGTH_WIDTH * 2 - MENU_WIDTH,
   );
   ctx.fillStyle = theme.background;
   ctx.fillRect?.(0, y, width, ROW_HEIGHT);
@@ -123,19 +129,27 @@ function drawRow(ctx, row, width, y, folder) {
   ctx.font = "12px sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(row.on ? "●" : "○", toggleWidth / 2, y + ROW_HEIGHT / 2);
+  ctx.fillText(row.on ? "●" : "○", TOGGLE_WIDTH / 2, y + ROW_HEIGHT / 2);
   ctx.textAlign = "left";
   const relative =
     folder === ALL_LORAS || !row.lora.startsWith(`${folder}/`)
       ? row.lora
       : row.lora.slice(folder.length + 1);
-  ctx.fillText(relative, toggleWidth + 4, y + ROW_HEIGHT / 2, nameWidth - 8);
+  ctx.fillText(relative, TOGGLE_WIDTH + 4, y + ROW_HEIGHT / 2, nameWidth - 8);
   ctx.textAlign = "center";
-  const modelX = toggleWidth + nameWidth;
-  ctx.fillText(`M ${row.strengthModel}`, modelX + strengthWidth / 2, y + 12);
-  const clipX = modelX + strengthWidth;
-  ctx.fillText(`C ${row.strengthClip}`, clipX + strengthWidth / 2, y + 12);
-  ctx.fillText("⋮", width - menuWidth / 2, y + 12);
+  const modelX = TOGGLE_WIDTH + nameWidth;
+  ctx.fillText(
+    row.strengthModel.toFixed(2),
+    modelX + STRENGTH_WIDTH / 2,
+    y + 12,
+  );
+  const clipX = modelX + STRENGTH_WIDTH;
+  ctx.fillText(
+    row.strengthClip.toFixed(2),
+    clipX + STRENGTH_WIDTH / 2,
+    y + 12,
+  );
+  ctx.fillText("⋮", width - MENU_WIDTH / 2, y + 12);
 }
 
 function plainRow(value) {
@@ -228,39 +242,55 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
       serializeValue: () => rowValue(row),
       draw: (ctx, _node, width, y) =>
         drawRow(ctx, row, width, y, folder.value),
-      onPointerDown(event, position) {
-        const width = node.size[0];
-        const toggleEnd = 24;
-        const menuStart = width - 24;
-        const clipStart = menuStart - 52;
-        const modelStart = clipStart - 52;
-        if (position.x < toggleEnd) {
-          row.on = !row.on;
-          dirty();
-        } else if (position.x < modelStart) {
-          menu(choices(), event, (name) => controls.replace(rows.indexOf(row), name));
-        } else if (position.x < clipStart) {
-          numericPrompt(node, "Model strength", row.strengthModel, event, (number) =>
-            controls.setStrength(rows.indexOf(row), "model", number),
-          );
-        } else if (position.x < menuStart) {
-          numericPrompt(node, "CLIP strength", row.strengthClip, event, (number) =>
-            controls.setStrength(rows.indexOf(row), "clip", number),
-          );
-        } else {
-          const index = rows.indexOf(row);
-          const items = [];
-          if (index > 0) items.push({ label: "Move up", value: "up" });
-          if (index < rows.length - 1) {
-            items.push({ label: "Move down", value: "down" });
+      onPointerDown(pointer, pointerNode) {
+        const event = pointer?.eDown;
+        const x = event?.canvasX - pointerNode.pos[0];
+        if (!Number.isFinite(x)) return false;
+        const width = pointerNode.size[0];
+        const menuStart = width - MENU_WIDTH;
+        const clipStart = menuStart - STRENGTH_WIDTH;
+        const modelStart = clipStart - STRENGTH_WIDTH;
+        pointer.onClick = (upEvent) => {
+          if (x < TOGGLE_WIDTH) {
+            row.on = !row.on;
+            dirty();
+          } else if (x < modelStart) {
+            menu(choices(), upEvent, (name) =>
+              controls.replace(rows.indexOf(row), name),
+            );
+          } else if (x < clipStart) {
+            numericPrompt(
+              node,
+              "Model strength",
+              row.strengthModel,
+              upEvent,
+              (number) =>
+                controls.setStrength(rows.indexOf(row), "model", number),
+            );
+          } else if (x < menuStart) {
+            numericPrompt(
+              node,
+              "CLIP strength",
+              row.strengthClip,
+              upEvent,
+              (number) =>
+                controls.setStrength(rows.indexOf(row), "clip", number),
+            );
+          } else {
+            const index = rows.indexOf(row);
+            const items = [];
+            if (index > 0) items.push({ label: "Move up", value: "up" });
+            if (index < rows.length - 1) {
+              items.push({ label: "Move down", value: "down" });
+            }
+            items.push({ label: "Remove", value: "remove" });
+            menu(items, upEvent, (action) => {
+              if (action === "up") controls.move(index, -1);
+              if (action === "down") controls.move(index, 1);
+              if (action === "remove") controls.remove(index);
+            });
           }
-          items.push({ label: "Remove", value: "remove" });
-          menu(items, event, (action) => {
-            if (action === "up") controls.move(index, -1);
-            if (action === "down") controls.move(index, 1);
-            if (action === "remove") controls.remove(index);
-          });
-        }
+        };
         return true;
       },
     };
@@ -280,10 +310,16 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
       ctx.font = "12px sans-serif";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      ctx.fillText("Toggle all", 8, y + ROW_HEIGHT / 2, width - 16);
+      const menuStart = width - MENU_WIDTH;
+      const clipStart = menuStart - STRENGTH_WIDTH;
+      const modelStart = clipStart - STRENGTH_WIDTH;
+      ctx.fillText("Toggle all", 8, y + ROW_HEIGHT / 2, modelStart - 16);
+      ctx.textAlign = "center";
+      ctx.fillText("Model", modelStart + STRENGTH_WIDTH / 2, y + 12);
+      ctx.fillText("CLIP", clipStart + STRENGTH_WIDTH / 2, y + 12);
     },
-    onPointerDown() {
-      controls.toggleAll();
+    onPointerDown(pointer) {
+      pointer.onClick = () => controls.toggleAll();
       return true;
     },
   });
@@ -304,8 +340,8 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
         y + ROW_HEIGHT / 2,
       );
     },
-    onPointerDown() {
-      controls.add(addWidget.value);
+    onPointerDown(pointer) {
+      pointer.onClick = () => controls.add(addWidget.value);
       return true;
     },
   });
