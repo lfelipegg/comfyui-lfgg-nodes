@@ -22,7 +22,7 @@ dependency. The pack includes a build-free frontend extension.
 
 ## Compatibility
 
-The required 1.4.0 release qualification covers:
+The required 1.5.0 release qualification covers:
 
 - ComfyUI `>=0.28.0`, tested at exact stable tags rather than `master`
 - ComfyUI frontend `>=1.45.21`
@@ -42,6 +42,7 @@ accelerators are not claimed.
 | LFGG Image Dimensions by Pixel Budget | IMAGE, exact pixel cap, alignment | width, height |
 | LFGG Resize Image by Long Side | IMAGE, interpolation method, long-side cap, alignment | resized image, width, height |
 | LFGG Load and Crop Image | one still image, ratio, exact source-pixel crop | cropped image, alpha-derived mask |
+| LFGG Power LoRA Loader (Folder) | MODEL, CLIP, folder, ordered LoRA rows | MODEL, CLIP |
 | LFGG Save Image Dynamic | IMAGE, path/filename templates, metadata toggle, optional model label | saved-image previews |
 
 All three nodes are in `LFGG/sizing`. They return positive dimensions aligned
@@ -105,6 +106,18 @@ inputs remain as the numeric fallback. The frontend uses ComfyUI's native input
 view endpoint and adds no route. The node does not access the network and writes
 no files.
 
+`LFGG Power LoRA Loader (Folder)` is in `LFGG/loaders`. It provides recursive
+folder filtering for future selections, including every child folder, plus
+`All LoRAs` to disable filtering. Changing the folder preserves existing rows,
+including rows outside the new folder. Enabled rows load in their visible
+ordered sequence, with separate model and CLIP strengths and controls to move,
+remove, replace, or toggle rows.
+
+Refresh node definitions after adding or removing LoRA files. A saved folder
+that no longer exists remains visible but offers no new choices; existing rows
+remain intact and missing selected files fail with an actionable error. The
+node is standalone and does not require rgthree.
+
 `LFGG Save Image Dynamic` is in `LFGG/Image`. It saves one PNG per batch frame
 with separate output-relative path and filename templates. Supported brace
 tokens are `{model}`, `{date}`, `{time}`, `{datetime}`, `{width}`, `{height}`,
@@ -135,6 +148,9 @@ requires the redistributable same-stem asset
 `workflows/load_and_crop_image.png`; copy it to
 `ComfyUI/input/load_and_crop_image.png` before opening or running the workflow.
 The loader reads that input file but performs no file writes.
+
+The folder-filtered LoRA loader reads selected LoRA files through ComfyUI. It
+performs no network calls or file writes.
 
 ## Migrate legacy workflows
 
@@ -170,8 +186,8 @@ Additional dispositions:
   index, with `length=1`.
 - Remove `LfggModelNameFromModel`; pass an explicit label string alongside the
   model instead of trying to infer provenance from the prompt graph.
-- Prompt Library, Prompt Wildcard, and LoRA Loader by Path are deferred to
-  separate future efforts.
+- Prompt Library and Prompt Wildcard remain separate future efforts. The legacy
+  single LoRA Loader by Path remains deferred.
 
 ## Develop and qualify
 
@@ -179,6 +195,7 @@ Additional dispositions:
 python -m pip install -e ".[dev]"
 node --test tests/frontend/ratio_preview.test.mjs
 node --test tests/frontend/crop_editor.test.mjs
+node --test tests/frontend/power_lora_loader.test.mjs
 python -m ruff check .
 python -m pytest -q tests/unit
 comfy node validate

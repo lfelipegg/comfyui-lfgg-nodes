@@ -17,6 +17,7 @@ EXPECTED_PATHS = {
     "lfgg_nodes/dimensions_by_aspect_ratio.py",
     "lfgg_nodes/image_dimensions.py",
     "lfgg_nodes/load_and_crop_image.py",
+    "lfgg_nodes/power_lora_loader_folder.py",
     "lfgg_nodes/save_image_dynamic.py",
     "lfgg_nodes/sizing.py",
     "pyproject.toml",
@@ -25,6 +26,9 @@ EXPECTED_PATHS = {
     "web/crop_editor.js",
     "web/crop_editor.mjs",
     "web/docs/LFGG_LoadAndCropImage/en.md",
+    "web/docs/LFGG_PowerLoraLoaderFolder/en.md",
+    "web/power_lora_loader.js",
+    "web/power_lora_loader.mjs",
     "workflows/load_and_crop_image.json",
     "workflows/load_and_crop_image.png",
     "workflows/save_image_dynamic.json",
@@ -179,7 +183,7 @@ def test_candidate_matches_the_approved_content_manifest(archive_path):
 
     entries = archive_tools().inspect_archive(archive_path)
     assert {entry.path for entry in entries} == EXPECTED_PATHS
-    expected_manifest = Path(__file__).parents[2] / "release" / "1.4.0-archive.sha256"
+    expected_manifest = Path(__file__).parents[2] / "release" / "1.5.0-archive.sha256"
     assert expected_manifest.exists(), "approved archive manifest is not implemented"
     assert archive_tools().format_manifest(entries) == expected_manifest.read_text()
 

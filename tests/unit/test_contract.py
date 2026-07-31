@@ -107,6 +107,50 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "Model with every enabled LoRA applied in row order.",
         "CLIP with every enabled LoRA applied in row order.",
     )
+    monkeypatch.setitem(
+        sys.modules,
+        "folder_paths",
+        types.SimpleNamespace(
+            get_filename_list=lambda _category: [
+                "characters/anime/hero.safetensors",
+                "styles/ink.safetensors",
+            ]
+        ),
+    )
+    assert json.loads(json.dumps(power_lora.INPUT_TYPES())) == {
+        "required": {
+            "model": ["MODEL"],
+            "clip": ["CLIP"],
+            "folder": [
+                "COMBO",
+                {
+                    "options": [
+                        "All LoRAs",
+                        "characters",
+                        "characters/anime",
+                        "styles",
+                    ],
+                    "default": "characters",
+                    "tooltip": (
+                        "Limits future LoRA choices to this folder and its "
+                        "descendants."
+                    ),
+                },
+            ],
+            "lora_to_add": [
+                "COMBO",
+                {
+                    "options": [
+                        "characters/anime/hero.safetensors",
+                        "styles/ink.safetensors",
+                    ],
+                    "default": "characters/anime/hero.safetensors",
+                    "tooltip": "LoRA to add as the next ordered row.",
+                },
+            ],
+        },
+        "optional": {},
+    }
 
     required = node.INPUT_TYPES()["required"]
     assert list(required) == [
@@ -613,12 +657,15 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
     monkeypatch, tmp_path
 ):
     pyproject_path = ROOT / "pyproject.toml"
-    manifest_path = ROOT / "release" / "1.4.0-schema.json"
+    manifest_path = ROOT / "release" / "1.5.0-schema.json"
     workflow_path = ROOT / "workflows" / "sizing.json"
     save_workflow_path = ROOT / "workflows" / "save_image_dynamic.json"
     crop_workflow_path = ROOT / "workflows" / "load_and_crop_image.json"
     crop_asset_path = ROOT / "workflows" / "load_and_crop_image.png"
     crop_help_path = ROOT / "web" / "docs" / "LFGG_LoadAndCropImage" / "en.md"
+    power_lora_help_path = (
+        ROOT / "web" / "docs" / "LFGG_PowerLoraLoaderFolder" / "en.md"
+    )
     assert pyproject_path.exists(), "pyproject.toml is not implemented"
     assert manifest_path.exists(), "release schema manifest is not implemented"
     assert workflow_path.exists(), "complete sizing API workflow is not implemented"
@@ -628,6 +675,9 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         "load and crop workflow input asset is not implemented"
     )
     assert crop_help_path.exists(), "load and crop embedded help is not implemented"
+    assert power_lora_help_path.exists(), (
+        "power LoRA loader embedded help is not implemented"
+    )
 
     try:
         import tomllib
@@ -638,7 +688,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
     project = metadata["project"]
     comfy = metadata["tool"]["comfy"]
     assert project["name"] == "lfgg-nodes"
-    assert project["version"] == "1.4.0"
+    assert project["version"] == "1.5.0"
     assert project["requires-python"] == ">=3.10,<3.14"
     assert project["dependencies"] == [
         "Pillow",
@@ -663,6 +713,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         "custom ratio controls",
         "node --test tests/frontend/ratio_preview.test.mjs",
         "node --test tests/frontend/crop_editor.test.mjs",
+        "node --test tests/frontend/power_lora_loader.test.mjs",
         "do not read or write files",
         "exclusive creation of final PNG files",
         "cleanup of PNG files created by a failed execution",
@@ -708,7 +759,15 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
             "`bilinear`",
             "`area`",
             "`bicubic`",
-            "returns the original tensor",
+        "returns the original tensor",
+        "LFGG Power LoRA Loader (Folder)",
+        "recursive folder filtering",
+        "`All LoRAs`",
+        "existing rows",
+        "ordered",
+        "Refresh node definitions",
+        "does not require rgthree",
+        "no network calls or file writes",
         ]:
         assert claim in readme
 
@@ -729,7 +788,10 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         for path in (ROOT / "web" / "docs").iterdir()
         if (path / "en.md").is_file()
     }
-    assert help_ids == {"LFGG_LoadAndCropImage"}
+    assert help_ids == {
+        "LFGG_LoadAndCropImage",
+        "LFGG_PowerLoraLoaderFolder",
+    }
     assert help_ids <= package.NODE_CLASS_MAPPINGS.keys()
 
     with Image.open(crop_asset_path) as asset:
@@ -747,8 +809,6 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
 
     expected_nodes = {}
     for node_id, node in package.NODE_CLASS_MAPPINGS.items():
-        if node_id == "LFGG_PowerLoraLoaderFolder":
-            continue
         expected_nodes[node_id] = {
             "display_name": package.NODE_DISPLAY_NAME_MAPPINGS[node_id],
             "description": node.DESCRIPTION,
@@ -759,7 +819,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
             "output_tooltips": list(getattr(node, "OUTPUT_TOOLTIPS", ())),
         }
     assert json.loads(manifest_path.read_text()) == {
-        "version": "1.4.0",
+        "version": "1.5.0",
         "nodes": expected_nodes,
     }
 
