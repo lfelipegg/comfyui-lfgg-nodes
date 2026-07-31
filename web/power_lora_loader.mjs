@@ -233,11 +233,7 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
   if (!folder || !addWidget) return undefined;
 
   const separateStrengths = migrateStrengthSetting(node);
-  node.addProperty?.(
-    SEPARATE_STRENGTHS,
-    Boolean(separateStrengths),
-    "boolean",
-  );
+  node.constructor[`@${SEPARATE_STRENGTHS}`] ??= { type: "boolean" };
   node.properties[SEPARATE_STRENGTHS] = Boolean(separateStrengths);
   delete node.properties.lfgg_link_strengths;
 
@@ -307,11 +303,11 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
       name: "",
       computeSize: () => [0, ROW_HEIGHT],
       serializeValue: () => rowValue(row),
-      draw: (ctx, _node, width, y) =>
+      draw: (ctx, drawNode, _width, y) =>
         drawRow(
           ctx,
           row,
-          width,
+          drawNode.size[0],
           y,
           folder.value,
           controls.separateStrengths,
@@ -391,12 +387,12 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
     serialize: false,
     options: { serialize: false },
     computeSize: () => [0, ROW_HEIGHT],
-    draw(ctx, _node, width, y) {
+    draw(ctx, drawNode, _width, y) {
       ctx.fillStyle = colors().text;
       ctx.font = "12px sans-serif";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      const layout = rowLayout(width, controls.separateStrengths);
+      const layout = rowLayout(drawNode.size[0], controls.separateStrengths);
       ctx.fillText(
         "Toggle all",
         8,
@@ -430,14 +426,14 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
     serialize: false,
     options: { serialize: false },
     computeSize: () => [0, ROW_HEIGHT],
-    draw(ctx, drawNode, width, y) {
+    draw(ctx, drawNode, _width, y) {
       ctx.fillStyle = colors().text;
       ctx.font = "12px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(
         "Add LoRA",
-        (width || drawNode.size[0]) / 2,
+        drawNode.size[0] / 2,
         y + ROW_HEIGHT / 2,
       );
     },

@@ -24,7 +24,6 @@ function fakeNode({
   let folderCallbacks = 0;
   let addCallbacks = 0;
   let serializations = 0;
-  const addedProperties = [];
   const widgets = [
     {
       name: "folder",
@@ -45,6 +44,7 @@ function fakeNode({
   ];
   return {
     comfyClass,
+    constructor: class FakeNode {},
     widgets,
     properties: { ...properties },
     pos: [100, 50],
@@ -52,10 +52,6 @@ function fakeNode({
     addCustomWidget(widget) {
       this.widgets.push(widget);
       return widget;
-    },
-    addProperty(name, value, type) {
-      this.properties[name] = value;
-      addedProperties.push({ name, value, type });
     },
     computeSize() {
       return [
@@ -79,7 +75,6 @@ function fakeNode({
     },
     folderCallbacks: () => folderCallbacks,
     addCallbacks: () => addCallbacks,
-    addedProperties: () => addedProperties,
     serializations: () => serializations,
   };
 }
@@ -314,9 +309,10 @@ test("adds an off-by-default setting that controls separate strengths", () => {
   controls.headerWidget.draw(context, node, node.size[0], 0);
   controls.rowWidgets[0].draw(context, node, node.size[0], 24);
 
-  assert.deepEqual(node.addedProperties(), [
-    { name: SEPARATE_STRENGTHS, value: false, type: "boolean" },
-  ]);
+  assert.deepEqual(node.constructor[`@${SEPARATE_STRENGTHS}`], {
+    type: "boolean",
+  });
+  assert.equal(node.properties[SEPARATE_STRENGTHS], false);
   assert.ok(labels.includes("Strength"));
   assert.ok(!labels.includes("Model strength"));
   assert.ok(!labels.includes("CLIP strength"));
@@ -545,7 +541,9 @@ test("restores ordered rows on the loaded-node install and stays idempotent", ()
     node.widgets.filter((widget) => widget.name === "lfgg_lora_header").length,
     1,
   );
-  assert.equal(node.addedProperties().length, 1);
+  assert.deepEqual(node.constructor[`@${SEPARATE_STRENGTHS}`], {
+    type: "boolean",
+  });
 });
 
 test("preserves a missing saved folder and exposes no add choices", () => {
@@ -584,6 +582,38 @@ test("centers the add footer when ComfyUI reports zero custom width", () => {
   controls.footerWidget.draw(context, node, 0, 20);
 
   assert.deepEqual(calls[0], ["Add LoRA", node.size[0] / 2, 32]);
+});
+
+test("uses the current node width when custom widget widths are stale", () => {
+  const node = fakeNode();
+  const controls = installPowerLoraLoader(node);
+  controls.add("characters/anime/hero.safetensors");
+  node.size[0] = 400;
+  const fills = [];
+  const labels = [];
+  const context = {
+    fillRect(...args) {
+      fills.push(args);
+    },
+    strokeRect() {},
+    fillText(...args) {
+      labels.push(args);
+    },
+  };
+
+  controls.rowWidgets[0].draw(context, node, 320, 0);
+  controls.headerWidget.draw(context, node, 320, 24);
+  controls.footerWidget.draw(context, node, 320, 48);
+
+  assert.equal(fills[0][2], 400);
+  assert.deepEqual(
+    labels.find(([label]) => label === "Strength"),
+    ["Strength", 334, 36],
+  );
+  assert.deepEqual(
+    labels.find(([label]) => label === "Add LoRA"),
+    ["Add LoRA", 200, 60],
+  );
 });
 
 test("ignores unrelated node classes", () => {
