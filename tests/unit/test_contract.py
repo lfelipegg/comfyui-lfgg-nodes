@@ -67,6 +67,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         ),
         "LFGG_ResizeImageByLongSide": "LFGG Resize Image by Long Side",
         "LFGG_LoadAndCropImage": "LFGG Load and Crop Image",
+        "LFGG_PowerLoraLoaderFolder": "LFGG Power LoRA Loader (Folder)",
         "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
     }
     assert list(package.NODE_CLASS_MAPPINGS) == [
@@ -75,6 +76,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_ImageDimensionsByPixelBudget",
         "LFGG_ResizeImageByLongSide",
         "LFGG_LoadAndCropImage",
+        "LFGG_PowerLoraLoaderFolder",
         "LFGG_SaveImageDynamic",
     ]
 
@@ -90,6 +92,20 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
     assert node.OUTPUT_TOOLTIPS == (
         "Aligned output width in pixels.",
         "Aligned output height in pixels.",
+    )
+
+    power_lora = package.NODE_CLASS_MAPPINGS["LFGG_PowerLoraLoaderFolder"]
+    assert power_lora.CATEGORY == "LFGG/loaders"
+    assert power_lora.DESCRIPTION == (
+        "Applies ordered LoRAs while limiting new selections to a saved "
+        "LoRA folder."
+    )
+    assert power_lora.FUNCTION == "load_loras"
+    assert power_lora.RETURN_TYPES == ("MODEL", "CLIP")
+    assert power_lora.RETURN_NAMES == ("model", "clip")
+    assert power_lora.OUTPUT_TOOLTIPS == (
+        "Model with every enabled LoRA applied in row order.",
+        "CLIP with every enabled LoRA applied in row order.",
     )
 
     required = node.INPUT_TYPES()["required"]
@@ -210,6 +226,7 @@ def test_load_and_crop_image_import_is_lazy_and_side_effect_free(
                 reject_target_access(getattr(owner, name)),
             )
         load_root_package(import_guard)
+        assert not hasattr(sys.modules["nodes"], "LoraLoader")
 
     assert "folder_paths" not in sys.modules
     assert sorted(
@@ -701,7 +718,10 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
     monkeypatch.setitem(
         sys.modules,
         "folder_paths",
-        types.SimpleNamespace(get_input_directory=lambda: str(input_directory)),
+        types.SimpleNamespace(
+            get_input_directory=lambda: str(input_directory),
+            get_filename_list=lambda _category: [],
+        ),
     )
     package = load_root_package(monkeypatch)
     help_ids = {
@@ -727,6 +747,8 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
 
     expected_nodes = {}
     for node_id, node in package.NODE_CLASS_MAPPINGS.items():
+        if node_id == "LFGG_PowerLoraLoaderFolder":
+            continue
         expected_nodes[node_id] = {
             "display_name": package.NODE_DISPLAY_NAME_MAPPINGS[node_id],
             "description": node.DESCRIPTION,

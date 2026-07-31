@@ -6,6 +6,7 @@ if __package__:
         ResizeImageByLongSide,
     )
     from .lfgg_nodes.load_and_crop_image import LoadAndCropImage
+    from .lfgg_nodes.power_lora_loader_folder import PowerLoraLoaderFolder
     from .lfgg_nodes.save_image_dynamic import SaveImageDynamic
 else:
     from lfgg_nodes.dimensions_by_aspect_ratio import DimensionsByAspectRatio
@@ -15,6 +16,7 @@ else:
         ResizeImageByLongSide,
     )
     from lfgg_nodes.load_and_crop_image import LoadAndCropImage
+    from lfgg_nodes.power_lora_loader_folder import PowerLoraLoaderFolder
     from lfgg_nodes.save_image_dynamic import SaveImageDynamic
 
 
@@ -34,6 +36,7 @@ NODE_CLASS_MAPPINGS = _merge_class_mappings(
     {"LFGG_ImageDimensionsByPixelBudget": ImageDimensionsByPixelBudget},
     {"LFGG_ResizeImageByLongSide": ResizeImageByLongSide},
     {"LFGG_LoadAndCropImage": LoadAndCropImage},
+    {"LFGG_PowerLoraLoaderFolder": PowerLoraLoaderFolder},
     {"LFGG_SaveImageDynamic": SaveImageDynamic},
 )
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -42,6 +45,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LFGG_ImageDimensionsByPixelBudget": "LFGG Image Dimensions by Pixel Budget",
     "LFGG_ResizeImageByLongSide": "LFGG Resize Image by Long Side",
     "LFGG_LoadAndCropImage": "LFGG Load and Crop Image",
+    "LFGG_PowerLoraLoaderFolder": "LFGG Power LoRA Loader (Folder)",
     "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
 }
 WEB_DIRECTORY = "./web"
