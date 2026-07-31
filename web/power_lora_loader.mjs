@@ -8,6 +8,7 @@ const STRENGTH_WIDTH = 84;
 const STRENGTH_ARROW_WIDTH = 18;
 const STRENGTH_STEP = 0.05;
 const MENU_WIDTH = 24;
+const ROW_INSET = 10;
 const ENABLED_COLOR = "#66bb6a";
 const DISABLED_COLOR = "#ef5350";
 const DISABLED_OVERLAY = "rgba(0, 0, 0, 0.35)";
@@ -153,17 +154,23 @@ function drawStrength(ctx, value, x, y, enabled, theme) {
 
 function rowLayout(width, separateStrengths) {
   const strengthCount = separateStrengths ? 2 : 1;
+  const contentWidth = Math.max(0, width - ROW_INSET * 2);
   const nameWidth = Math.max(
     40,
-    width -
+    contentWidth -
       TOGGLE_WIDTH -
       STRENGTH_WIDTH * strengthCount -
       MENU_WIDTH,
   );
-  const modelStart = TOGGLE_WIDTH + nameWidth;
+  const toggleStart = ROW_INSET;
+  const modelStart = toggleStart + TOGGLE_WIDTH + nameWidth;
   const clipStart = modelStart + STRENGTH_WIDTH;
   return {
+    contentStart: ROW_INSET,
+    contentEnd: width - ROW_INSET,
+    contentWidth,
     nameWidth,
+    toggleStart,
     modelStart,
     clipStart,
     menuStart: clipStart + (separateStrengths ? STRENGTH_WIDTH : 0),
@@ -174,18 +181,22 @@ function drawRow(ctx, row, width, y, folder, separateStrengths) {
   const theme = colors();
   const layout = rowLayout(width, separateStrengths);
   ctx.fillStyle = theme.background;
-  ctx.fillRect?.(0, y, width, ROW_HEIGHT);
+  ctx.fillRect?.(ROW_INSET, y, layout.contentWidth, ROW_HEIGHT);
   if (!row.on) {
     ctx.fillStyle = DISABLED_OVERLAY;
-    ctx.fillRect?.(0, y, width, ROW_HEIGHT);
+    ctx.fillRect?.(ROW_INSET, y, layout.contentWidth, ROW_HEIGHT);
   }
   ctx.strokeStyle = theme.outline;
-  ctx.strokeRect?.(0, y, width, ROW_HEIGHT);
+  ctx.strokeRect?.(ROW_INSET, y, layout.contentWidth, ROW_HEIGHT);
   ctx.fillStyle = row.on ? ENABLED_COLOR : DISABLED_COLOR;
   ctx.font = "12px sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("●", TOGGLE_WIDTH / 2, y + ROW_HEIGHT / 2);
+  ctx.fillText(
+    "●",
+    layout.toggleStart + TOGGLE_WIDTH / 2,
+    y + ROW_HEIGHT / 2,
+  );
   ctx.fillStyle = row.on ? theme.text : theme.secondary;
   ctx.textAlign = "left";
   const relative =
@@ -194,7 +205,7 @@ function drawRow(ctx, row, width, y, folder, separateStrengths) {
       : row.lora.slice(folder.length + 1);
   ctx.fillText(
     relative,
-    TOGGLE_WIDTH + 4,
+    layout.toggleStart + TOGGLE_WIDTH + 4,
     y + ROW_HEIGHT / 2,
     layout.nameWidth - 8,
   );
@@ -204,7 +215,7 @@ function drawRow(ctx, row, width, y, folder, separateStrengths) {
     drawStrength(ctx, row.strengthClip, layout.clipStart, y, row.on, theme);
   }
   ctx.fillStyle = row.on ? theme.text : theme.secondary;
-  ctx.fillText("⋮", width - MENU_WIDTH / 2, y + 12);
+  ctx.fillText("⋮", layout.menuStart + MENU_WIDTH / 2, y + 12);
 }
 
 function plainRow(value) {
@@ -319,6 +330,7 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
         if (!Number.isFinite(x)) return false;
         const width = pointerNode.size[0];
         const layout = rowLayout(width, controls.separateStrengths);
+        if (x < layout.contentStart || x >= layout.contentEnd) return false;
         pointer.onClick = (upEvent) => {
           const adjustStrength = (target, value, start) => {
             const offset = x - start;
@@ -347,7 +359,7 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
               );
             }
           };
-          if (x < TOGGLE_WIDTH) {
+          if (x < layout.toggleStart + TOGGLE_WIDTH) {
             row.on = !row.on;
             dirty();
           } else if (x < layout.modelStart) {
@@ -395,7 +407,7 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
       const layout = rowLayout(drawNode.size[0], controls.separateStrengths);
       ctx.fillText(
         "Toggle all",
-        8,
+        ROW_INSET + 8,
         y + ROW_HEIGHT / 2,
         layout.modelStart - 16,
       );

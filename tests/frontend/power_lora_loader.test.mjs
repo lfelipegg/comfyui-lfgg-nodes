@@ -340,35 +340,35 @@ test("strength arrows adjust by 0.05 and keep direct entry", () => {
   controls.add("characters/anime/hero.safetensors");
   const rowWidget = controls.rowWidgets[0];
 
-  const combinedDecrease = pointerAt(node, 220);
+  const combinedDecrease = pointerAt(node, 210);
   rowWidget.onPointerDown(combinedDecrease, node);
   combinedDecrease.onClick(combinedDecrease.eDown);
   assert.equal(controls.rows[0].strengthModel, 0.95);
   assert.equal(controls.rows[0].strengthClip, 0.95);
 
-  const combinedIncrease = pointerAt(node, 288);
+  const combinedIncrease = pointerAt(node, 278);
   rowWidget.onPointerDown(combinedIncrease, node);
   combinedIncrease.onClick(combinedIncrease.eDown);
   assert.equal(controls.rows[0].strengthModel, 1);
   assert.equal(controls.rows[0].strengthClip, 1);
 
   node.onPropertyChanged(SEPARATE_STRENGTHS, true);
-  const modelDecrease = pointerAt(node, 136);
+  const modelDecrease = pointerAt(node, 126);
   rowWidget.onPointerDown(modelDecrease, node);
   modelDecrease.onClick(modelDecrease.eDown);
   assert.equal(controls.rows[0].strengthModel, 0.95);
 
-  const modelIncrease = pointerAt(node, 204);
+  const modelIncrease = pointerAt(node, 194);
   rowWidget.onPointerDown(modelIncrease, node);
   modelIncrease.onClick(modelIncrease.eDown);
   assert.equal(controls.rows[0].strengthModel, 1);
 
-  const clipDecrease = pointerAt(node, 220);
+  const clipDecrease = pointerAt(node, 210);
   rowWidget.onPointerDown(clipDecrease, node);
   clipDecrease.onClick(clipDecrease.eDown);
   assert.equal(controls.rows[0].strengthClip, 0.95);
 
-  const clipIncrease = pointerAt(node, 288);
+  const clipIncrease = pointerAt(node, 278);
   rowWidget.onPointerDown(clipIncrease, node);
   clipIncrease.onClick(clipIncrease.eDown);
   assert.equal(controls.rows[0].strengthClip, 1);
@@ -605,11 +605,16 @@ test("uses the current node width when custom widget widths are stale", () => {
   controls.headerWidget.draw(context, node, 320, 24);
   controls.footerWidget.draw(context, node, 320, 48);
 
-  assert.equal(fills[0][2], 400);
+  assert.deepEqual(fills[0], [10, 0, 380, 24]);
   assert.deepEqual(
     labels.find(([label]) => label === "Strength"),
-    ["Strength", 334, 36],
+    ["Strength", 324, 36],
   );
+  assert.equal(
+    labels.find(([label]) => label === "anime/hero.safetensors")[1],
+    38,
+  );
+  assert.equal(labels.find(([label]) => label === "⋮")[1], 378);
   assert.deepEqual(
     labels.find(([label]) => label === "Add LoRA"),
     ["Add LoRA", 200, 60],
