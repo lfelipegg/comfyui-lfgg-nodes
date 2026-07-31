@@ -108,6 +108,24 @@ function primaryPointer(pointer) {
   return button == null || button === 0;
 }
 
+function searchableCombo(widget, choices) {
+  widget.onPointerDown = function (pointer, node, canvas) {
+    if (!primaryPointer(pointer)) return false;
+    const x = pointer?.eDown?.canvasX - node.pos[0];
+    const width = this.width || node.size[0];
+    if (!Number.isFinite(x) || x < 40 || x > width - 40) return false;
+    pointer.onClick = (event) =>
+      menu(choices(), event, (value) => {
+        if (typeof this.setValue === "function") {
+          this.setValue(value, { e: pointer.eDown, node, canvas });
+        } else {
+          this.callback(value);
+        }
+      });
+    return true;
+  };
+}
+
 function migrateStrengthSetting(node) {
   node.properties ??= {};
   const separate =
@@ -545,6 +563,13 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
 
   composeCallback(folder, refresh);
   composeCallback(addWidget, dirty);
+  searchableCombo(folder, () =>
+    folder.options.values.map((value) => ({
+      label: folder.options.getOptionLabel(value),
+      value,
+    })),
+  );
+  searchableCombo(addWidget, choices);
   const originalPropertyChanged = node.onPropertyChanged;
   node.onPropertyChanged = function (name, value) {
     const result = originalPropertyChanged?.apply(this, arguments);

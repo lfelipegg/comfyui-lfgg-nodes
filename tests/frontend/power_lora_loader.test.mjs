@@ -295,6 +295,55 @@ test("opens row LoRA choices as a searchable combo menu", () => {
   }
 });
 
+test("opens folder and add selectors as searchable combo menus", () => {
+  const loras = [
+    "a/one.safetensors",
+    "b/two.safetensors",
+    "c/three.safetensors",
+    "d/four.safetensors",
+    "e/five.safetensors",
+  ];
+  const node = fakeNode({ loras, folder: ALL_LORAS });
+  const controls = installPowerLoraLoader(node);
+  const menus = [];
+  const previousLiteGraph = globalThis.LiteGraph;
+  globalThis.LiteGraph = {
+    ContextMenu: class {
+      constructor(items, options) {
+        menus.push({ items, options });
+      }
+    },
+  };
+
+  try {
+    const folderPointer = pointerAt(node, 160);
+    assert.equal(controls.folder.onPointerDown(folderPointer, node), true);
+    folderPointer.onClick(folderPointer.eDown);
+    assert.equal(menus[0].items.length, 6);
+    menus[0].options.callback(menus[0].items[2]);
+    assert.equal(controls.folder.value, "b");
+
+    controls.setFolder(ALL_LORAS);
+    const addPointer = pointerAt(node, 160);
+    assert.equal(controls.addWidget.onPointerDown(addPointer, node), true);
+    addPointer.onClick(addPointer.eDown);
+    assert.equal(menus[1].items.length, 5);
+    menus[1].options.callback(menus[1].items[4]);
+    assert.equal(controls.addWidget.value, "e/five.safetensors");
+
+    assert.equal(
+      controls.folder.onPointerDown(pointerAt(node, 20), node),
+      false,
+    );
+    assert.equal(
+      controls.addWidget.onPointerDown(pointerAt(node, 300), node),
+      false,
+    );
+  } finally {
+    globalThis.LiteGraph = previousLiteGraph;
+  }
+});
+
 test("adds an off-by-default setting that controls separate strengths", () => {
   const node = fakeNode();
   const controls = installPowerLoraLoader(node);
