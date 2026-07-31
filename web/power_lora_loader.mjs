@@ -106,17 +106,6 @@ function rowValue(row) {
   };
 }
 
-function serializedRow(value) {
-  return (
-    value &&
-    typeof value === "object" &&
-    Object.keys(value).length === 4 &&
-    ["on", "lora", "strength_model", "strength_clip"].every((key) =>
-      Object.hasOwn(value, key),
-    )
-  );
-}
-
 function drawRow(ctx, row, width, y, folder) {
   const theme = colors();
   const toggleWidth = 24;
@@ -304,12 +293,16 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
     serialize: false,
     options: { serialize: false },
     computeSize: () => [0, ROW_HEIGHT],
-    draw(ctx, _node, width, y) {
+    draw(ctx, drawNode, width, y) {
       ctx.fillStyle = colors().text;
       ctx.font = "12px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText("Add LoRA", width / 2, y + ROW_HEIGHT / 2);
+      ctx.fillText(
+        "Add LoRA",
+        (width || drawNode.size[0]) / 2,
+        y + ROW_HEIGHT / 2,
+      );
     },
     onPointerDown() {
       controls.add(addWidget.value);
@@ -402,14 +395,13 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
   const originalSerialize = node.onSerialize;
   node.onSerialize = function (serialized) {
     const result = originalSerialize?.apply(this, arguments);
+    const savedRows = rows.map(rowValue);
     node.properties ??= {};
-    node.properties.lfgg_lora_rows = rows.map(rowValue);
+    node.properties.lfgg_lora_rows = savedRows;
+    serialized.properties ??= {};
+    serialized.properties.lfgg_lora_rows = savedRows;
     if (Array.isArray(serialized.widgets_values)) {
-      for (let index = serialized.widgets_values.length - 1; index >= 0; index -= 1) {
-        if (serializedRow(serialized.widgets_values[index])) {
-          serialized.widgets_values.splice(index, 1);
-        }
-      }
+      serialized.widgets_values.splice(2);
     }
     return result;
   };

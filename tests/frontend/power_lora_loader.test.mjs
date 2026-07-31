@@ -224,12 +224,13 @@ test("serializes exact backend rows without positional workflow values", () => {
   assert.equal(controls.footerWidget.serialize, false);
 
   const serialized = {
-    widgets_values: ["characters", LORAS[0], serializedRow],
+    widgets_values: ["characters", LORAS[0], null, serializedRow, null],
   };
   node.onSerialize(serialized);
 
   assert.equal(node.serializations(), 1);
   assert.deepEqual(node.properties.lfgg_lora_rows, [serializedRow]);
+  assert.deepEqual(serialized.properties.lfgg_lora_rows, [serializedRow]);
   assert.deepEqual(serialized.widgets_values, ["characters", LORAS[0]]);
 });
 
@@ -294,6 +295,21 @@ test("preserves a missing saved folder and exposes no add choices", () => {
   assert.equal(controls.folder.options.getOptionLabel("missing"), "missing (missing)");
   assert.deepEqual(controls.addWidget.options.values, []);
   assert.deepEqual(controls.rowWidgets[0].serializeValue(), savedRows[0]);
+});
+
+test("centers the add footer when ComfyUI reports zero custom width", () => {
+  const node = fakeNode();
+  const controls = installPowerLoraLoader(node);
+  const calls = [];
+  const context = {
+    fillText(...args) {
+      calls.push(args);
+    },
+  };
+
+  controls.footerWidget.draw(context, node, 0, 20);
+
+  assert.deepEqual(calls[0], ["Add LoRA", node.size[0] / 2, 32]);
 });
 
 test("ignores unrelated node classes", () => {
