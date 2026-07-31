@@ -8,6 +8,9 @@ const STRENGTH_WIDTH = 84;
 const STRENGTH_ARROW_WIDTH = 18;
 const STRENGTH_STEP = 0.05;
 const MENU_WIDTH = 24;
+const ENABLED_COLOR = "#66bb6a";
+const DISABLED_COLOR = "#ef5350";
+const DISABLED_OVERLAY = "rgba(0, 0, 0, 0.35)";
 const installed = Symbol("lfggPowerLoraLoader");
 
 function normalizeName(value) {
@@ -138,13 +141,18 @@ function drawRow(ctx, row, width, y, folder) {
   );
   ctx.fillStyle = theme.background;
   ctx.fillRect?.(0, y, width, ROW_HEIGHT);
+  if (!row.on) {
+    ctx.fillStyle = DISABLED_OVERLAY;
+    ctx.fillRect?.(0, y, width, ROW_HEIGHT);
+  }
   ctx.strokeStyle = theme.outline;
   ctx.strokeRect?.(0, y, width, ROW_HEIGHT);
-  ctx.fillStyle = row.on ? theme.text : theme.secondary;
+  ctx.fillStyle = row.on ? ENABLED_COLOR : DISABLED_COLOR;
   ctx.font = "12px sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(row.on ? "●" : "○", TOGGLE_WIDTH / 2, y + ROW_HEIGHT / 2);
+  ctx.fillText("●", TOGGLE_WIDTH / 2, y + ROW_HEIGHT / 2);
+  ctx.fillStyle = row.on ? theme.text : theme.secondary;
   ctx.textAlign = "left";
   const relative =
     folder === ALL_LORAS || !row.lora.startsWith(`${folder}/`)
@@ -201,6 +209,7 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
     addWidget,
     rows,
     rowWidgets,
+    linkStrengths: node.properties?.lfgg_link_strengths !== false,
   };
 
   const dirty = () => node.setDirtyCanvas?.(true, true);
@@ -318,6 +327,34 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
     node.addCustomWidget(widget);
   };
 
+  controls.linkWidget = node.addCustomWidget({
+    type: "lfgg_lora_strength_link",
+    name: "lfgg_lora_strength_link",
+    serialize: false,
+    options: { serialize: false },
+    computeSize: () => [0, ROW_HEIGHT],
+    draw(ctx, _node, width, y) {
+      const theme = colors();
+      ctx.font = "12px sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = controls.linkStrengths
+        ? ENABLED_COLOR
+        : DISABLED_COLOR;
+      ctx.fillText("●", 12, y + ROW_HEIGHT / 2);
+      ctx.fillStyle = controls.linkStrengths ? theme.text : theme.secondary;
+      ctx.fillText(
+        `Link model + CLIP strengths: ${controls.linkStrengths ? "On" : "Off"}`,
+        24,
+        y + ROW_HEIGHT / 2,
+        width - 32,
+      );
+    },
+    onPointerDown(pointer) {
+      pointer.onClick = () => controls.toggleStrengthLink();
+      return true;
+    },
+  });
   controls.headerWidget = node.addCustomWidget({
     type: "lfgg_lora_header",
     name: "lfgg_lora_header",
@@ -407,11 +444,21 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
   controls.setStrength = (index, target, value) => {
     const strength = clampStrength(value);
     if (!rows[index] || strength === undefined) return false;
-    if (target === "model") rows[index].strengthModel = strength;
-    else if (target === "clip") rows[index].strengthClip = strength;
-    else return false;
+    if (target !== "model" && target !== "clip") return false;
+    if (controls.linkStrengths || target === "model") {
+      rows[index].strengthModel = strength;
+    }
+    if (controls.linkStrengths || target === "clip") {
+      rows[index].strengthClip = strength;
+    }
     dirty();
     return true;
+  };
+  controls.toggleStrengthLink = () => {
+    controls.linkStrengths = !controls.linkStrengths;
+    node.properties ??= {};
+    node.properties.lfgg_link_strengths = controls.linkStrengths;
+    dirty();
   };
   controls.remove = (index) => {
     if (!rows[index]) return false;
@@ -442,6 +489,7 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
   };
   controls.refresh = refresh;
   controls.restore = () => {
+    controls.linkStrengths = node.properties?.lfgg_link_strengths !== false;
     for (const widget of rowWidgets) {
       node.widgets.splice(node.widgets.indexOf(widget), 1);
     }
@@ -462,8 +510,10 @@ export function installPowerLoraLoader(node, { restore = false } = {}) {
     const savedRows = rows.map(rowValue);
     node.properties ??= {};
     node.properties.lfgg_lora_rows = savedRows;
+    node.properties.lfgg_link_strengths = controls.linkStrengths;
     serialized.properties ??= {};
     serialized.properties.lfgg_lora_rows = savedRows;
+    serialized.properties.lfgg_link_strengths = controls.linkStrengths;
     if (Array.isArray(serialized.widgets_values)) {
       serialized.widgets_values.splice(2);
     }

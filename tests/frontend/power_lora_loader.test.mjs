@@ -174,6 +174,7 @@ test("edits rows and keeps unique sequential prompt keys", () => {
 
   controls.replace(0, "characters/photo.safetensors");
   controls.setEnabled(1, false);
+  controls.toggleStrengthLink();
   controls.setStrength(0, "model", 200);
   controls.setStrength(0, "clip", -200);
   controls.setStrength(0, "model", Number.POSITIVE_INFINITY);
@@ -235,7 +236,7 @@ test("handles ComfyUI pointer clicks for toggles and strength prompts", () => {
     const clip = pointerAt(node, 254);
     assert.equal(rowWidget.onPointerDown(clip, node), true);
     clip.onClick(clip.eDown);
-    assert.deepEqual(prompts[1], { label: "CLIP strength", value: "1" });
+    assert.deepEqual(prompts[1], { label: "CLIP strength", value: "0.25" });
     assert.equal(controls.rows[0].strengthClip, 0.25);
   } finally {
     globalThis.LGraphCanvas = previousCanvas;
@@ -322,6 +323,70 @@ test("strength arrows adjust by 0.05 and keep direct entry", () => {
   assert.equal(controls.rows[0].strengthClip, 1);
 });
 
+test("links model and CLIP strengths by default and allows unlinking", () => {
+  const node = fakeNode();
+  const controls = installPowerLoraLoader(node);
+  controls.add("characters/anime/hero.safetensors");
+
+  controls.setStrength(0, "model", 0.75);
+  assert.equal(controls.rows[0].strengthModel, 0.75);
+  assert.equal(controls.rows[0].strengthClip, 0.75);
+
+  controls.toggleStrengthLink();
+  controls.setStrength(0, "clip", 0.25);
+  assert.equal(controls.rows[0].strengthModel, 0.75);
+  assert.equal(controls.rows[0].strengthClip, 0.25);
+});
+
+test("persists an unlinked strength option", () => {
+  const node = fakeNode();
+  const controls = installPowerLoraLoader(node);
+  controls.toggleStrengthLink();
+  const serialized = { widgets_values: [] };
+
+  node.onSerialize(serialized);
+
+  assert.equal(node.properties.lfgg_link_strengths, false);
+  assert.equal(serialized.properties.lfgg_link_strengths, false);
+
+  const restored = fakeNode({
+    properties: {
+      lfgg_link_strengths: false,
+      lfgg_lora_rows: [],
+    },
+  });
+  const restoredControls = installPowerLoraLoader(restored, { restore: true });
+  assert.equal(restoredControls.linkStrengths, false);
+});
+
+test("colors toggles and darkens disabled rows", () => {
+  const node = fakeNode();
+  const controls = installPowerLoraLoader(node);
+  controls.add("characters/anime/hero.safetensors");
+  const text = [];
+  const fills = [];
+  const context = {
+    fillRect() {
+      fills.push(this.fillStyle);
+    },
+    strokeRect() {},
+    fillText(value) {
+      text.push({ value, color: this.fillStyle });
+    },
+  };
+
+  controls.linkWidget.draw(context, node, node.size[0], 0);
+  controls.rowWidgets[0].draw(context, node, node.size[0], 24);
+  assert.ok(text.some(({ value, color }) => value === "●" && color === "#66bb6a"));
+
+  controls.toggleStrengthLink();
+  controls.setEnabled(0, false);
+  controls.linkWidget.draw(context, node, node.size[0], 0);
+  controls.rowWidgets[0].draw(context, node, node.size[0], 24);
+  assert.ok(text.some(({ value, color }) => value === "●" && color === "#ef5350"));
+  assert.ok(fills.includes("rgba(0, 0, 0, 0.35)"));
+});
+
 test("reorder renumbers prompt widgets without changing row values", () => {
   const node = fakeNode();
   const controls = installPowerLoraLoader(node);
@@ -349,10 +414,11 @@ test("serializes exact backend rows without positional workflow values", () => {
     on: true,
     lora: "characters/anime/hero.safetensors",
     strength_model: 0.75,
-    strength_clip: 1,
+    strength_clip: 0.75,
   };
 
   assert.deepEqual(controls.rowWidgets[0].serializeValue(), serializedRow);
+  assert.equal(controls.linkWidget.serialize, false);
   assert.equal(controls.headerWidget.serialize, false);
   assert.equal(controls.footerWidget.serialize, false);
 
@@ -403,6 +469,11 @@ test("restores ordered rows on the loaded-node install and stays idempotent", ()
   assert.equal(controls.rowWidgets.length, 2);
   assert.equal(
     node.widgets.filter((widget) => widget.name === "lfgg_lora_header").length,
+    1,
+  );
+  assert.equal(
+    node.widgets.filter((widget) => widget.name === "lfgg_lora_strength_link")
+      .length,
     1,
   );
 });

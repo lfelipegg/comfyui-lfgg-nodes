@@ -112,7 +112,8 @@ folder filtering for future selections, including every child folder, plus
 including rows outside the new folder. Enabled rows load in their visible
 ordered sequence, with separate model and CLIP strengths and controls to move,
 remove, replace, or toggle rows. Each strength has arrows for 0.05 adjustments;
-click the value itself for direct numeric entry.
+click the value itself for direct numeric entry. Model and CLIP strengths are
+linked by default, with a saved node control to edit them independently.
 
 Refresh node definitions after adding or removing LoRA files. A saved folder
 that no longer exists remains visible but offers no new choices; existing rows

@@ -10,6 +10,10 @@ Use the arrows around either strength for 0.05 adjustments, or click its value
 for direct numeric entry. Click the filename to replace it from the current
 folder choices. Toggle all is available above the rows.
 
+Model and CLIP strengths are linked by default, so editing either changes both.
+Turn off `Link model + CLIP strengths` to edit them independently. The option is
+saved with the workflow.
+
 Enabled rows run from top to bottom. A row is skipped when disabled or when
 both strengths are zero. The outputs are the final `model` and `clip` after
 every active row has been applied.
