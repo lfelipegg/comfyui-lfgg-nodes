@@ -8,24 +8,26 @@ _WINDOWS_FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 _WINDOWS_FILE_TYPE_DISK = 1
 
 
-def _input_path(image):
+def _input_path(image, *, label="image"):
     from pathlib import Path, PureWindowsPath
 
     import folder_paths
 
     if not isinstance(image, str):
-        raise ValueError("selected image identifier must be a string")
+        raise ValueError(f"selected {label} identifier must be a string")
     if not image or "\x00" in image:
-        raise ValueError("selected image identifier must be a non-empty string")
+        raise ValueError(f"selected {label} identifier must be a non-empty string")
     if Path(image).is_absolute() or PureWindowsPath(image).is_absolute():
-        raise ValueError("selected image identifier must be relative")
+        raise ValueError(f"selected {label} identifier must be relative")
     try:
         root = Path(folder_paths.get_input_directory()).resolve(strict=True)
         path = Path(folder_paths.get_annotated_filepath(image)).resolve(strict=True)
     except (OSError, TypeError, ValueError):
-        raise ValueError("selected image is unavailable") from None
+        raise ValueError(f"selected {label} is unavailable") from None
     if not root.is_dir() or not path.is_file() or not path.is_relative_to(root):
-        raise ValueError("selected image must stay inside the ComfyUI input directory")
+        raise ValueError(
+            f"selected {label} must stay inside the ComfyUI input directory"
+        )
     return root, path
 
 
@@ -122,14 +124,14 @@ def _open_windows_handle(path):
             close_handle(handle)
 
 
-def _open_windows_input_file(root, path):
+def _open_windows_input_file(root, path, *, label="image"):
     from pathlib import PureWindowsPath
 
     try:
         source, final_path, attributes, file_type = _open_windows_handle(path)
     except (AttributeError, OSError):
         raise ValueError(
-            "selected image could not be opened securely inside the "
+            f"selected {label} could not be opened securely inside the "
             "ComfyUI input directory"
         ) from None
 
@@ -148,25 +150,35 @@ def _open_windows_input_file(root, path):
     if unsafe:
         source.close()
         raise ValueError(
-            "selected image could not be opened securely inside the "
+            f"selected {label} could not be opened securely inside the "
             "ComfyUI input directory"
         )
     return source
 
 
-def _open_input_file(image):
+def _open_input_file(image, *, label="image"):
     import os
     import stat
 
-    root, path = _input_path(image)
+    root, path = (
+        _input_path(image)
+        if label == "image"
+        else _input_path(image, label=label)
+    )
     if os.name == "nt":
-        return _open_windows_input_file(root, path)
+        return (
+            _open_windows_input_file(root, path)
+            if label == "image"
+            else _open_windows_input_file(root, path, label=label)
+        )
     if (
         not hasattr(os, "O_NOFOLLOW")
         or not hasattr(os, "O_DIRECTORY")
         or os.open not in os.supports_dir_fd
     ):
-        raise ValueError("secure selected-image access is unavailable on this platform")
+        raise ValueError(
+            f"secure selected-{label} access is unavailable on this platform"
+        )
 
     directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     file_flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_BINARY", 0)
@@ -187,7 +199,8 @@ def _open_input_file(image):
         return source
     except OSError:
         raise ValueError(
-            "selected image changed or left the ComfyUI input directory before access"
+            f"selected {label} changed or left the ComfyUI input directory "
+            "before access"
         ) from None
     finally:
         if file_fd is not None:

@@ -359,6 +359,24 @@ def test_creates_the_confined_crop_fixture_before_starting_comfyui(
         ]
 
 
+def test_creates_a_confined_generated_video_fixture(monkeypatch, tmp_path):
+    input_directory = tmp_path / "input"
+    input_directory.mkdir()
+
+    def create(command, *, cwd=None):
+        assert cwd is None
+        target = Path(command[-1])
+        assert target == input_directory / "video_cutter.mp4"
+        target.write_bytes(b"generated video")
+        return SimpleNamespace(stdout="")
+
+    monkeypatch.setattr(harness(), "_run", create)
+
+    assert harness()._create_video_fixture("python", input_directory) == (
+        input_directory / "video_cutter.mp4"
+    )
+
+
 def test_failure_traceback_redacts_error_without_log(monkeypatch, tmp_path):
     secret = "active-credential"
     workspace = tmp_path / "private-workspace"
@@ -450,6 +468,29 @@ def test_rejects_nonstandard_or_escaped_image_descriptors(tmp_path):
         harness()._descriptor_files([escaped], "images", output, "image")
     with pytest.raises(AssertionError, match="standard fields"):
         harness()._descriptor_files([extra], "images", output, "image")
+
+
+def test_accepts_only_confined_standard_temp_preview_descriptors(tmp_path):
+    output = tmp_path / "output"
+    output.mkdir()
+    preview = {
+        "outputs": {
+            "1": {
+                "images": [
+                    {
+                        "filename": "lfgg_video_cutter_preview.mp4",
+                        "subfolder": "",
+                        "type": "temp",
+                    }
+                ]
+            }
+        }
+    }
+
+    assert harness()._descriptor_files([preview], "images", output, "image") == []
+    preview["outputs"]["1"]["images"][0]["filename"] = "../private.mp4"
+    with pytest.raises(AssertionError, match="temp descriptor path"):
+        harness()._descriptor_files([preview], "images", output, "image")
 
 
 def test_history_status_requires_success():
@@ -876,6 +917,7 @@ def _assert_sizing_result(result):
         "LFGG_PowerLoraLoaderFolder",
         "LFGG_ResizeImageByLongSide",
         "LFGG_SaveImageDynamic",
+        "LFGG_VideoCutter",
     ]
     assert result["output_files"] == [
         "lfgg/sizing/aspect_ratio_00001_.latent",
@@ -946,10 +988,93 @@ def _assert_crop_result(result):
     }
 
 
+def _assert_video_result(result):
+    assert result["video_files"] == ["lfgg/video/cut_00001_.mp4"]
+    details = result["video_details"]["lfgg/video/cut_00001_.mp4"]
+    assert details["frame_count"] == 6
+    assert details["duration"] == pytest.approx(1.0, abs=0.1)
+    assert details["audio_duration"] == pytest.approx(1.0, abs=0.1)
+
+
+def development_manifest():
+    manifest = json.loads((ROOT / "release" / "1.5.0-schema.json").read_text())
+    manifest["nodes"]["LFGG_VideoCutter"] = {
+        "display_name": "LFGG Video Cutter",
+        "description": (
+            "Selects one frame-aligned segment from a ComfyUI video while keeping "
+            "its primary video and audio synchronized."
+        ),
+        "category": "LFGG/video",
+        "input": {
+            "required": {
+                "video": ["VIDEO", {"tooltip": "Source ComfyUI video."}],
+                "selection_mode": [
+                    "COMBO",
+                    {
+                        "options": ["Time", "Frames"],
+                        "default": "Time",
+                        "tooltip": "Representation used to select the segment.",
+                    },
+                ],
+                "start_time": [
+                    "FLOAT",
+                    {
+                        "default": 0.0,
+                        "min": -1.0,
+                        "max": 1_000_000_000.0,
+                        "step": 0.001,
+                        "tooltip": "Inclusive start in seconds.",
+                    },
+                ],
+                "end_time": [
+                    "FLOAT",
+                    {
+                        "default": -1.0,
+                        "min": -1.0,
+                        "max": 1_000_000_000.0,
+                        "step": 0.001,
+                        "tooltip": "Exclusive end in seconds, or -1 for source end.",
+                    },
+                ],
+                "first_frame": [
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": -1,
+                        "max": 2_147_483_647,
+                        "tooltip": "Inclusive zero-based first frame index.",
+                    },
+                ],
+                "last_frame": [
+                    "INT",
+                    {
+                        "default": -1,
+                        "min": -1,
+                        "max": 2_147_483_647,
+                        "tooltip": (
+                            "Inclusive zero-based last frame index, or -1 for "
+                            "source end."
+                        ),
+                    },
+                ],
+            }
+        },
+        "output": ["VIDEO"],
+        "output_name": ["video"],
+        "output_tooltips": ["Selected contiguous video segment."],
+    }
+    return manifest
+
+
 def release_workflows():
     return {
         name: json.loads((ROOT / "workflows" / f"{name}.json").read_text())
-        for name in ("sizing", "save_image_dynamic", "load_and_crop_image")
+        for name in (
+            "sizing",
+            "save_image_dynamic",
+            "load_and_crop_image",
+            "video_cutter",
+        )
     }
 
 
@@ -964,13 +1089,14 @@ def test_packed_comfyui_schema_and_workflow(integration_options, tmp_path):
         archive=archive,
         device=integration_options["device"],
         workspace=tmp_path,
-        manifest=json.loads((ROOT / "release" / "1.5.0-schema.json").read_text()),
+        manifest=development_manifest(),
         workflows=release_workflows(),
     )
 
     _assert_sizing_result(result)
     _assert_dynamic_save_result(result)
     _assert_crop_result(result)
+    _assert_video_result(result)
 
 
 def test_installed_comfyui_schema_and_workflow(integration_options, tmp_path):
@@ -984,10 +1110,11 @@ def test_installed_comfyui_schema_and_workflow(integration_options, tmp_path):
         installed_comfyui=integration_options["installed_comfyui"],
         device=integration_options["device"],
         workspace=tmp_path,
-        manifest=json.loads((ROOT / "release" / "1.5.0-schema.json").read_text()),
+        manifest=development_manifest(),
         workflows=release_workflows(),
     )
 
     _assert_sizing_result(result)
     _assert_dynamic_save_result(result)
     _assert_crop_result(result)
+    _assert_video_result(result)

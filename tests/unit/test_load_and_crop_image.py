@@ -538,6 +538,13 @@ def test_validates_the_selected_input_path(monkeypatch, tmp_path):
     assert "selected image" in LoadAndCropImage.VALIDATE_INPUTS("../bad.png")
 
 
+def test_secure_input_opener_accepts_a_video_error_label(monkeypatch, tmp_path):
+    install_folder_paths(monkeypatch, tmp_path)
+
+    with pytest.raises(ValueError, match="selected video"):
+        load_and_crop_image_module._open_input_file("../bad.mp4", label="video")
+
+
 def test_initializes_the_largest_centered_exact_ratio_crop():
     assert resolve_crop(
         source_width=1920,

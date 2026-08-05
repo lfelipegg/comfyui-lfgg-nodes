@@ -44,6 +44,7 @@ accelerators are not claimed.
 | LFGG Load and Crop Image | one still image, ratio, exact source-pixel crop | cropped image, alpha-derived mask |
 | LFGG Power LoRA Loader (Folder) | MODEL, CLIP, folder, ordered LoRA rows | MODEL, CLIP |
 | LFGG Save Image Dynamic | IMAGE, path/filename templates, metadata toggle, optional model label | saved-image previews |
+| LFGG Video Cutter | VIDEO, time/frame selection | selected VIDEO segment |
 
 All three nodes are in `LFGG/sizing`. They return positive dimensions aligned
 to the exact `divisible_by` value. Aspect fidelity wins before pixel area, with
@@ -129,6 +130,27 @@ tokens are `{model}`, `{date}`, `{time}`, `{datetime}`, `{width}`, `{height}`,
 standard output-relative saved-image previews. One execution is limited to
 268,435,456 total pixels across its image batch.
 
+`LFGG Video Cutter` is in `LFGG/video`. Stable ID `LFGG_VideoCutter`. It
+returns one contiguous `VIDEO` segment through native `VideoInput.as_trimmed`,
+which keeps the primary video and audio synchronized and leaves auxiliary
+tracks out of trimmed encodes. A whole-range selection returns the original
+input object. Constant-frame-rate boundaries are exact; variable-frame-rate
+boundaries use reported FPS as a nominal frame grid.
+
+Persisted inputs, in order, are `video`, `selection_mode`, `start_time`,
+`end_time`, `first_frame`, and `last_frame`. Time ranges are start-inclusive and
+end-exclusive. Frame ranges are zero-based and inclusive. `-1` means source end
+for `end_time` or `last_frame`; other negative, reversed, empty, or out-of-bounds
+selections fail rather than clamp. Changing modes preserves the same segment.
+
+The build-free editor provides a source player, playhead, dual boundary
+handles, ten client-side thumbnails, editable timecodes and frame indexes, Set
+Start/End, nominal previous/next-frame controls, and selection looping enabled
+by default. Focus-scoped Space, Left/Right, and I/O control playback and marks.
+Connected active boundaries are read-only. There is no waveform. The editor
+adds no serialized value; all six backend inputs remain the executable
+fallback.
+
 ## File and network behavior
 
 The sizing nodes use standard-library integer math plus tensor shape
@@ -154,6 +176,20 @@ The loader reads that input file but performs no file writes.
 
 The folder-filtered LoRA loader reads selected LoRA files through ComfyUI. It
 performs no network calls or file writes.
+
+The video cutter makes no outbound network calls. Before queueing, only a
+direct native `LoadVideo` source (through simple reroutes) may call the local,
+bounded `POST /lfgg/v1/video-metadata` route. That route accepts one short input
+identifier, securely confines it beneath ComfyUI's input root, and reads PyAV
+stream metadata without decoding the full video. Metadata probing accepts only
+AVI, MOV/M4V/MP4, MKV, and WebM files, forces the matching demuxer, and permits
+no nested file or network protocols. Playback uses ComfyUI's native `/view`
+endpoint. After execution, the node may write a capped MP4 preview to ComfyUI's
+temp directory only for selections up to 30 seconds, 900 nominal frames, and
+1920×1080; at most eight cached entries are retained. Preview or cache failure
+returns a UI warning without changing the valid `VIDEO` result.
+The tracked [video-cutter API workflow](workflows/video_cutter.json) expects a
+`video_cutter.mp4` test input and writes its result through native `SaveVideo`.
 
 ## Migrate legacy workflows
 
@@ -199,6 +235,7 @@ python -m pip install -e ".[dev]"
 node --test tests/frontend/ratio_preview.test.mjs
 node --test tests/frontend/crop_editor.test.mjs
 node --test tests/frontend/power_lora_loader.test.mjs
+node --test tests/frontend/video_cutter.test.mjs
 python -m ruff check .
 python -m pytest -q tests/unit
 comfy node validate

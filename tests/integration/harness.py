@@ -120,20 +120,74 @@ def _descriptor_files(histories, descriptor_key, output, label):
                     assert set(descriptor) == {"filename", "subfolder", "type"}, (
                         "image descriptor does not contain only standard fields"
                     )
-                assert descriptor.get("type") == "output", (
-                    f"{label} descriptor is not an output"
-                )
                 filename = descriptor.get("filename")
                 subfolder = descriptor.get("subfolder", "")
                 assert isinstance(filename, str) and isinstance(subfolder, str), (
                     f"{label} descriptor path is invalid"
                 )
+                descriptor_type = descriptor.get("type")
+                assert descriptor_type in {"output", "temp"}, (
+                    f"{label} descriptor type is invalid"
+                )
+                if descriptor_type == "temp":
+                    assert (
+                        subfolder == ""
+                        and Path(filename).name == filename
+                        and "\\" not in filename
+                    ), f"{label} temp descriptor path is invalid"
+                    continue
                 path = (output / subfolder / filename).resolve()
                 assert path.is_relative_to(output), (
                     f"{label} descriptor escaped the output root"
                 )
                 files.append(path)
     return sorted(files)
+
+
+def _create_video_fixture(python, input_directory):
+    input_directory = Path(input_directory).resolve(strict=True)
+    target = (input_directory / "video_cutter.mp4").resolve()
+    if not target.is_relative_to(input_directory) or target.exists():
+        raise ValueError("video fixture target must be a new confined input file")
+    script = """
+import sys
+from fractions import Fraction
+
+import av
+import numpy as np
+
+output = av.open(sys.argv[1], mode="w")
+video = output.add_stream("h264", rate=Fraction(6, 1))
+video.width = 16
+video.height = 16
+video.pix_fmt = "yuv420p"
+audio = output.add_stream("aac", rate=48_000, layout="mono")
+for index in range(12):
+    pixels = np.full((16, 16, 3), index * 16, dtype=np.uint8)
+    frame = av.VideoFrame.from_ndarray(pixels, format="rgb24")
+    for packet in video.encode(frame):
+        output.mux(packet)
+for packet in video.encode():
+    output.mux(packet)
+for start in range(0, 96_000, 1024):
+    count = min(1024, 96_000 - start)
+    frame = av.AudioFrame.from_ndarray(
+        np.zeros((1, count), dtype=np.float32),
+        format="fltp",
+        layout="mono",
+    )
+    frame.sample_rate = 48_000
+    frame.pts = start
+    for packet in audio.encode(frame):
+        output.mux(packet)
+for packet in audio.encode():
+    output.mux(packet)
+output.close()
+"""
+    _run([str(python), "-c", script, str(target)])
+    if not target.is_file() or target.stat().st_size < 1:
+        raise AssertionError("video fixture was not created")
+    return target
 
 
 def _public_https_url(url):
@@ -519,6 +573,11 @@ def _exercise_comfyui(
         ):
             raise AssertionError("load and crop workflow input asset is invalid")
         (input_directory / asset_name).write_bytes(asset.read_bytes())
+    if video_workflow := workflows.get("video_cutter"):
+        asset_name = video_workflow["1"]["inputs"]["file"]
+        if asset_name != "video_cutter.mp4":
+            raise AssertionError("video cutter workflow input does not match")
+        _create_video_fixture(python, input_directory)
 
     if device == "cuda":
         _run(
@@ -621,6 +680,7 @@ def _exercise_comfyui(
         output_root = output.resolve()
         files = _confined_files(output_root, "*.latent", "latent")
         image_files = _confined_files(output_root, "*.png", "PNG")
+        video_files = _confined_files(output_root, "*.mp4", "MP4")
         described_files = _descriptor_files(
             histories,
             "latents",
@@ -633,17 +693,29 @@ def _exercise_comfyui(
             output_root,
             "image",
         )
+        described_video_files = [
+            path for path in described_images if path.suffix.lower() == ".mp4"
+        ]
+        described_images = [
+            path for path in described_images if path.suffix.lower() == ".png"
+        ]
         assert described_files == files, (
             "SaveLatent descriptors do not match confined output files"
         )
         assert described_images == image_files, (
             "image descriptors do not match confined output files"
         )
+        assert described_video_files == video_files, (
+            "video descriptors do not match confined output files"
+        )
         assert all(path.stat().st_size > 0 for path in files), (
             "SaveLatent produced an empty file"
         )
         assert all(path.stat().st_size > 0 for path in image_files), (
             "dynamic saver produced an empty PNG"
+        )
+        assert all(path.stat().st_size > 0 for path in video_files), (
+            "SaveVideo produced an empty MP4"
         )
 
         shape_reader = """
@@ -678,6 +750,37 @@ print(json.dumps(shapes))
         relative_images = [
             path.relative_to(output_root).as_posix() for path in image_files
         ]
+        video_probe = """
+import json
+import sys
+
+import av
+
+details = {}
+for filename in sys.argv[1:]:
+    with av.open(filename, mode="r") as container:
+        video = container.streams.video[0]
+        audio = container.streams.audio[0] if container.streams.audio else None
+        details[filename] = {
+            "duration": float(container.duration / av.time_base),
+            "frame_count": int(video.frames),
+            "audio_duration": (
+                float(audio.duration * audio.time_base)
+                if audio is not None and audio.duration is not None
+                else None
+            ),
+        }
+print(json.dumps(details))
+"""
+        probed_videos = json.loads(
+            _run(
+                [str(python), "-c", video_probe, *(str(path) for path in video_files)]
+            ).stdout
+        ) if video_files else {}
+        video_details = {
+            Path(path).relative_to(output_root).as_posix(): details
+            for path, details in probed_videos.items()
+        }
         _failure_log(log_path, protected_paths, metadata=serialized_workflows)
         return {
             "registered_ids": sorted(manifest["nodes"]),
@@ -685,6 +788,10 @@ print(json.dumps(shapes))
             "output_shapes": output_shapes,
             "image_files": relative_images,
             "image_details": image_details,
+            "video_files": [
+                path.relative_to(output_root).as_posix() for path in video_files
+            ],
+            "video_details": video_details,
         }
     except Exception as error:
         logs = _failure_log(

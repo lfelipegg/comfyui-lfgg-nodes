@@ -69,6 +69,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_LoadAndCropImage": "LFGG Load and Crop Image",
         "LFGG_PowerLoraLoaderFolder": "LFGG Power LoRA Loader (Folder)",
         "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
+        "LFGG_VideoCutter": "LFGG Video Cutter",
     }
     assert list(package.NODE_CLASS_MAPPINGS) == [
         "LFGG_DimensionsByAspectRatio",
@@ -78,6 +79,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_LoadAndCropImage",
         "LFGG_PowerLoraLoaderFolder",
         "LFGG_SaveImageDynamic",
+        "LFGG_VideoCutter",
     ]
 
     node = package.NODE_CLASS_MAPPINGS["LFGG_DimensionsByAspectRatio"]
@@ -406,6 +408,78 @@ def test_load_and_crop_image_v1_schema_is_exact(monkeypatch, tmp_path):
     }
 
 
+def test_video_cutter_v1_schema_is_exact(monkeypatch):
+    package = load_root_package(monkeypatch)
+    node = package.NODE_CLASS_MAPPINGS["LFGG_VideoCutter"]
+
+    assert package.NODE_DISPLAY_NAME_MAPPINGS["LFGG_VideoCutter"] == (
+        "LFGG Video Cutter"
+    )
+    assert node.CATEGORY == "LFGG/video"
+    assert node.DESCRIPTION == (
+        "Selects one frame-aligned segment from a ComfyUI video while keeping "
+        "its primary video and audio synchronized."
+    )
+    assert node.FUNCTION == "cut"
+    assert node.RETURN_TYPES == ("VIDEO",)
+    assert node.RETURN_NAMES == ("video",)
+    assert node.OUTPUT_TOOLTIPS == ("Selected contiguous video segment.",)
+    assert node.INPUT_TYPES() == {
+        "required": {
+            "video": ("VIDEO", {"tooltip": "Source ComfyUI video."}),
+            "selection_mode": (
+                "COMBO",
+                {
+                    "options": ["Time", "Frames"],
+                    "default": "Time",
+                    "tooltip": "Representation used to select the segment.",
+                },
+            ),
+            "start_time": (
+                "FLOAT",
+                {
+                    "default": 0.0,
+                    "min": -1.0,
+                    "max": 1_000_000_000.0,
+                    "step": 0.001,
+                    "tooltip": "Inclusive start in seconds.",
+                },
+            ),
+            "end_time": (
+                "FLOAT",
+                {
+                    "default": -1.0,
+                    "min": -1.0,
+                    "max": 1_000_000_000.0,
+                    "step": 0.001,
+                    "tooltip": "Exclusive end in seconds, or -1 for source end.",
+                },
+            ),
+            "first_frame": (
+                "INT",
+                {
+                    "default": 0,
+                    "min": -1,
+                    "max": 2_147_483_647,
+                    "tooltip": "Inclusive zero-based first frame index.",
+                },
+            ),
+            "last_frame": (
+                "INT",
+                {
+                    "default": -1,
+                    "min": -1,
+                    "max": 2_147_483_647,
+                    "tooltip": (
+                        "Inclusive zero-based last frame index, or -1 for "
+                        "source end."
+                    ),
+                },
+            ),
+        }
+    }
+
+
 def test_image_derived_v1_schemas_are_exact(monkeypatch):
     package = load_root_package(monkeypatch)
     long_side = package.NODE_CLASS_MAPPINGS["LFGG_ImageDimensionsByLongSide"]
@@ -661,16 +735,19 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
     workflow_path = ROOT / "workflows" / "sizing.json"
     save_workflow_path = ROOT / "workflows" / "save_image_dynamic.json"
     crop_workflow_path = ROOT / "workflows" / "load_and_crop_image.json"
+    video_workflow_path = ROOT / "workflows" / "video_cutter.json"
     crop_asset_path = ROOT / "workflows" / "load_and_crop_image.png"
     crop_help_path = ROOT / "web" / "docs" / "LFGG_LoadAndCropImage" / "en.md"
     power_lora_help_path = (
         ROOT / "web" / "docs" / "LFGG_PowerLoraLoaderFolder" / "en.md"
     )
+    video_help_path = ROOT / "web" / "docs" / "LFGG_VideoCutter" / "en.md"
     assert pyproject_path.exists(), "pyproject.toml is not implemented"
     assert manifest_path.exists(), "release schema manifest is not implemented"
     assert workflow_path.exists(), "complete sizing API workflow is not implemented"
     assert save_workflow_path.exists(), "dynamic save API workflow is not implemented"
     assert crop_workflow_path.exists(), "load and crop API workflow is not implemented"
+    assert video_workflow_path.exists(), "video cutter API workflow is not implemented"
     assert crop_asset_path.exists(), (
         "load and crop workflow input asset is not implemented"
     )
@@ -678,6 +755,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
     assert power_lora_help_path.exists(), (
         "power LoRA loader embedded help is not implemented"
     )
+    assert video_help_path.exists(), "video cutter embedded help is not implemented"
 
     try:
         import tomllib
@@ -714,6 +792,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         "node --test tests/frontend/ratio_preview.test.mjs",
         "node --test tests/frontend/crop_editor.test.mjs",
         "node --test tests/frontend/power_lora_loader.test.mjs",
+        "node --test tests/frontend/video_cutter.test.mjs",
         "do not read or write files",
         "exclusive creation of final PNG files",
         "cleanup of PNG files created by a failed execution",
@@ -768,6 +847,15 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         "Refresh node definitions",
         "does not require rgthree",
         "no network calls or file writes",
+        "LFGG Video Cutter",
+        "Stable ID `LFGG_VideoCutter`",
+        "start-inclusive and end-exclusive",
+        "zero-based and inclusive",
+        "native `VideoInput.as_trimmed`",
+        "variable-frame-rate",
+        "`POST /lfgg/v1/video-metadata`",
+        "selection looping",
+        "workflows/video_cutter.json",
         ]:
         assert claim in readme
 
@@ -791,6 +879,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
     assert help_ids == {
         "LFGG_LoadAndCropImage",
         "LFGG_PowerLoraLoaderFolder",
+        "LFGG_VideoCutter",
     }
     assert help_ids <= package.NODE_CLASS_MAPPINGS.keys()
 
@@ -809,6 +898,8 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
 
     expected_nodes = {}
     for node_id, node in package.NODE_CLASS_MAPPINGS.items():
+        if node_id == "LFGG_VideoCutter":
+            continue
         expected_nodes[node_id] = {
             "display_name": package.NODE_DISPLAY_NAME_MAPPINGS[node_id],
             "description": node.DESCRIPTION,
@@ -821,6 +912,31 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
     assert json.loads(manifest_path.read_text()) == {
         "version": "1.5.0",
         "nodes": expected_nodes,
+    }
+
+    video_workflow = json.loads(video_workflow_path.read_text())
+    assert video_workflow == {
+        "1": {"class_type": "LoadVideo", "inputs": {"file": "video_cutter.mp4"}},
+        "2": {
+            "class_type": "LFGG_VideoCutter",
+            "inputs": {
+                "video": ["1", 0],
+                "selection_mode": "Frames",
+                "start_time": 0.0,
+                "end_time": -1.0,
+                "first_frame": 3,
+                "last_frame": 8,
+            },
+        },
+        "3": {
+            "class_type": "SaveVideo",
+            "inputs": {
+                "video": ["2", 0],
+                "filename_prefix": "lfgg/video/cut",
+                "format": "mp4",
+                "codec": "h264",
+            },
+        },
     }
 
     workflow = json.loads(workflow_path.read_text())
