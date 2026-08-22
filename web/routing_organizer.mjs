@@ -289,6 +289,9 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
   };
 
   controls.normalize = () => {
+    if (!node.title || node.title === ROUTING_ORGANIZER_ID) {
+      node.title = ROUTING_ORGANIZER_NAME;
+    }
     node.properties ??= {};
     const saved = Array.isArray(node.properties[STATE_KEY])
       ? node.properties[STATE_KEY]
@@ -466,7 +469,7 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
   node.onConnectionsChange = function (type, index, isConnected, link, slot) {
     originalConnectionsChange?.apply(this, arguments);
     if (!state()?.[index]) return;
-    if (isConnected) controls.activate(index);
+    if (isConnected && (link || connected(index))) controls.activate(index);
     const update = () => controls.recompute(index);
     if (isConnected) update();
     else queueMicrotask(update);

@@ -226,6 +226,23 @@ test("normalizes labels and keeps one bounded trailing channel", () => {
   assert.equal(serialized.properties.lfgg_routing_channels.length, MAX_CHANNELS);
 });
 
+test("keeps disconnected workflow slots compact and migrates the legacy title", () => {
+  const graph = new FakeGraph();
+  const node = graph.add(new FakeNode("LFGG Routing Organizer"));
+  node.type = ROUTING_ORGANIZER_ID;
+  installRoutingOrganizer(node, { LiteGraph: liteGraph, app: {} });
+  node.title = ROUTING_ORGANIZER_ID;
+  node.onConfigure({});
+
+  for (const [index, input] of node.inputs.entries()) {
+    node.onConnectionsChange(liteGraph.INPUT, index, true, null, input);
+  }
+
+  assert.equal(node.inputs.length, 1);
+  assert.equal(node.outputs.length, 1);
+  assert.equal(node.title, "LFGG Routing Organizer");
+});
+
 test("propagates types, permits fan-out and rejects routing cycles", () => {
   const graph = new FakeGraph();
   const source = endpoint(graph, { output: "IMAGE" });
