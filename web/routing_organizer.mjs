@@ -339,7 +339,8 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
     while ((node.outputs?.length ?? 0) < count) node.addOutput("", "*");
     while (node.inputs.length > count) node.removeInput(node.inputs.length - 1);
     while (node.outputs.length > count) node.removeOutput(node.outputs.length - 1);
-    for (let index = state().length - 1; index > 0; index -= 1) {
+    let spare = -1;
+    for (let index = state().length - 1; index >= 0; index -= 1) {
       const input = node.inputs[index];
       if (
         connected(index, verifyLinks) ||
@@ -348,11 +349,16 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
       ) {
         continue;
       }
+      if (spare < 0) {
+        spare = index;
+        continue;
+      }
       pending.delete(input);
       node.removeOutput(index);
       node.removeInput(index);
       state().splice(index, 1);
     }
+    if (spare < 0 && state().length < MAX_CHANNELS) addSlot();
     for (let index = 0; index < state().length; index += 1) {
       for (const slot of [node.inputs[index], node.outputs[index]]) {
         slot.name = channelSlotName(index);
@@ -396,14 +402,17 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
     if (!entry) return false;
     entry.used = true;
     pending.delete(node.inputs?.[index]);
+    if (index === state().length - 1 && state().length < MAX_CHANNELS) addSlot();
     controls.resize();
     return true;
   };
 
   controls.add = () => {
+    controls.normalize();
     if (state().length >= MAX_CHANNELS) return false;
-    addSlot();
+    state().at(-1).used = true;
     pending.add(node.inputs.at(-1));
+    addSlot();
     controls.resize();
     dirty(node);
     return true;

@@ -213,7 +213,7 @@ test("normalizes labels and bounds manually added channels", () => {
 
   controls.rename(0, " model ");
   assert.equal(controls.label(0), "model");
-  assert.equal(node.inputs.length, 1);
+  assert.equal(node.inputs.length, 2);
   controls.rename(0, "");
   assert.equal(controls.label(0), "channel 1");
 
@@ -279,7 +279,7 @@ test("keeps every linked input when ComfyUI restores slots by name", () => {
   restored.onNodeCreated();
   restored.configure({ inputs: saved });
 
-  assert.deepEqual(restored.inputs.map((input) => input.link), [11, 12]);
+  assert.deepEqual(restored.inputs.map((input) => input.link), [11, 12, null]);
 });
 
 test("preserves a manual size while enforcing the channel minimum", () => {
@@ -377,24 +377,23 @@ test("removes unconnected extra channels during normalization and disconnect", a
   const { node, controls } = organizer(graph);
 
   assert.ok(source.connect(0, node, 0));
-  assert.equal(node.inputs.length, 1);
-  assert.equal(node.outputs.length, 1);
+  assert.equal(node.inputs.length, 2);
+  assert.equal(node.outputs.length, 2);
   assert.equal(node.inputs[0].link != null, true);
 
-  controls.add();
   controls.rename(1, "reserved");
   controls.normalize();
-  assert.equal(node.inputs.length, 2);
+  assert.equal(node.inputs.length, 3);
   controls.rename(1, "");
   controls.normalize();
-  assert.equal(node.inputs.length, 1);
+  assert.equal(node.inputs.length, 2);
 
   controls.add();
   assert.ok(secondSource.connect(0, node, 1));
   node.disconnectInput(1);
   await Promise.resolve();
 
-  assert.equal(node.inputs.length, 1);
+  assert.equal(node.inputs.length, 2);
 });
 
 test("keeps a manually added channel through autosave", () => {
