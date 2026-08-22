@@ -235,7 +235,7 @@ export function installPromptComposer(
     "lfgg_prompt_composer",
     "lfgg_prompt_composer",
     root,
-    { serialize: false, getMinHeight: () => 104 },
+    { serialize: false, getMinHeight: () => 104, getMaxHeight: () => 104 },
   );
   domWidget.serialize = false;
   domWidget.options.serialize = false;

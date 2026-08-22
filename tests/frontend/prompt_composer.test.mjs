@@ -177,6 +177,7 @@ test("constrains library controls to a compact node-width layout", async () => {
   assert.equal(byRole(widget, "status").style.textOverflow, "ellipsis");
   assert.equal(byRole(widget, "status").textContent, "1 wildcard · 1 style");
   assert.equal(widget.options.getMinHeight(), 104);
+  assert.equal(widget.options.getMaxHeight(), 104);
   assert.deepEqual(node.size, [360, 330]);
 });
 
