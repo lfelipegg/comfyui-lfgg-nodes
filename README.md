@@ -47,6 +47,8 @@ accelerators are not claimed.
 | LFGG Save Image Dynamic | IMAGE, path/filename templates, metadata toggle, optional model label | saved-image previews |
 | LFGG Video Cutter | VIDEO, time/frame selection | selected VIDEO segment |
 | LFGG Routing Organizer | 1–32 labeled ANY routing channels | matching pass-through channels |
+| LFGG Boolean Switch | BOOLEAN selector, false/true ANY branches | selected value |
+| LFGG Index Switch | zero-based INT selector, 2–32 ANY branches | selected value |
 | LFGG Value Inspector | any connected value | inline diagnostic report |
 
 All three nodes are in `LFGG/sizing`. They return positive dimensions aligned
@@ -206,6 +208,19 @@ index-matched node bypass. Channel order, labels, types, and links persist in
 workflow JSON. Reordering, collapsing, execution modes, routing cycles, and
 conversion inside groups or subgraphs are intentionally unsupported.
 
+`LFGG Boolean Switch` and `LFGG Index Switch` are executable lazy nodes in
+`LFGG/workflow`, with stable IDs `LFGG_BooleanSwitch` and `LFGG_IndexSwitch`.
+The Boolean selector maps `False` to `false` and `True` to `true`; the Index
+selector is zero-based. Each switch evaluates only its
+selected branch, and a selected missing branch or an invalid selector fails
+with an actionable LFGG error. The index node starts with branches `0` and
+`1`, adds one trailing branch after its last branch receives a real link, and
+never shrinks or renumbers branches (maximum 32). All connected branches and
+the `value` output share one propagated wire type. Branch count and type are
+saved in workflows; restored disconnected slots do not create branches. Like
+other V1 wildcard sockets, `*` may have limitations through native reroutes
+and some custom socket types.
+
 `LFGG Value Inspector` is a terminal output node in `LFGG/debug`. Stable ID
 `LFGG_ValueInspector`. Connect any value and queue the workflow to show a
 read-only diagnostic report inside the node. One scheduled value is shown
@@ -323,6 +338,7 @@ node --test tests/frontend/power_lora_loader.test.mjs
 node --test tests/frontend/video_cutter.test.mjs
 node --test tests/frontend/prompt_composer.test.mjs
 node --test tests/frontend/routing_organizer.test.mjs
+node --test tests/frontend/switches.test.mjs
 node --test tests/frontend/value_inspector.test.mjs
 python -m ruff check .
 python -m pytest -q tests/unit

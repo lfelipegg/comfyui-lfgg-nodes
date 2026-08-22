@@ -1106,6 +1106,54 @@ def development_manifest():
             "Negative style fragments joined in token order.",
         ],
     }
+    manifest["nodes"]["LFGG_BooleanSwitch"] = {
+        "display_name": "LFGG Boolean Switch",
+        "description": "Selects the false or true branch without evaluating the other.",
+        "category": "LFGG/workflow",
+        "input": {
+            "required": {
+                "condition": [
+                    "BOOLEAN",
+                    {
+                        "default": False,
+                        "tooltip": "False selects false; true selects true.",
+                    },
+                ]
+            },
+            "optional": {
+                "false": ["*", {"forceInput": True, "lazy": True}],
+                "true": ["*", {"forceInput": True, "lazy": True}],
+            },
+        },
+        "output": ["*"],
+        "output_name": ["value"],
+        "output_tooltips": ["Selected branch value."],
+    }
+    manifest["nodes"]["LFGG_IndexSwitch"] = {
+        "display_name": "LFGG Index Switch",
+        "description": "Selects one zero-based branch without evaluating the others.",
+        "category": "LFGG/workflow",
+        "input": {
+            "required": {
+                "index": [
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": 31,
+                        "tooltip": "Zero-based branch index.",
+                    },
+                ]
+            },
+            "optional": {
+                f"branch_{index}": ["*", {"forceInput": True, "lazy": True}]
+                for index in range(32)
+            },
+        },
+        "output": ["*"],
+        "output_name": ["value"],
+        "output_tooltips": ["Selected branch value."],
+    }
     return manifest
 
 

@@ -162,6 +162,20 @@ A labeled path through a routing organizer, with one input socket and one output
 socket carrying the same workflow value and wire type; the output may fan out.
 _Avoid_: Lane, row, port pair
 
+**Switch branch**:
+One selectable workflow-value input on an executable switch node.
+_Avoid_: Option, routing channel
+
+**Boolean switch**:
+An executable successor node that selects between two switch branches using a
+boolean value. Stable ID: `LFGG_BooleanSwitch`.
+_Avoid_: Simple switch, two-way router
+
+**Index switch**:
+An executable successor node that selects one of several switch branches using
+its zero-based index. Stable ID: `LFGG_IndexSwitch`.
+_Avoid_: Big switch, multi-router
+
 ### Prompt composition
 
 **Prompt composer**:

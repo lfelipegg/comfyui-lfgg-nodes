@@ -71,6 +71,8 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_PromptComposer": "LFGG Prompt Composer",
         "LFGG_RoutingOrganizer": "LFGG Routing Organizer",
         "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
+        "LFGG_BooleanSwitch": "LFGG Boolean Switch",
+        "LFGG_IndexSwitch": "LFGG Index Switch",
         "LFGG_ValueInspector": "LFGG Value Inspector",
         "LFGG_VideoCutter": "LFGG Video Cutter",
     }
@@ -84,6 +86,8 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_PromptComposer",
         "LFGG_RoutingOrganizer",
         "LFGG_SaveImageDynamic",
+        "LFGG_BooleanSwitch",
+        "LFGG_IndexSwitch",
         "LFGG_ValueInspector",
         "LFGG_VideoCutter",
     ]
@@ -97,6 +101,19 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
     assert routing_organizer.RETURN_TYPES == ()
     assert routing_organizer.INPUT_TYPES() == {"required": {}}
     assert routing_organizer().route() == ()
+
+    boolean_switch = package.NODE_CLASS_MAPPINGS["LFGG_BooleanSwitch"]
+    assert boolean_switch.CATEGORY == "LFGG/workflow"
+    assert boolean_switch.FUNCTION == "select"
+    assert boolean_switch.RETURN_TYPES == ("*",)
+    assert boolean_switch.RETURN_NAMES == ("value",)
+    assert boolean_switch().select(condition=False, false="off") == ("off",)
+
+    index_switch = package.NODE_CLASS_MAPPINGS["LFGG_IndexSwitch"]
+    assert index_switch.CATEGORY == "LFGG/workflow"
+    assert list(index_switch.INPUT_TYPES()["optional"]) == [
+        f"branch_{index}" for index in range(32)
+    ]
 
     value_inspector = package.NODE_CLASS_MAPPINGS["LFGG_ValueInspector"]
     assert value_inspector.CATEGORY == "LFGG/debug"
@@ -874,6 +891,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         "node --test tests/frontend/video_cutter.test.mjs",
         "node --test tests/frontend/prompt_composer.test.mjs",
         "node --test tests/frontend/routing_organizer.test.mjs",
+        "node --test tests/frontend/switches.test.mjs",
         "node --test tests/frontend/value_inspector.test.mjs",
         "do not read or write files",
         "exclusive creation of final PNG files",
@@ -939,6 +957,11 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         "selection looping",
         "workflows/video_cutter.json",
         "LFGG Prompt Composer",
+        "LFGG Boolean Switch",
+        "LFGG Index Switch",
+        "False` to `false`",
+        "zero-based",
+        "restored disconnected slots do not create branches",
         "Stable ID `LFGG_PromptComposer`",
         "`__folder/name__`",
         "`[[style:Exact Name]]`",
@@ -990,6 +1013,8 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         if node_id in {
             "LFGG_PromptComposer",
             "LFGG_RoutingOrganizer",
+            "LFGG_BooleanSwitch",
+            "LFGG_IndexSwitch",
             "LFGG_ValueInspector",
             "LFGG_VideoCutter",
         }:

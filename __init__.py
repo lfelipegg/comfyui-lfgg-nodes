@@ -10,6 +10,7 @@ if __package__:
     from .lfgg_nodes.prompt_composer import PromptComposer
     from .lfgg_nodes.routing_organizer import RoutingOrganizer
     from .lfgg_nodes.save_image_dynamic import SaveImageDynamic
+    from .lfgg_nodes.switches import BooleanSwitch, IndexSwitch
     from .lfgg_nodes.value_inspector import ValueInspector
     from .lfgg_nodes.video_cutter import VideoCutter
 else:
@@ -24,6 +25,7 @@ else:
     from lfgg_nodes.prompt_composer import PromptComposer
     from lfgg_nodes.routing_organizer import RoutingOrganizer
     from lfgg_nodes.save_image_dynamic import SaveImageDynamic
+    from lfgg_nodes.switches import BooleanSwitch, IndexSwitch
     from lfgg_nodes.value_inspector import ValueInspector
     from lfgg_nodes.video_cutter import VideoCutter
 
@@ -48,6 +50,8 @@ NODE_CLASS_MAPPINGS = _merge_class_mappings(
     {"LFGG_PromptComposer": PromptComposer},
     {"LFGG_RoutingOrganizer": RoutingOrganizer},
     {"LFGG_SaveImageDynamic": SaveImageDynamic},
+    {"LFGG_BooleanSwitch": BooleanSwitch},
+    {"LFGG_IndexSwitch": IndexSwitch},
     {"LFGG_ValueInspector": ValueInspector},
     {"LFGG_VideoCutter": VideoCutter},
 )
@@ -61,6 +65,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LFGG_PromptComposer": "LFGG Prompt Composer",
     "LFGG_RoutingOrganizer": "LFGG Routing Organizer",
     "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
+    "LFGG_BooleanSwitch": "LFGG Boolean Switch",
+    "LFGG_IndexSwitch": "LFGG Index Switch",
     "LFGG_ValueInspector": "LFGG Value Inspector",
     "LFGG_VideoCutter": "LFGG Video Cutter",
 }
