@@ -69,6 +69,15 @@ official docs, official examples, then local reference nodes.
   Assert package/display/category metadata, title migration, links and labels,
   and that disconnected channel counts remain unchanged.
 
+## Design system enforcement
+
+- Read `DESIGN.md` before creating or changing a registered node or its frontend UI.
+- Treat it as the source of truth for node interaction, theme tokens, layout,
+  accessibility, progressive enhancement, and workflow-state presentation.
+- Reuse native ComfyUI controls and existing LFGG patterns before adding custom
+  styling; update `DESIGN.md` with any new shared token or interaction pattern.
+- When `DESIGN.md` changes, run its available design-md structural validator.
+
 ## Security and Distribution
 
 - No `eval`, `exec`, obfuscation, runtime `pip`, or subprocess package
