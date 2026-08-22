@@ -69,6 +69,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_LoadAndCropImage": "LFGG Load and Crop Image",
         "LFGG_PowerLoraLoaderFolder": "LFGG Power LoRA Loader (Folder)",
         "LFGG_PromptComposer": "LFGG Prompt Composer",
+        "LFGG_RoutingOrganizer": "LFGG Routing Organizer",
         "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
         "LFGG_VideoCutter": "LFGG Video Cutter",
     }
@@ -80,9 +81,20 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_LoadAndCropImage",
         "LFGG_PowerLoraLoaderFolder",
         "LFGG_PromptComposer",
+        "LFGG_RoutingOrganizer",
         "LFGG_SaveImageDynamic",
         "LFGG_VideoCutter",
     ]
+
+    routing_organizer = package.NODE_CLASS_MAPPINGS["LFGG_RoutingOrganizer"]
+    assert routing_organizer.CATEGORY == "LFGG/workflow"
+    assert routing_organizer.DESCRIPTION == (
+        "Keeps labeled workflow connections aligned without changing their values."
+    )
+    assert routing_organizer.FUNCTION == "route"
+    assert routing_organizer.RETURN_TYPES == ()
+    assert routing_organizer.INPUT_TYPES() == {"required": {}}
+    assert routing_organizer().route() == ()
 
     node = package.NODE_CLASS_MAPPINGS["LFGG_DimensionsByAspectRatio"]
     assert node.CATEGORY == "LFGG/sizing"
@@ -950,7 +962,11 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
 
     expected_nodes = {}
     for node_id, node in package.NODE_CLASS_MAPPINGS.items():
-        if node_id in {"LFGG_PromptComposer", "LFGG_VideoCutter"}:
+        if node_id in {
+            "LFGG_PromptComposer",
+            "LFGG_RoutingOrganizer",
+            "LFGG_VideoCutter",
+        }:
             continue
         expected_nodes[node_id] = {
             "display_name": package.NODE_DISPLAY_NAME_MAPPINGS[node_id],

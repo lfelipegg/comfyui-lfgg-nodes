@@ -4,10 +4,10 @@ import test from "node:test";
 import {
   MAX_CHANNELS,
   ROUTING_ORGANIZER_ID,
+  extendRoutingOrganizer,
   installRoutingOrganizer,
   mergeWidgetConfigs,
   normalizeChannelLabel,
-  registerRoutingOrganizer,
 } from "../../web/routing_organizer.mjs";
 
 class FakeGraph {
@@ -146,7 +146,6 @@ class FakeNode {
   }
 }
 
-const registered = {};
 const liteGraph = {
   ALWAYS: 0,
   INPUT: 1,
@@ -155,23 +154,40 @@ const liteGraph = {
   NODE_SUBTEXT_SIZE: 12,
   WIDGET_TEXT_COLOR: "#eee",
   LGraphNode: FakeNode,
-  registered_node_types: registered,
   isValidConnection(left, right) {
     return !left || !right || left === "*" || right === "*" || left === right;
-  },
-  registerNodeType(id, nodeClass) {
-    registered[id] = nodeClass;
   },
 };
 
 function organizer(graph, app = {}) {
-  registerRoutingOrganizer({ LiteGraph: liteGraph, app });
-  const NodeClass = registered[ROUTING_ORGANIZER_ID];
-  const node = new NodeClass();
+  const node = new FakeNode("LFGG Routing Organizer");
   node.type = ROUTING_ORGANIZER_ID;
   graph.add(node);
   return { node, controls: installRoutingOrganizer(node, { LiteGraph: liteGraph, app }) };
 }
+
+test("extends the backend definition instead of registering a frontend-only node", () => {
+  class BackendNode extends FakeNode {
+    constructor() {
+      super("LFGG Routing Organizer");
+    }
+  }
+
+  assert.equal(
+    extendRoutingOrganizer(
+      BackendNode,
+      { name: ROUTING_ORGANIZER_ID },
+      { LiteGraph: liteGraph, app: {} },
+    ),
+    true,
+  );
+  const node = new BackendNode();
+  node.type = ROUTING_ORGANIZER_ID;
+  node.onNodeCreated();
+  assert.equal(node.isVirtualNode, true);
+  assert.equal(node.inputs[0].name, "");
+  assert.equal(node.outputs[0].name, "");
+});
 
 function endpoint(graph, { input, output, type = "Fake" } = {}) {
   const node = graph.add(new FakeNode());

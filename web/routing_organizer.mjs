@@ -5,6 +5,7 @@ export const MAX_CHANNELS = 32;
 const STATE_KEY = "lfgg_routing_channels";
 const LABEL_LIMIT = 64;
 const installed = Symbol("lfggRoutingOrganizer");
+const extended = Symbol("lfggRoutingOrganizerExtension");
 const ignoredWidgetOptions = new Set([
   "control_after_generate",
   "default",
@@ -308,6 +309,7 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
     while ((node.outputs?.length ?? 0) < count) node.addOutput("", "*");
     while (node.inputs.length > count) node.removeInput(node.inputs.length - 1);
     while (node.outputs.length > count) node.removeOutput(node.outputs.length - 1);
+    for (const slot of [...node.inputs, ...node.outputs]) slot.name = "";
     if (state().at(-1).used && state().length < MAX_CHANNELS) addSlot();
     for (let index = 0; index < state().length - 1; index += 1) {
       state()[index].used = true;
@@ -560,27 +562,17 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
   return controls;
 }
 
-export function registerRoutingOrganizer({ LiteGraph, app }) {
-  if (!LiteGraph?.LGraphNode || !LiteGraph.registerNodeType) {
-    throw new Error("LFGG Routing Organizer could not access LiteGraph");
-  }
-  if (
-    LiteGraph.registered_node_types?.[ROUTING_ORGANIZER_ID] ||
-    LiteGraph.registered_node_types?.get?.(ROUTING_ORGANIZER_ID)
-  ) return;
+export function extendRoutingOrganizer(nodeType, nodeData, { LiteGraph, app }) {
+  if (nodeData?.name !== ROUTING_ORGANIZER_ID) return false;
+  if (!LiteGraph) throw new Error("LFGG Routing Organizer requires LiteGraph");
+  if (nodeType.prototype[extended]) return true;
 
-  class RoutingOrganizer extends LiteGraph.LGraphNode {
-    constructor(title) {
-      super(title ?? ROUTING_ORGANIZER_NAME);
-      installRoutingOrganizer(this, { LiteGraph, app });
-    }
-  }
-
-  Object.assign(RoutingOrganizer, {
-    title: ROUTING_ORGANIZER_NAME,
-    category: "LFGG/workflow",
-    collapsable: false,
-    description: "Keep labeled connections aligned like a multi reroute.",
-  });
-  LiteGraph.registerNodeType(ROUTING_ORGANIZER_ID, RoutingOrganizer);
+  const original = nodeType.prototype.onNodeCreated;
+  nodeType.prototype.onNodeCreated = function () {
+    original?.apply(this, arguments);
+    installRoutingOrganizer(this, { LiteGraph, app });
+  };
+  nodeType.prototype[extended] = true;
+  nodeType.collapsable = false;
+  return true;
 }

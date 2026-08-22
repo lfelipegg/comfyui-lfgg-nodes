@@ -185,7 +185,8 @@ Connected active boundaries are read-only. There is no waveform. The editor
 adds no serialized value; all six backend inputs remain the executable
 fallback.
 
-`LFGG Routing Organizer` is a frontend-only virtual node in `LFGG/workflow`.
+`LFGG Routing Organizer` is a virtual node in `LFGG/workflow` with a minimal
+backend definition for package discovery and frontend-only routing behavior.
 Stable ID `LFGG_RoutingOrganizer`. Each routing channel has one input socket,
 one matching output socket, and one centered label; outputs may fan out. The
 first connection selects the channel's ComfyUI wire type, including compatible
