@@ -291,13 +291,20 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
   node.mode = LiteGraph.ALWAYS ?? 0;
 
   const controls = { node };
+  const pending = new Set();
   let automaticSize = null;
   let manuallySized = false;
 
   const state = () => node.properties[STATE_KEY];
-  const connected = (index) =>
-    node.inputs?.[index]?.link != null ||
-    Boolean(node.outputs?.[index]?.links?.length);
+  const connected = (index, verifyLinks = false) => {
+    const ids = [
+      node.inputs?.[index]?.link,
+      ...(node.outputs?.[index]?.links ?? []),
+    ].filter((id) => id != null);
+    return verifyLinks
+      ? ids.some((id) => Boolean(linkById(node.graph, id)))
+      : ids.length > 0;
+  };
 
   const addSlot = (entry = { label: null, used: false }) => {
     const index = node.inputs?.length ?? 0;
@@ -306,7 +313,7 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
     state().push(entry);
   };
 
-  controls.normalize = () => {
+  controls.normalize = (verifyLinks = true) => {
     if (!node.title || node.title === ROUTING_ORGANIZER_ID) {
       node.title = ROUTING_ORGANIZER_NAME;
     }
@@ -323,7 +330,9 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
       const label = normalizeChannelLabel(raw?.label);
       return {
         label,
-        used: Boolean(raw?.used || label || connected(index) || index < count - 1),
+        used: Boolean(
+          raw?.used || label || connected(index, verifyLinks) || index < count - 1,
+        ),
       };
     });
     while ((node.inputs?.length ?? 0) < count) node.addInput("", "*");
@@ -331,7 +340,15 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
     while (node.inputs.length > count) node.removeInput(node.inputs.length - 1);
     while (node.outputs.length > count) node.removeOutput(node.outputs.length - 1);
     for (let index = state().length - 1; index > 0; index -= 1) {
-      if (connected(index) || state()[index].label) continue;
+      const input = node.inputs[index];
+      if (
+        connected(index, verifyLinks) ||
+        state()[index].label ||
+        pending.has(input)
+      ) {
+        continue;
+      }
+      pending.delete(input);
       node.removeOutput(index);
       node.removeInput(index);
       state().splice(index, 1);
@@ -378,6 +395,7 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
     const entry = state()?.[index];
     if (!entry) return false;
     entry.used = true;
+    pending.delete(node.inputs?.[index]);
     controls.resize();
     return true;
   };
@@ -385,6 +403,7 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
   controls.add = () => {
     if (state().length >= MAX_CHANNELS) return false;
     addSlot();
+    pending.add(node.inputs.at(-1));
     controls.resize();
     dirty(node);
     return true;
@@ -448,6 +467,7 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
 
   controls.remove = (index) => {
     if (!state()?.[index] || state().length === 1) return false;
+    pending.delete(node.inputs[index]);
     const graph = node.graph;
     const inputLink = graph && linkById(graph, node.inputs[index].link);
     const outputLinks = graph
@@ -535,9 +555,10 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
 
   const originalConfigure = node.onConfigure;
   node.onConfigure = function () {
+    pending.clear();
     originalConfigure?.apply(this, arguments);
     node.mode = LiteGraph.ALWAYS ?? 0;
-    controls.normalize();
+    controls.normalize(false);
   };
 
   const originalAfterConfigured = node.onAfterGraphConfigured;

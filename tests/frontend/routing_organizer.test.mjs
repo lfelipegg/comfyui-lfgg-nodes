@@ -125,6 +125,7 @@ class FakeNode {
     const output = this.outputs[index];
     for (const id of [...(output?.links ?? [])]) {
       const link = this.graph.links[id];
+      if (!link) continue;
       this.graph.getNodeById(link.target_id).disconnectInput(link.target_slot);
     }
   }
@@ -376,11 +377,6 @@ test("removes unconnected extra channels during normalization and disconnect", a
   const { node, controls } = organizer(graph);
 
   assert.ok(source.connect(0, node, 0));
-  controls.add();
-  assert.equal(node.inputs.length, 2);
-
-  controls.normalize();
-
   assert.equal(node.inputs.length, 1);
   assert.equal(node.outputs.length, 1);
   assert.equal(node.inputs[0].link != null, true);
@@ -397,6 +393,35 @@ test("removes unconnected extra channels during normalization and disconnect", a
   assert.ok(secondSource.connect(0, node, 1));
   node.disconnectInput(1);
   await Promise.resolve();
+
+  assert.equal(node.inputs.length, 1);
+});
+
+test("keeps a manually added channel through autosave", () => {
+  const graph = new FakeGraph();
+  const { node, controls } = organizer(graph);
+  const serialized = {};
+
+  controls.add();
+  node.onSerialize(serialized);
+  controls.add();
+  node.onSerialize(serialized);
+
+  assert.equal(node.inputs.length, 3);
+  assert.equal(serialized.properties.lfgg_routing_channels.length, 3);
+});
+
+test("removes restored channels whose saved link ids no longer exist", () => {
+  const graph = new FakeGraph();
+  const { node, controls } = organizer(graph);
+
+  controls.add();
+  node.inputs[1].link = 999;
+  node.outputs[1].links = [1000];
+  node.onConfigure({});
+  assert.equal(node.inputs.length, 2);
+
+  node.onAfterGraphConfigured();
 
   assert.equal(node.inputs.length, 1);
 });
