@@ -217,13 +217,13 @@ export function installPromptComposer(
 
   wildcard.select.addEventListener("change", () => {
     if (wildcard.select.value) {
-      insertToken(node, input, `__${wildcard.select.value}__`);
+      insertToken(node, input, `__${wildcard.select.value}__, `);
       wildcard.select.value = "";
     }
   });
   style.select.addEventListener("change", () => {
     if (style.select.value) {
-      insertToken(node, input, `[[style:${style.select.value}]]`);
+      insertToken(node, input, `[[style:${style.select.value}]], `);
       style.select.value = "";
     }
   });

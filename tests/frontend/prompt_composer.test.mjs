@@ -195,7 +195,7 @@ test("inserts wildcard and style tokens at the caret and replaces selected text"
   const wildcard = byRole(widget, "wildcards");
   wildcard.value = "animals/pets";
   wildcard.dispatch("change");
-  assert.equal(node.widgets[0].value, "front __animals/pets__");
+  assert.equal(node.widgets[0].value, "front __animals/pets__, ");
   assert.equal(wildcard.value, "");
 
   const style = byRole(widget, "styles");
@@ -203,7 +203,7 @@ test("inserts wildcard and style tokens at the caret and replaces selected text"
   style.dispatch("change");
   assert.equal(
     node.widgets[0].value,
-    "front __animals/pets__[[style:Cinematic]]",
+    "front __animals/pets__, [[style:Cinematic]], ",
   );
   assert.equal(node.widgets[0].callbackValue, node.widgets[0].value);
   assert.equal(node.widgets[0].inputEl.focused, true);
