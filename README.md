@@ -141,7 +141,8 @@ fragments are joined in encounter order. Repeated wildcard tokens draw
 independently and reproducibly. Duplicate non-empty file lines act as weights,
 and native inline dynamic prompts such as `{red|blue}` remain available.
 
-Create `<ComfyUI user directory>/lfgg_nodes/config.json` locally with exactly:
+Copy [`config.example.json`](config.example.json) to
+`<ComfyUI user directory>/lfgg_nodes/config.json`, then replace both paths:
 
 ```json
 {

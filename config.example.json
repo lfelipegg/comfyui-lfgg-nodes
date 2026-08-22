@@ -1,0 +1,6 @@
+{
+  "prompt_composer": {
+    "styles_csv": "/absolute/path/to/styles.csv",
+    "wildcards": "/absolute/path/to/wildcards"
+  }
+}
