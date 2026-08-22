@@ -46,6 +46,7 @@ accelerators are not claimed.
 | LFGG Prompt Composer | multiline template, local style/wildcard libraries, seed | prompt, negative prompt |
 | LFGG Save Image Dynamic | IMAGE, path/filename templates, metadata toggle, optional model label | saved-image previews |
 | LFGG Video Cutter | VIDEO, time/frame selection | selected VIDEO segment |
+| LFGG Routing Organizer | 1–32 labeled ANY routing channels | matching pass-through channels |
 
 All three nodes are in `LFGG/sizing`. They return positive dimensions aligned
 to the exact `divisible_by` value. Aspect fidelity wins before pixel area, with
@@ -184,6 +185,24 @@ Connected active boundaries are read-only. There is no waveform. The editor
 adds no serialized value; all six backend inputs remain the executable
 fallback.
 
+`LFGG Routing Organizer` is a frontend-only virtual node in `LFGG/workflow`.
+Stable ID `LFGG_RoutingOrganizer`. Each routing channel has one input socket,
+one matching output socket, and one centered label; outputs may fan out. The
+first connection selects the channel's ComfyUI wire type, including compatible
+widget and combo types, and chained native reroutes or routing organizers
+propagate that type without entering prompt execution.
+
+The node begins with one empty channel and adds another when the last channel
+is connected or labeled, up to 32 channels. Right-click for Add, Rename, and
+Remove actions, or double-click a label to rename it. Labels are trimmed to 64
+Unicode characters and numbered defaults follow their current positions.
+Removing a connected channel reconnects its upstream source directly to every
+compatible downstream target; a channel is kept if that splice cannot be done
+without losing links. Deleting the whole organizer uses ComfyUI's normal
+index-matched node bypass. Channel order, labels, types, and links persist in
+workflow JSON. Reordering, collapsing, execution modes, routing cycles, and
+conversion inside groups or subgraphs are intentionally unsupported.
+
 ## File and network behavior
 
 The sizing nodes use standard-library integer math plus tensor shape
@@ -233,6 +252,9 @@ returns a UI warning without changing the valid `VIDEO` result.
 The tracked [video-cutter API workflow](workflows/video_cutter.json) expects a
 `video_cutter.mp4` test input and writes its result through native `SaveVideo`.
 
+The routing organizer makes no network calls and reads or writes no files. It
+exists only in saved workflow graph data and is omitted from prompt execution.
+
 ## Migrate legacy workflows
 
 No legacy workflow ID is registered. Replace nodes manually:
@@ -280,6 +302,7 @@ node --test tests/frontend/crop_editor.test.mjs
 node --test tests/frontend/power_lora_loader.test.mjs
 node --test tests/frontend/video_cutter.test.mjs
 node --test tests/frontend/prompt_composer.test.mjs
+node --test tests/frontend/routing_organizer.test.mjs
 python -m ruff check .
 python -m pytest -q tests/unit
 comfy node validate

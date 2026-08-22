@@ -144,6 +144,19 @@ The MIT-licensed public Comfy Registry package `lfgg-nodes`, published by
 nodes. Only newly written or provenance-cleared code belongs in it.
 _Avoid_: New pack, modernized legacy pack
 
+### Workflow organization
+
+**Routing organizer**:
+A workflow-only successor node containing labeled, independent routing channels
+that keep related connections aligned without combining or transforming them.
+Stable ID: `LFGG_RoutingOrganizer`.
+_Avoid_: Multi reroute, bus node, pipe node
+
+**Routing channel**:
+A labeled path through a routing organizer, with one input socket and one output
+socket carrying the same workflow value and wire type; the output may fan out.
+_Avoid_: Lane, row, port pair
+
 ### Prompt composition
 
 **Prompt composer**:

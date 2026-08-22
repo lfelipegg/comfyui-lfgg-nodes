@@ -837,6 +837,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         "node --test tests/frontend/power_lora_loader.test.mjs",
         "node --test tests/frontend/video_cutter.test.mjs",
         "node --test tests/frontend/prompt_composer.test.mjs",
+        "node --test tests/frontend/routing_organizer.test.mjs",
         "do not read or write files",
         "exclusive creation of final PNG files",
         "cleanup of PNG files created by a failed execution",
