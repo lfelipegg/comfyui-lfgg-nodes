@@ -47,6 +47,7 @@ accelerators are not claimed.
 | LFGG Save Image Dynamic | IMAGE, path/filename templates, metadata toggle, optional model label | saved-image previews |
 | LFGG Video Cutter | VIDEO, time/frame selection | selected VIDEO segment |
 | LFGG Routing Organizer | 1–32 labeled ANY routing channels | matching pass-through channels |
+| LFGG Value Inspector | any connected value | inline diagnostic report |
 
 All three nodes are in `LFGG/sizing`. They return positive dimensions aligned
 to the exact `divisible_by` value. Aspect fidelity wins before pixel area, with
@@ -204,6 +205,20 @@ index-matched node bypass. Channel order, labels, types, and links persist in
 workflow JSON. Reordering, collapsing, execution modes, routing cycles, and
 conversion inside groups or subgraphs are intentionally unsupported.
 
+`LFGG Value Inspector` is a terminal output node in `LFGG/debug`. Stable ID
+`LFGG_ValueInspector`. Connect any value and queue the workflow to show a
+read-only diagnostic report inside the node. One scheduled value is shown
+directly; multiple values are numbered. Scalars show bounded content,
+containers show at most 50 entries and four levels, and tensors show only type,
+shape, dtype, device, and layout. Reports are capped at 16 KiB, individual
+strings and byte values at 8 KiB, and obvious credential fields are redacted.
+Unknown objects show only their qualified runtime type.
+
+The `*` input is ComfyUI's V1 wildcard escape hatch, so native reroutes and some
+custom socket types may have link-type limitations. The report is session-only:
+it is not saved into workflow JSON, and a previous report is marked stale while
+a later execution is pending or fails. Normal ComfyUI caching applies.
+
 ## File and network behavior
 
 The sizing nodes use standard-library integer math plus tensor shape
@@ -256,6 +271,9 @@ The tracked [video-cutter API workflow](workflows/video_cutter.json) expects a
 The routing organizer makes no network calls and reads or writes no files. It
 exists only in saved workflow graph data and is omitted from prompt execution.
 
+The value inspector makes no network calls and reads or writes no files. It
+returns only its bounded report through ComfyUI's execution UI message.
+
 ## Migrate legacy workflows
 
 No legacy workflow ID is registered. Replace nodes manually:
@@ -304,6 +322,7 @@ node --test tests/frontend/power_lora_loader.test.mjs
 node --test tests/frontend/video_cutter.test.mjs
 node --test tests/frontend/prompt_composer.test.mjs
 node --test tests/frontend/routing_organizer.test.mjs
+node --test tests/frontend/value_inspector.test.mjs
 python -m ruff check .
 python -m pytest -q tests/unit
 comfy node validate

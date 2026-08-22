@@ -10,6 +10,7 @@ if __package__:
     from .lfgg_nodes.prompt_composer import PromptComposer
     from .lfgg_nodes.routing_organizer import RoutingOrganizer
     from .lfgg_nodes.save_image_dynamic import SaveImageDynamic
+    from .lfgg_nodes.value_inspector import ValueInspector
     from .lfgg_nodes.video_cutter import VideoCutter
 else:
     from lfgg_nodes.dimensions_by_aspect_ratio import DimensionsByAspectRatio
@@ -23,6 +24,7 @@ else:
     from lfgg_nodes.prompt_composer import PromptComposer
     from lfgg_nodes.routing_organizer import RoutingOrganizer
     from lfgg_nodes.save_image_dynamic import SaveImageDynamic
+    from lfgg_nodes.value_inspector import ValueInspector
     from lfgg_nodes.video_cutter import VideoCutter
 
 
@@ -46,6 +48,7 @@ NODE_CLASS_MAPPINGS = _merge_class_mappings(
     {"LFGG_PromptComposer": PromptComposer},
     {"LFGG_RoutingOrganizer": RoutingOrganizer},
     {"LFGG_SaveImageDynamic": SaveImageDynamic},
+    {"LFGG_ValueInspector": ValueInspector},
     {"LFGG_VideoCutter": VideoCutter},
 )
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -58,6 +61,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LFGG_PromptComposer": "LFGG Prompt Composer",
     "LFGG_RoutingOrganizer": "LFGG Routing Organizer",
     "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
+    "LFGG_ValueInspector": "LFGG Value Inspector",
     "LFGG_VideoCutter": "LFGG Video Cutter",
 }
 WEB_DIRECTORY = "./web"

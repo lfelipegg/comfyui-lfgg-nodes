@@ -71,6 +71,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_PromptComposer": "LFGG Prompt Composer",
         "LFGG_RoutingOrganizer": "LFGG Routing Organizer",
         "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
+        "LFGG_ValueInspector": "LFGG Value Inspector",
         "LFGG_VideoCutter": "LFGG Video Cutter",
     }
     assert list(package.NODE_CLASS_MAPPINGS) == [
@@ -83,6 +84,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_PromptComposer",
         "LFGG_RoutingOrganizer",
         "LFGG_SaveImageDynamic",
+        "LFGG_ValueInspector",
         "LFGG_VideoCutter",
     ]
 
@@ -95,6 +97,28 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
     assert routing_organizer.RETURN_TYPES == ()
     assert routing_organizer.INPUT_TYPES() == {"required": {}}
     assert routing_organizer().route() == ()
+
+    value_inspector = package.NODE_CLASS_MAPPINGS["LFGG_ValueInspector"]
+    assert value_inspector.CATEGORY == "LFGG/debug"
+    assert value_inspector.DESCRIPTION == (
+        "Displays a bounded diagnostic report for any connected value."
+    )
+    assert value_inspector.FUNCTION == "inspect_value"
+    assert value_inspector.RETURN_TYPES == ()
+    assert value_inspector.INPUT_IS_LIST is True
+    assert value_inspector.OUTPUT_NODE is True
+    assert value_inspector.INPUT_TYPES() == {
+        "required": {
+            "value": (
+                "*",
+                {"tooltip": "Value to inspect after workflow execution."},
+            )
+        }
+    }
+    assert value_inspector().inspect_value([7]) == {
+        "ui": {"report": ["type: builtins.int\nvalue: 7"]},
+        "result": (),
+    }
 
     node = package.NODE_CLASS_MAPPINGS["LFGG_DimensionsByAspectRatio"]
     assert node.CATEGORY == "LFGG/sizing"
@@ -850,6 +874,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         "node --test tests/frontend/video_cutter.test.mjs",
         "node --test tests/frontend/prompt_composer.test.mjs",
         "node --test tests/frontend/routing_organizer.test.mjs",
+        "node --test tests/frontend/value_inspector.test.mjs",
         "do not read or write files",
         "exclusive creation of final PNG files",
         "cleanup of PNG files created by a failed execution",
@@ -965,6 +990,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         if node_id in {
             "LFGG_PromptComposer",
             "LFGG_RoutingOrganizer",
+            "LFGG_ValueInspector",
             "LFGG_VideoCutter",
         }:
             continue

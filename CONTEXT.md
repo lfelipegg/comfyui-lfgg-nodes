@@ -146,6 +146,11 @@ _Avoid_: New pack, modernized legacy pack
 
 ### Workflow organization
 
+**Value inspector**:
+A terminal successor node that displays a bounded diagnostic representation of
+one connected workflow value. Stable ID: `LFGG_ValueInspector`.
+_Avoid_: Output viewer, debug output
+
 **Routing organizer**:
 A workflow-only successor node containing labeled, independent routing channels
 that keep related connections aligned without combining or transforming them.
