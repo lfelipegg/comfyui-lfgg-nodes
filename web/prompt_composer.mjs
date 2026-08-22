@@ -1,5 +1,5 @@
 const NODE_ID = "LFGG_PromptComposer";
-const CONTROLS_HEIGHT = 104;
+const CONTROLS_HEIGHT = 136;
 const installed = Symbol("lfggPromptComposer");
 
 function option(document, name, disabled = false) {
@@ -32,6 +32,17 @@ function replaceOptions(select, choices) {
   select.value = "";
 }
 
+function filterOptions(select, choices, query) {
+  const term = query.trim().toLowerCase();
+  replaceOptions(
+    select,
+    term
+      ? [choices[0], ...choices.slice(1).filter(({ textContent }) =>
+        textContent.toLowerCase().includes(term))]
+      : choices,
+  );
+}
+
 function unavailable(select, placeholder, document) {
   const item = option(document, "", true);
   item.textContent = placeholder;
@@ -60,14 +71,22 @@ function insertToken(node, input, token) {
   node.setDirtyCanvas?.(true, true);
 }
 
-function labeledSelect(document, text, role) {
-  const label = document.createElement("label");
+function searchableSelect(document, text, role) {
+  const group = document.createElement("div");
   const caption = document.createElement("span");
+  const search = document.createElement("input");
   const select = document.createElement("select");
   caption.textContent = text;
+  search.type = "search";
+  search.placeholder = `Search ${text.toLowerCase()}s…`;
+  search.disabled = true;
+  search.dataset.role = `${role}-search`;
+  search.setAttribute("aria-label", `Search ${text.toLowerCase()}s`);
   select.dataset.role = role;
   select.setAttribute("aria-label", text);
-  Object.assign(label.style, {
+  group.setAttribute("role", "group");
+  group.setAttribute("aria-label", text);
+  Object.assign(group.style, {
     display: "grid",
     gap: "4px",
     minWidth: "0",
@@ -77,15 +96,17 @@ function labeledSelect(document, text, role) {
     lineHeight: "1.2",
     opacity: "0.75",
   });
-  Object.assign(select.style, {
+  const controlStyle = {
     width: "100%",
     minWidth: "0",
     maxWidth: "100%",
     height: "28px",
     boxSizing: "border-box",
-  });
-  label.append(caption, select);
-  return { label, select };
+  };
+  Object.assign(search.style, controlStyle);
+  Object.assign(select.style, controlStyle);
+  group.append(caption, search, select);
+  return { group, search, select };
 }
 
 export function installPromptComposer(
@@ -109,8 +130,8 @@ export function installPromptComposer(
   const root = document.createElement("div");
   const selectors = document.createElement("div");
   const actions = document.createElement("div");
-  const wildcard = labeledSelect(document, "Wildcard", "wildcards");
-  const style = labeledSelect(document, "Style", "styles");
+  const wildcard = searchableSelect(document, "Wildcard", "wildcards");
+  const style = searchableSelect(document, "Style", "styles");
   const refresh = document.createElement("button");
   const status = document.createElement("span");
   Object.assign(root.style, {
@@ -160,7 +181,7 @@ export function installPromptComposer(
     lineHeight: "1.3",
     opacity: "0.8",
   });
-  selectors.append(wildcard.label, style.label);
+  selectors.append(wildcard.group, style.group);
   actions.append(refresh, status);
   root.append(selectors, actions);
 
@@ -172,6 +193,8 @@ export function installPromptComposer(
   let loaded = false;
   let request;
   let domWidget;
+  let wildcardOptions;
+  let styleOptions;
   const load = () => {
     if (request) return request;
     request = (async () => {
@@ -187,18 +210,22 @@ export function installPromptComposer(
         ) {
           throw new Error(result?.error || "The prompt library response is invalid");
         }
-        const wildcardOptions = buildOptions(
+        const nextWildcardOptions = buildOptions(
           "Add wildcard…",
           result.wildcards,
           document,
         );
-        const styleOptions = buildOptions(
+        const nextStyleOptions = buildOptions(
           "Add style…",
           result.styles,
           document,
         );
-        replaceOptions(wildcard.select, wildcardOptions);
-        replaceOptions(style.select, styleOptions);
+        wildcardOptions = nextWildcardOptions;
+        styleOptions = nextStyleOptions;
+        wildcard.search.disabled = false;
+        style.search.disabled = false;
+        filterOptions(wildcard.select, wildcardOptions, wildcard.search.value);
+        filterOptions(style.select, styleOptions, style.search.value);
         loaded = true;
         const wildcardLabel = result.wildcards.length === 1 ? "wildcard" : "wildcards";
         const styleLabel = result.styles.length === 1 ? "style" : "styles";
@@ -225,10 +252,20 @@ export function installPromptComposer(
       wildcard.select.value = "";
     }
   });
+  wildcard.search.addEventListener("input", () => {
+    if (wildcardOptions) {
+      filterOptions(wildcard.select, wildcardOptions, wildcard.search.value);
+    }
+  });
   style.select.addEventListener("change", () => {
     if (style.select.value) {
       insertToken(node, input, `[[style:${style.select.value}]], `);
       style.select.value = "";
+    }
+  });
+  style.search.addEventListener("input", () => {
+    if (styleOptions) {
+      filterOptions(style.select, styleOptions, style.search.value);
     }
   });
   refresh.addEventListener("click", () => {

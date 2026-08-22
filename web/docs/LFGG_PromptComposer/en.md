@@ -4,7 +4,8 @@ Write the prompt in the multiline `prompt_template` box. Use **Add wildcard…**
 to insert `__folder/name__` at the caret, or **Add style…** to insert
 `[[style:Exact Name]]`. The selectors are editing controls only; the template
 and seed are the persisted inputs. Empty wildcard files and CSV rows with no
-positive or negative value are shown disabled.
+positive or negative value are shown disabled. Search filters either selector
+by any part of its name, ignoring case.
 
 Configure one styles CSV and one wildcard root in
 `<ComfyUI user directory>/lfgg_nodes/config.json`:

@@ -1,6 +1,6 @@
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
-import { installPromptComposer } from "./prompt_composer.mjs?v=1.5.0";
+import { installPromptComposer } from "./prompt_composer.mjs?v=1.5.0-search";
 
 const libraries = async () => {
   const response = await api.fetchApi("/lfgg/v1/prompt-composer/libraries");
