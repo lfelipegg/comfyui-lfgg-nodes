@@ -1106,6 +1106,93 @@ def development_manifest():
             "Negative style fragments joined in token order.",
         ],
     }
+    manifest["nodes"]["LFGG_StringReplace"] = {
+        "display_name": "LFGG String Replace",
+        "description": "Replaces every literal search match in text.",
+        "category": "LFGG/text",
+        "input": {
+            "required": {
+                "text": [
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": True,
+                        "tooltip": "Text to transform.",
+                    },
+                ],
+                "search": [
+                    "STRING",
+                    {"default": "", "tooltip": "Literal text to find."},
+                ],
+                "replacement": [
+                    "STRING",
+                    {"default": "", "tooltip": "Literal text to insert."},
+                ],
+                "case_sensitive": [
+                    "BOOLEAN",
+                    {
+                        "default": True,
+                        "label_on": "Match case",
+                        "label_off": "Ignore case",
+                        "tooltip": "Match case; disable for case-insensitive matching.",
+                    },
+                ],
+            }
+        },
+        "output": ["STRING"],
+        "output_name": ["text"],
+        "output_tooltips": ["Text after every replacement."],
+    }
+    manifest["nodes"]["LFGG_StringReplaceRegex"] = {
+        "display_name": "LFGG String Replace (Regex)",
+        "description": (
+            "Replaces every literal or regular-expression search match in text."
+        ),
+        "category": "LFGG/text",
+        "input": {
+            "required": {
+                "text": [
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": True,
+                        "tooltip": "Text to transform.",
+                    },
+                ],
+                "search": [
+                    "STRING",
+                    {"default": "", "tooltip": "Text or regex to find."},
+                ],
+                "replacement": [
+                    "STRING",
+                    {"default": "", "tooltip": "Text or regex replacement."},
+                ],
+                "use_regex": [
+                    "BOOLEAN",
+                    {
+                        "default": True,
+                        "label_on": "Use regex",
+                        "label_off": "Literal text",
+                        "tooltip": (
+                            "Use regex; disable for literal search and replacement."
+                        ),
+                    },
+                ],
+                "case_sensitive": [
+                    "BOOLEAN",
+                    {
+                        "default": True,
+                        "label_on": "Match case",
+                        "label_off": "Ignore case",
+                        "tooltip": "Match case; disable for case-insensitive matching.",
+                    },
+                ],
+            }
+        },
+        "output": ["STRING"],
+        "output_name": ["text"],
+        "output_tooltips": ["Text after every replacement."],
+    }
     manifest["nodes"]["LFGG_BooleanSwitch"] = {
         "display_name": "LFGG Boolean Switch",
         "description": "Selects the false or true branch without evaluating the other.",

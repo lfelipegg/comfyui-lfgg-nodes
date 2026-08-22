@@ -212,3 +212,15 @@ _Avoid_: Preset, CSV style
 A visible, non-selectable style-catalog label whose positive and negative
 prompt fragments are both empty.
 _Avoid_: Empty style, separator style
+
+### Text replacement
+
+**String replace**:
+A successor node that replaces every exact occurrence of search text in source
+text. Stable ID: `LFGG_StringReplace`.
+_Avoid_: Literal replace, simple string replace
+
+**Regex string replace**:
+A successor node that replaces every source-text match using either literal or
+regular-expression matching. Stable ID: `LFGG_StringReplaceRegex`.
+_Avoid_: Advanced string replace, special string replace

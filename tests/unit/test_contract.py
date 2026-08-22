@@ -71,6 +71,8 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_PromptComposer": "LFGG Prompt Composer",
         "LFGG_RoutingOrganizer": "LFGG Routing Organizer",
         "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
+        "LFGG_StringReplace": "LFGG String Replace",
+        "LFGG_StringReplaceRegex": "LFGG String Replace (Regex)",
         "LFGG_BooleanSwitch": "LFGG Boolean Switch",
         "LFGG_IndexSwitch": "LFGG Index Switch",
         "LFGG_ValueInspector": "LFGG Value Inspector",
@@ -86,6 +88,8 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_PromptComposer",
         "LFGG_RoutingOrganizer",
         "LFGG_SaveImageDynamic",
+        "LFGG_StringReplace",
+        "LFGG_StringReplaceRegex",
         "LFGG_BooleanSwitch",
         "LFGG_IndexSwitch",
         "LFGG_ValueInspector",
@@ -101,6 +105,18 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
     assert routing_organizer.RETURN_TYPES == ()
     assert routing_organizer.INPUT_TYPES() == {"required": {}}
     assert routing_organizer().route() == ()
+
+    string_replace = package.NODE_CLASS_MAPPINGS["LFGG_StringReplace"]
+    assert string_replace.CATEGORY == "LFGG/text"
+    assert string_replace.FUNCTION == "replace"
+    assert string_replace.RETURN_TYPES == ("STRING",)
+    assert string_replace.RETURN_NAMES == ("text",)
+
+    string_replace_regex = package.NODE_CLASS_MAPPINGS["LFGG_StringReplaceRegex"]
+    assert string_replace_regex.CATEGORY == "LFGG/text"
+    assert string_replace_regex.FUNCTION == "replace"
+    assert string_replace_regex.RETURN_TYPES == ("STRING",)
+    assert string_replace_regex.RETURN_NAMES == ("text",)
 
     boolean_switch = package.NODE_CLASS_MAPPINGS["LFGG_BooleanSwitch"]
     assert boolean_switch.CATEGORY == "LFGG/workflow"
@@ -959,6 +975,11 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         "LFGG Prompt Composer",
         "LFGG Boolean Switch",
         "LFGG Index Switch",
+        "LFGG String Replace",
+        "LFGG String Replace (Regex)",
+        "LFGG_StringReplace` and `LFGG_StringReplaceRegex",
+        "invalid capture references",
+        "no hard match timeout",
         "False` to `false`",
         "zero-based",
         "restored disconnected slots do not create branches",
@@ -1015,6 +1036,8 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
             "LFGG_RoutingOrganizer",
             "LFGG_BooleanSwitch",
             "LFGG_IndexSwitch",
+            "LFGG_StringReplace",
+            "LFGG_StringReplaceRegex",
             "LFGG_ValueInspector",
             "LFGG_VideoCutter",
         }:

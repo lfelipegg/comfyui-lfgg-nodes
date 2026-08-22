@@ -44,6 +44,8 @@ accelerators are not claimed.
 | LFGG Load and Crop Image | one still image, ratio, exact source-pixel crop | cropped image, alpha-derived mask |
 | LFGG Power LoRA Loader (Folder) | MODEL, CLIP, folder, ordered LoRA rows | MODEL, CLIP |
 | LFGG Prompt Composer | multiline template, local style/wildcard libraries, seed | prompt, negative prompt |
+| LFGG String Replace | multiline text, literal search/replacement, casing | replaced text |
+| LFGG String Replace (Regex) | multiline text, literal/regex search/replacement, casing | replaced text |
 | LFGG Save Image Dynamic | IMAGE, path/filename templates, metadata toggle, optional model label | saved-image previews |
 | LFGG Video Cutter | VIDEO, time/frame selection | selected VIDEO segment |
 | LFGG Routing Organizer | 1–32 labeled ANY routing channels | matching pass-through channels |
@@ -220,6 +222,20 @@ the `value` output share one propagated wire type. Branch count and type are
 saved in workflows; restored disconnected slots do not create branches. Like
 other V1 wildcard sockets, `*` may have limitations through native reroutes
 and some custom socket types.
+
+`LFGG String Replace` and `LFGG String Replace (Regex)` are in `LFGG/text`,
+with stable IDs `LFGG_StringReplace` and `LFGG_StringReplaceRegex`. Both
+replace every match and default to `Match case`; disable it for `Ignore case`.
+The literal node persists inputs in `text`, `search`, `replacement`,
+`case_sensitive` order. The regex node persists `text`, `search`,
+`replacement`, `use_regex`, `case_sensitive`; it defaults to `Use regex`,
+and `Literal text` makes search and replacement literal. Regex mode supports
+inline flags and capture references such as `\1` and `\g<name>`. Empty
+searches, malformed regexes, invalid capture references, non-string inputs,
+and values over the 1 MiB text/replacement/output or 4 KiB search limits fail
+with an actionable error. These nodes make no file or network I/O. Regexes are
+locally authored workflow patterns; Python's standard library engine has no
+hard match timeout.
 
 `LFGG Value Inspector` is a terminal output node in `LFGG/debug`. Stable ID
 `LFGG_ValueInspector`. Connect any value and queue the workflow to show a
