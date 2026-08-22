@@ -165,6 +165,9 @@ test("constrains library controls to a compact node-width layout", async () => {
   assert.equal(widget.element.style.display, "grid");
   assert.equal(widget.element.style.width, "100%");
   assert.equal(widget.element.style.minWidth, "0");
+  assert.equal(widget.element.style.height, "104px");
+  assert.equal(widget.element.style.maxHeight, "104px");
+  assert.equal(widget.element.style.alignContent, "start");
   assert.equal(widget.element.style.boxSizing, "border-box");
   assert.equal(byRole(widget, "selectors").style.gridTemplateColumns, "repeat(2, minmax(0, 1fr))");
   for (const role of ["wildcards", "styles"]) {
@@ -176,8 +179,10 @@ test("constrains library controls to a compact node-width layout", async () => {
   assert.equal(byRole(widget, "actions").style.display, "flex");
   assert.equal(byRole(widget, "status").style.textOverflow, "ellipsis");
   assert.equal(byRole(widget, "status").textContent, "1 wildcard · 1 style");
+  assert.deepEqual(widget.computeSize(), [0, 104]);
   assert.equal(widget.options.getMinHeight(), 104);
   assert.equal(widget.options.getMaxHeight(), 104);
+  assert.equal(widget.options.getHeight(), 104);
   assert.deepEqual(node.size, [360, 330]);
 });
 

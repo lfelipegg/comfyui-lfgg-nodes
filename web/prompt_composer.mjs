@@ -1,4 +1,5 @@
 const NODE_ID = "LFGG_PromptComposer";
+const CONTROLS_HEIGHT = 104;
 const installed = Symbol("lfggPromptComposer");
 
 function option(document, name, disabled = false) {
@@ -117,6 +118,9 @@ export function installPromptComposer(
     gap: "8px",
     width: "100%",
     minWidth: "0",
+    height: `${CONTROLS_HEIGHT}px`,
+    maxHeight: `${CONTROLS_HEIGHT}px`,
+    alignContent: "start",
     padding: "8px",
     boxSizing: "border-box",
   });
@@ -235,8 +239,14 @@ export function installPromptComposer(
     "lfgg_prompt_composer",
     "lfgg_prompt_composer",
     root,
-    { serialize: false, getMinHeight: () => 104, getMaxHeight: () => 104 },
+    {
+      serialize: false,
+      getMinHeight: () => CONTROLS_HEIGHT,
+      getMaxHeight: () => CONTROLS_HEIGHT,
+      getHeight: () => CONTROLS_HEIGHT,
+    },
   );
+  domWidget.computeSize = () => [0, CONTROLS_HEIGHT];
   domWidget.serialize = false;
   domWidget.options.serialize = false;
   const domIndex = node.widgets.indexOf(domWidget);
