@@ -51,6 +51,24 @@ official docs, official examples, then local reference nodes.
 - Validate trust-boundary inputs during execution. Use pack-prefixed logging and
   actionable errors; do not suppress failures with blank outputs.
 
+### Frontend graph invariants
+
+- Give every pack-owned virtual node a minimal V1 backend definition plus root
+  class/display mappings. Attach its behavior with `beforeRegisterNodeDef`; do
+  not rely only on `LiteGraph.registerNodeType`, which makes node search assign
+  the raw ID, `__frontend_only__` category, and frontend-only package source.
+- Keep the backend `CATEGORY`, display mapping, frontend title, and persisted
+  title migration aligned so node search and restored workflows show the
+  user-facing `LFGG ` label rather than the serialized `LFGG_` ID.
+- Treat LiteGraph restore callbacks as state replay, not proof of a connection:
+  `onConnectionsChange` can report `isConnected=true` with a null link for a
+  disconnected restored slot. Grow or activate dynamic slots only after proving
+  that the link or slot connection exists; never grow the array being restored
+  from the boolean alone.
+- For dynamic-slot nodes, test new-node state and a serialize/configure reload.
+  Assert package/display/category metadata, title migration, links and labels,
+  and that disconnected channel counts remain unchanged.
+
 ## Security and Distribution
 
 - No `eval`, `exec`, obfuscation, runtime `pip`, or subprocess package
