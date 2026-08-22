@@ -103,9 +103,20 @@ def test_literal_replacement_respects_case_only_for_matching():
     assert node.replace("CAT Cat cat", "cat", "dog", False) == ("dog dog dog",)
     assert node.replace("KkK", "k", "x", False) == ("xxx",)
     assert node.replace("a.b a.b", ".", r"\n", True) == (r"a\nb a\nb",)
+    assert node.replace("remove me", "remove me", "", True) == ("",)
     assert MODULE.StringReplaceRegex().replace("a.b", ".", r"\1", False, True) == (
         r"a\1b",
     )
+
+
+def test_empty_search_passes_text_through():
+    assert MODULE.StringReplace().replace("unchanged", "", "ignored") == (
+        "unchanged",
+    )
+    assert MODULE.StringReplaceRegex().replace("unchanged", "", r"\1") == (
+        "unchanged",
+    )
+    assert MODULE.StringReplace().replace("", "", "ignored") == ("",)
 
 
 def test_regex_supports_inline_flags_capture_references_and_zero_width_matches():
@@ -122,11 +133,6 @@ def test_regex_supports_inline_flags_capture_references_and_zero_width_matches()
 @pytest.mark.parametrize(
     ("node", "kwargs", "message"),
     [
-        (
-            MODULE.StringReplace(),
-            {"text": "x", "search": "", "replacement": ""},
-            "empty",
-        ),
         (
             MODULE.StringReplaceRegex(),
             {"text": "x", "search": "(", "replacement": "", "use_regex": True},

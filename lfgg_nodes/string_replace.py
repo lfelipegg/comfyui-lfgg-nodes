@@ -24,8 +24,6 @@ def _validate_inputs(text, search, replacement, case_sensitive):
     _utf8_size(text, "text", TEXT_LIMIT)
     _utf8_size(search, "search", SEARCH_LIMIT)
     _utf8_size(replacement, "replacement", TEXT_LIMIT)
-    if not search:
-        raise StringReplaceError("search must not be empty")
     if type(case_sensitive) is not bool:
         raise StringReplaceError("case_sensitive must be Boolean")
 
@@ -187,6 +185,8 @@ class StringReplace:
 
     def replace(self, text, search, replacement, case_sensitive=True):
         _validate_inputs(text, search, replacement, case_sensitive)
+        if not search:
+            return (text,)
         return (_replace_literal(text, search, replacement, case_sensitive),)
 
 
@@ -245,6 +245,8 @@ class StringReplaceRegex:
         _validate_inputs(text, search, replacement, case_sensitive)
         if type(use_regex) is not bool:
             raise StringReplaceError("use_regex must be Boolean")
+        if not search:
+            return (text,)
         if use_regex:
             return (_replace_regex(text, search, replacement, case_sensitive),)
         return (_replace_literal(text, search, replacement, case_sensitive),)

@@ -232,12 +232,12 @@ The literal node persists inputs in `text`, `search`, `replacement`,
 `case_sensitive` order. The regex node persists `text`, `search`,
 `replacement`, `use_regex`, `case_sensitive`; it defaults to `Use regex`,
 and `Literal text` makes search and replacement literal. Regex mode supports
-inline flags and capture references such as `\1` and `\g<name>`. Empty
-searches, malformed regexes, invalid capture references, non-string inputs,
-and values over the 1 MiB text/replacement/output or 4 KiB search limits fail
-with an actionable error. These nodes make no file or network I/O. Regexes are
-locally authored workflow patterns; Python's standard library engine has no
-hard match timeout.
+inline flags and capture references such as `\1` and `\g<name>`. An empty
+search returns the input text unchanged. Malformed regexes, invalid capture
+references, non-string inputs, and values over the 1 MiB
+text/replacement/output or 4 KiB search limits fail with an actionable error.
+These nodes make no file or network I/O. Regexes are locally authored workflow
+patterns; Python's standard library engine has no hard match timeout.
 
 `LFGG String Join` is in `LFGG/text`, with stable ID `LFGG_StringJoin`. It
 joins connected `text_1` through `text_32` in order with a literal `separator`.
