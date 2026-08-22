@@ -43,6 +43,7 @@ accelerators are not claimed.
 | LFGG Resize Image by Long Side | IMAGE, interpolation method, long-side cap, alignment | resized image, width, height |
 | LFGG Load and Crop Image | one still image, ratio, exact source-pixel crop | cropped image, alpha-derived mask |
 | LFGG Power LoRA Loader (Folder) | MODEL, CLIP, folder, ordered LoRA rows | MODEL, CLIP |
+| LFGG Prompt Composer | multiline template, local style/wildcard libraries, seed | prompt, negative prompt |
 | LFGG Save Image Dynamic | IMAGE, path/filename templates, metadata toggle, optional model label | saved-image previews |
 | LFGG Video Cutter | VIDEO, time/frame selection | selected VIDEO segment |
 
@@ -130,6 +131,37 @@ tokens are `{model}`, `{date}`, `{time}`, `{datetime}`, `{width}`, `{height}`,
 standard output-relative saved-image previews. One execution is limited to
 268,435,456 total pixels across its image batch.
 
+`LFGG Prompt Composer` is in `LFGG/text`. Stable ID
+`LFGG_PromptComposer`. Its persisted inputs are the multiline
+`prompt_template` and a standard 64-bit `seed`; outputs are `prompt` and
+`negative_prompt` strings. File wildcards use `__folder/name__`, relative to a
+configured root and without `.txt`. Styles use `[[style:Exact Name]]`. Their
+positive fragments stay at the authored token positions, while negative style
+fragments are joined in encounter order. Repeated wildcard tokens draw
+independently and reproducibly. Duplicate non-empty file lines act as weights,
+and native inline dynamic prompts such as `{red|blue}` remain available.
+
+Create `<ComfyUI user directory>/lfgg_nodes/config.json` locally with exactly:
+
+```json
+{
+  "prompt_composer": {
+    "styles_csv": "/absolute/path/styles.csv",
+    "wildcards": "/absolute/path/wildcards"
+  }
+}
+```
+
+Both configured values must be absolute. The UTF-8 CSV requires the exact
+`name,prompt,negative_prompt` header. Rows with no positive or negative value
+are disabled headings; `.txt` files with no non-empty lines are also disabled.
+The transient selectors insert relative wildcard or exact style tokens at the
+text caret and do not add workflow state. **Refresh libraries** revalidates the
+catalog through bounded `GET /lfgg/v1/prompt-composer/libraries`; a failed
+refresh preserves the last valid choices and never returns configured paths or
+file contents. Prefix `__file__` or `[[style:Name]]` with `\` to emit it
+literally.
+
 `LFGG Video Cutter` is in `LFGG/video`. Stable ID `LFGG_VideoCutter`. It
 returns one contiguous `VIDEO` segment through native `VideoInput.as_trimmed`,
 which keeps the primary video and audio synchronized and leaves auxiliary
@@ -176,6 +208,15 @@ The loader reads that input file but performs no file writes.
 
 The folder-filtered LoRA loader reads selected LoRA files through ComfyUI. It
 performs no network calls or file writes.
+
+The prompt composer reads its fixed configuration beneath the ComfyUI user
+directory, its configured styles CSV, and referenced wildcard `.txt` files. It
+writes no files and makes no outbound network calls. Refresh inspects at most
+10,000 wildcard-library entries (including directories and non-`.txt` files)
+and 64 MiB of wildcard content; configuration, styles, each decoded CSV field,
+each wildcard, and combined resolved outputs are capped at 64 KiB, 4 MiB,
+128 KiB, 1 MiB, and 1 MiB respectively. Wildcard symlinks must resolve inside
+the configured root.
 
 The video cutter makes no outbound network calls. Before queueing, only a
 direct native `LoadVideo` source (through simple reroutes) may call the local,
@@ -225,7 +266,8 @@ Additional dispositions:
   index, with `length=1`.
 - Remove `LfggModelNameFromModel`; pass an explicit label string alongside the
   model instead of trying to infer provenance from the prompt graph.
-- Prompt Library and Prompt Wildcard remain separate future efforts. The legacy
+- Replace Prompt Library and Prompt Wildcard nodes with
+  `LFGG_PromptComposer`, preserving token positions in one template. The legacy
   single LoRA Loader by Path remains deferred.
 
 ## Develop and qualify
@@ -236,6 +278,7 @@ node --test tests/frontend/ratio_preview.test.mjs
 node --test tests/frontend/crop_editor.test.mjs
 node --test tests/frontend/power_lora_loader.test.mjs
 node --test tests/frontend/video_cutter.test.mjs
+node --test tests/frontend/prompt_composer.test.mjs
 python -m ruff check .
 python -m pytest -q tests/unit
 comfy node validate

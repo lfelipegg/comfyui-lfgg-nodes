@@ -68,6 +68,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_ResizeImageByLongSide": "LFGG Resize Image by Long Side",
         "LFGG_LoadAndCropImage": "LFGG Load and Crop Image",
         "LFGG_PowerLoraLoaderFolder": "LFGG Power LoRA Loader (Folder)",
+        "LFGG_PromptComposer": "LFGG Prompt Composer",
         "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
         "LFGG_VideoCutter": "LFGG Video Cutter",
     }
@@ -78,6 +79,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_ResizeImageByLongSide",
         "LFGG_LoadAndCropImage",
         "LFGG_PowerLoraLoaderFolder",
+        "LFGG_PromptComposer",
         "LFGG_SaveImageDynamic",
         "LFGG_VideoCutter",
     ]
@@ -152,6 +154,47 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
             ],
         },
         "optional": {},
+    }
+
+    prompt_composer = package.NODE_CLASS_MAPPINGS["LFGG_PromptComposer"]
+    assert prompt_composer.CATEGORY == "LFGG/text"
+    assert prompt_composer.DESCRIPTION == (
+        "Composes positioned style and file-wildcard tokens from configured local "
+        "libraries with reproducible wildcard choices."
+    )
+    assert prompt_composer.FUNCTION == "compose"
+    assert prompt_composer.RETURN_TYPES == ("STRING", "STRING")
+    assert prompt_composer.RETURN_NAMES == ("prompt", "negative_prompt")
+    assert prompt_composer.OUTPUT_TOOLTIPS == (
+        "Resolved positive prompt in the authored token order.",
+        "Negative style fragments joined in token order.",
+    )
+    assert prompt_composer.INPUT_TYPES() == {
+        "required": {
+            "prompt_template": (
+                "STRING",
+                {
+                    "default": "",
+                    "multiline": True,
+                    "dynamicPrompts": True,
+                    "placeholder": "Write a prompt and insert styles or wildcards…",
+                    "tooltip": (
+                        "Prompt template. File wildcards use __folder/name__; "
+                        "styles use [[style:Exact Name]]."
+                    ),
+                },
+            ),
+            "seed": (
+                "INT",
+                {
+                    "default": 0,
+                    "min": 0,
+                    "max": 2**64 - 1,
+                    "control_after_generate": True,
+                    "tooltip": "Seed for reproducible file-wildcard choices.",
+                },
+            ),
+        }
     }
 
     required = node.INPUT_TYPES()["required"]
@@ -793,6 +836,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         "node --test tests/frontend/crop_editor.test.mjs",
         "node --test tests/frontend/power_lora_loader.test.mjs",
         "node --test tests/frontend/video_cutter.test.mjs",
+        "node --test tests/frontend/prompt_composer.test.mjs",
         "do not read or write files",
         "exclusive creation of final PNG files",
         "cleanup of PNG files created by a failed execution",
@@ -856,6 +900,12 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         "`POST /lfgg/v1/video-metadata`",
         "selection looping",
         "workflows/video_cutter.json",
+        "LFGG Prompt Composer",
+        "Stable ID `LFGG_PromptComposer`",
+        "`__folder/name__`",
+        "`[[style:Exact Name]]`",
+        "`GET /lfgg/v1/prompt-composer/libraries`",
+        "disabled headings",
         ]:
         assert claim in readme
 
@@ -879,6 +929,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
     assert help_ids == {
         "LFGG_LoadAndCropImage",
         "LFGG_PowerLoraLoaderFolder",
+        "LFGG_PromptComposer",
         "LFGG_VideoCutter",
     }
     assert help_ids <= package.NODE_CLASS_MAPPINGS.keys()
@@ -898,7 +949,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
 
     expected_nodes = {}
     for node_id, node in package.NODE_CLASS_MAPPINGS.items():
-        if node_id == "LFGG_VideoCutter":
+        if node_id in {"LFGG_PromptComposer", "LFGG_VideoCutter"}:
             continue
         expected_nodes[node_id] = {
             "display_name": package.NODE_DISPLAY_NAME_MAPPINGS[node_id],

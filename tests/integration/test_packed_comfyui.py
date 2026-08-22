@@ -1063,6 +1063,49 @@ def development_manifest():
         "output_name": ["video"],
         "output_tooltips": ["Selected contiguous video segment."],
     }
+    manifest["nodes"]["LFGG_PromptComposer"] = {
+        "display_name": "LFGG Prompt Composer",
+        "description": (
+            "Composes positioned style and file-wildcard tokens from configured "
+            "local libraries with reproducible wildcard choices."
+        ),
+        "category": "LFGG/text",
+        "input": {
+            "required": {
+                "prompt_template": [
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": True,
+                        "dynamicPrompts": True,
+                        "placeholder": (
+                            "Write a prompt and insert styles or wildcards…"
+                        ),
+                        "tooltip": (
+                            "Prompt template. File wildcards use __folder/name__; "
+                            "styles use [[style:Exact Name]]."
+                        ),
+                    },
+                ],
+                "seed": [
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": 2**64 - 1,
+                        "control_after_generate": True,
+                        "tooltip": "Seed for reproducible file-wildcard choices.",
+                    },
+                ],
+            }
+        },
+        "output": ["STRING", "STRING"],
+        "output_name": ["prompt", "negative_prompt"],
+        "output_tooltips": [
+            "Resolved positive prompt in the authored token order.",
+            "Negative style fragments joined in token order.",
+        ],
+    }
     return manifest
 
 

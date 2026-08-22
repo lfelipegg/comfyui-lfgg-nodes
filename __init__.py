@@ -7,6 +7,7 @@ if __package__:
     )
     from .lfgg_nodes.load_and_crop_image import LoadAndCropImage
     from .lfgg_nodes.power_lora_loader_folder import PowerLoraLoaderFolder
+    from .lfgg_nodes.prompt_composer import PromptComposer
     from .lfgg_nodes.save_image_dynamic import SaveImageDynamic
     from .lfgg_nodes.video_cutter import VideoCutter
 else:
@@ -18,6 +19,7 @@ else:
     )
     from lfgg_nodes.load_and_crop_image import LoadAndCropImage
     from lfgg_nodes.power_lora_loader_folder import PowerLoraLoaderFolder
+    from lfgg_nodes.prompt_composer import PromptComposer
     from lfgg_nodes.save_image_dynamic import SaveImageDynamic
     from lfgg_nodes.video_cutter import VideoCutter
 
@@ -39,6 +41,7 @@ NODE_CLASS_MAPPINGS = _merge_class_mappings(
     {"LFGG_ResizeImageByLongSide": ResizeImageByLongSide},
     {"LFGG_LoadAndCropImage": LoadAndCropImage},
     {"LFGG_PowerLoraLoaderFolder": PowerLoraLoaderFolder},
+    {"LFGG_PromptComposer": PromptComposer},
     {"LFGG_SaveImageDynamic": SaveImageDynamic},
     {"LFGG_VideoCutter": VideoCutter},
 )
@@ -49,6 +52,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LFGG_ResizeImageByLongSide": "LFGG Resize Image by Long Side",
     "LFGG_LoadAndCropImage": "LFGG Load and Crop Image",
     "LFGG_PowerLoraLoaderFolder": "LFGG Power LoRA Loader (Folder)",
+    "LFGG_PromptComposer": "LFGG Prompt Composer",
     "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
     "LFGG_VideoCutter": "LFGG Video Cutter",
 }

@@ -143,3 +143,40 @@ The MIT-licensed public Comfy Registry package `lfgg-nodes`, published by
 `lfelipegg` and displayed as `LFGG Nodes`, that contains accepted successor
 nodes. Only newly written or provenance-cleared code belongs in it.
 _Avoid_: New pack, modernized legacy pack
+
+### Prompt composition
+
+**Prompt composer**:
+A successor node that resolves one prompt template into an ordered positive
+prompt and the negative fragments contributed by its prompt styles. Stable ID:
+`LFGG_PromptComposer`.
+_Avoid_: Special text node, wildcard node
+
+**Prompt template**:
+User-authored text whose literal content and references are resolved into a
+positive prompt while preserving their authored order.
+_Avoid_: Prompt input, wildcard text
+
+**Wildcard library**:
+A recursively organized collection of named text files whose non-empty lines
+are alternative prompt fragments.
+_Avoid_: Prompt library, wildcard path
+
+**File wildcard**:
+A named set of alternatives from the wildcard library that contributes one
+prompt fragment when a prompt template is resolved.
+_Avoid_: Wildcard file, text file
+
+**Style catalog**:
+A collection of named prompt styles loaded from one CSV source.
+_Avoid_: Styles file, style library
+
+**Prompt style**:
+A selectable, named pair consisting of a positive prompt fragment and an
+optional negative prompt fragment from the style catalog.
+_Avoid_: Preset, CSV style
+
+**Style heading**:
+A visible, non-selectable style-catalog label whose positive and negative
+prompt fragments are both empty.
+_Avoid_: Empty style, separator style
