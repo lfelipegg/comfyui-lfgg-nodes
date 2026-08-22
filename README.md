@@ -199,10 +199,11 @@ first connection selects the channel's ComfyUI wire type, including compatible
 widget and combo types, and chained native reroutes or routing organizers
 propagate that type without entering prompt execution.
 
-The node begins with one empty channel and adds another when the last channel
-is connected or labeled, up to 32 channels. Right-click for Add, Rename, and
-Remove actions, or double-click a label to rename it. Labels are trimmed to 64
-Unicode characters and numbered defaults follow their current positions.
+The node begins with one empty channel and supports up to 32 channels.
+Right-click for Add, Rename, and Remove actions, or double-click a label to
+rename it. Unconnected unlabeled channels beyond the first are removed after
+disconnect or workflow normalization. Labels are trimmed to 64 Unicode
+characters and numbered defaults follow their current positions.
 Removing a connected channel reconnects its upstream source directly to every
 compatible downstream target; a channel is kept if that splice cannot be done
 without losing links. Deleting the whole organizer uses ComfyUI's normal

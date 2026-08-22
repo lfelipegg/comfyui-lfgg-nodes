@@ -199,7 +199,7 @@ function endpoint(graph, { input, output, type = "Fake" } = {}) {
   return node;
 }
 
-test("normalizes labels and keeps one bounded trailing channel", () => {
+test("normalizes labels and bounds manually added channels", () => {
   assert.equal(normalizeChannelLabel("  final image  "), "final image");
   assert.equal(normalizeChannelLabel(" "), null);
   assert.equal(normalizeChannelLabel("x".repeat(80)).length, 64);
@@ -212,7 +212,7 @@ test("normalizes labels and keeps one bounded trailing channel", () => {
 
   controls.rename(0, " model ");
   assert.equal(controls.label(0), "model");
-  assert.equal(node.inputs.length, 2);
+  assert.equal(node.inputs.length, 1);
   controls.rename(0, "");
   assert.equal(controls.label(0), "channel 1");
 
@@ -225,7 +225,7 @@ test("normalizes labels and keeps one bounded trailing channel", () => {
   node.onConfigure({});
   node.onSerialize(serialized);
   assert.equal(node.mode, liteGraph.ALWAYS);
-  assert.equal(serialized.properties.lfgg_routing_channels.length, MAX_CHANNELS);
+  assert.equal(serialized.properties.lfgg_routing_channels.length, 1);
 });
 
 test("keeps disconnected workflow slots compact and migrates the legacy title", () => {
@@ -278,7 +278,7 @@ test("keeps every linked input when ComfyUI restores slots by name", () => {
   restored.onNodeCreated();
   restored.configure({ inputs: saved });
 
-  assert.deepEqual(restored.inputs.map((input) => input.link), [11, 12, null]);
+  assert.deepEqual(restored.inputs.map((input) => input.link), [11, 12]);
 });
 
 test("preserves a manual size while enforcing the channel minimum", () => {
@@ -352,6 +352,55 @@ test("merges compatible widget constraints and rejects disjoint combos", () => {
   assert.equal(node.connect(0, third, 0), null);
 });
 
+test("keeps STRING links compatible when only their placeholders differ", () => {
+  const configKey = Symbol("config");
+  const graph = new FakeGraph();
+  const { node } = organizer(graph);
+  const source = endpoint(graph, { output: "STRING" });
+  const target = endpoint(graph, { input: "STRING" });
+  source.outputs[0].widget = {
+    [configKey]: () => ["STRING", { placeholder: "positive prompt" }],
+  };
+  target.inputs[0].widget = {
+    [configKey]: () => ["STRING", { placeholder: "negative prompt" }],
+  };
+
+  assert.ok(source.connect(0, node, 0));
+  assert.ok(node.connect(0, target, 0));
+});
+
+test("removes unconnected extra channels during normalization and disconnect", async () => {
+  const graph = new FakeGraph();
+  const source = endpoint(graph, { output: "IMAGE" });
+  const secondSource = endpoint(graph, { output: "IMAGE" });
+  const { node, controls } = organizer(graph);
+
+  assert.ok(source.connect(0, node, 0));
+  controls.add();
+  assert.equal(node.inputs.length, 2);
+
+  controls.normalize();
+
+  assert.equal(node.inputs.length, 1);
+  assert.equal(node.outputs.length, 1);
+  assert.equal(node.inputs[0].link != null, true);
+
+  controls.add();
+  controls.rename(1, "reserved");
+  controls.normalize();
+  assert.equal(node.inputs.length, 2);
+  controls.rename(1, "");
+  controls.normalize();
+  assert.equal(node.inputs.length, 1);
+
+  controls.add();
+  assert.ok(secondSource.connect(0, node, 1));
+  node.disconnectInput(1);
+  await Promise.resolve();
+
+  assert.equal(node.inputs.length, 1);
+});
+
 test("removing a channel splices fan-out and refuses destructive removal", () => {
   const warnings = [];
   const app = {
@@ -364,6 +413,7 @@ test("removing a channel splices fan-out and refuses destructive removal", () =>
   const firstTarget = endpoint(graph, { input: "IMAGE" });
   const secondTarget = endpoint(graph, { input: "IMAGE" });
   const { node, controls } = organizer(graph, app);
+  controls.add();
   source.connect(0, node, 0);
   node.connect(0, firstTarget, 0);
   node.connect(0, secondTarget, 0);
@@ -376,6 +426,7 @@ test("removing a channel splices fan-out and refuses destructive removal", () =>
   const unsafeNode = graph.add(new FakeNode("Unsafe organizer"));
   unsafeNode.type = ROUTING_ORGANIZER_ID;
   const unsafeControls = installRoutingOrganizer(unsafeNode, { LiteGraph: liteGraph, app });
+  unsafeControls.add();
   unsafeNode.connect(0, firstTarget, 0);
   assert.equal(unsafeControls.remove(0), false);
   assert.match(warnings.at(-1), /Connect an input/);

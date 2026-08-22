@@ -13,6 +13,7 @@ const ignoredWidgetOptions = new Set([
   "dynamicPrompts",
   "forceInput",
   "multiline",
+  "placeholder",
   "tooltip",
 ]);
 
@@ -329,15 +330,17 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
     while ((node.outputs?.length ?? 0) < count) node.addOutput("", "*");
     while (node.inputs.length > count) node.removeInput(node.inputs.length - 1);
     while (node.outputs.length > count) node.removeOutput(node.outputs.length - 1);
-    for (let index = 0; index < count; index += 1) {
+    for (let index = state().length - 1; index > 0; index -= 1) {
+      if (connected(index) || state()[index].label) continue;
+      node.removeOutput(index);
+      node.removeInput(index);
+      state().splice(index, 1);
+    }
+    for (let index = 0; index < state().length; index += 1) {
       for (const slot of [node.inputs[index], node.outputs[index]]) {
         slot.name = channelSlotName(index);
         slot.label = " ";
       }
-    }
-    if (state().at(-1).used && state().length < MAX_CHANNELS) addSlot();
-    for (let index = 0; index < state().length - 1; index += 1) {
-      state()[index].used = true;
     }
     controls.resize();
     return state();
@@ -375,15 +378,12 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
     const entry = state()?.[index];
     if (!entry) return false;
     entry.used = true;
-    if (index === state().length - 1 && state().length < MAX_CHANNELS) addSlot();
     controls.resize();
     return true;
   };
 
   controls.add = () => {
-    controls.normalize();
     if (state().length >= MAX_CHANNELS) return false;
-    state().at(-1).used = true;
     addSlot();
     controls.resize();
     dirty(node);
@@ -509,7 +509,10 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
     originalConnectionsChange?.apply(this, arguments);
     if (!state()?.[index]) return;
     if (isConnected && (link || connected(index))) controls.activate(index);
-    const update = () => controls.recompute(index);
+    const update = () => {
+      if (!isConnected) controls.normalize();
+      controls.recompute(index);
+    };
     if (isConnected) update();
     else queueMicrotask(update);
   };
