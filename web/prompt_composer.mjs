@@ -1,5 +1,5 @@
 const NODE_ID = "LFGG_PromptComposer";
-const CONTROLS_HEIGHT = 136;
+const CONTROLS_HEIGHT = 104;
 const installed = Symbol("lfggPromptComposer");
 
 function option(document, name, disabled = false) {
@@ -32,21 +32,28 @@ function replaceOptions(select, choices) {
   select.value = "";
 }
 
-function filterOptions(select, choices, query) {
-  const term = query.trim().toLowerCase();
-  replaceOptions(
-    select,
-    term
-      ? [choices[0], ...choices.slice(1).filter(({ textContent }) =>
-        textContent.toLowerCase().includes(term))]
-      : choices,
-  );
-}
-
 function unavailable(select, placeholder, document) {
   const item = option(document, "", true);
   item.textContent = placeholder;
   select.replaceChildren(item);
+}
+
+function menu(choices, event, select) {
+  const ContextMenu = globalThis.LiteGraph?.ContextMenu;
+  if (!ContextMenu || choices.length < 2) return false;
+  const items = choices.slice(1).map((choice) => ({
+    content: choice.textContent,
+    value: choice.value,
+    disabled: choice.disabled,
+  }));
+  new ContextMenu(items, {
+    className: "dark",
+    event,
+    callback: (item) => {
+      if (!item?.disabled) select(item?.value ?? item?.content ?? item);
+    },
+  });
+  return true;
 }
 
 function insertToken(node, input, token) {
@@ -71,22 +78,14 @@ function insertToken(node, input, token) {
   node.setDirtyCanvas?.(true, true);
 }
 
-function searchableSelect(document, text, role) {
-  const group = document.createElement("div");
+function labeledSelect(document, text, role) {
+  const label = document.createElement("label");
   const caption = document.createElement("span");
-  const search = document.createElement("input");
   const select = document.createElement("select");
   caption.textContent = text;
-  search.type = "search";
-  search.placeholder = `Search ${text.toLowerCase()}s…`;
-  search.disabled = true;
-  search.dataset.role = `${role}-search`;
-  search.setAttribute("aria-label", `Search ${text.toLowerCase()}s`);
   select.dataset.role = role;
   select.setAttribute("aria-label", text);
-  group.setAttribute("role", "group");
-  group.setAttribute("aria-label", text);
-  Object.assign(group.style, {
+  Object.assign(label.style, {
     display: "grid",
     gap: "4px",
     minWidth: "0",
@@ -96,17 +95,15 @@ function searchableSelect(document, text, role) {
     lineHeight: "1.2",
     opacity: "0.75",
   });
-  const controlStyle = {
+  Object.assign(select.style, {
     width: "100%",
     minWidth: "0",
     maxWidth: "100%",
     height: "28px",
     boxSizing: "border-box",
-  };
-  Object.assign(search.style, controlStyle);
-  Object.assign(select.style, controlStyle);
-  group.append(caption, search, select);
-  return { group, search, select };
+  });
+  label.append(caption, select);
+  return { label, select };
 }
 
 export function installPromptComposer(
@@ -130,8 +127,8 @@ export function installPromptComposer(
   const root = document.createElement("div");
   const selectors = document.createElement("div");
   const actions = document.createElement("div");
-  const wildcard = searchableSelect(document, "Wildcard", "wildcards");
-  const style = searchableSelect(document, "Style", "styles");
+  const wildcard = labeledSelect(document, "Wildcard", "wildcards");
+  const style = labeledSelect(document, "Style", "styles");
   const refresh = document.createElement("button");
   const status = document.createElement("span");
   Object.assign(root.style, {
@@ -181,7 +178,7 @@ export function installPromptComposer(
     lineHeight: "1.3",
     opacity: "0.8",
   });
-  selectors.append(wildcard.group, style.group);
+  selectors.append(wildcard.label, style.label);
   actions.append(refresh, status);
   root.append(selectors, actions);
 
@@ -222,10 +219,8 @@ export function installPromptComposer(
         );
         wildcardOptions = nextWildcardOptions;
         styleOptions = nextStyleOptions;
-        wildcard.search.disabled = false;
-        style.search.disabled = false;
-        filterOptions(wildcard.select, wildcardOptions, wildcard.search.value);
-        filterOptions(style.select, styleOptions, style.search.value);
+        replaceOptions(wildcard.select, wildcardOptions);
+        replaceOptions(style.select, styleOptions);
         loaded = true;
         const wildcardLabel = result.wildcards.length === 1 ? "wildcard" : "wildcards";
         const styleLabel = result.styles.length === 1 ? "style" : "styles";
@@ -246,27 +241,29 @@ export function installPromptComposer(
     return request;
   };
 
-  wildcard.select.addEventListener("change", () => {
-    if (wildcard.select.value) {
-      insertToken(node, input, `__${wildcard.select.value}__, `);
-      wildcard.select.value = "";
+  const insertWildcard = (value) => {
+    if (value) insertToken(node, input, `__${value}__, `);
+    wildcard.select.value = "";
+  };
+  const insertStyle = (value) => {
+    if (value) insertToken(node, input, `[[style:${value}]], `);
+    style.select.value = "";
+  };
+  wildcard.select.addEventListener("pointerdown", (event) => {
+    if (wildcardOptions && menu(wildcardOptions, event, insertWildcard)) {
+      event.preventDefault?.();
     }
   });
-  wildcard.search.addEventListener("input", () => {
-    if (wildcardOptions) {
-      filterOptions(wildcard.select, wildcardOptions, wildcard.search.value);
+  wildcard.select.addEventListener("change", () => {
+    insertWildcard(wildcard.select.value);
+  });
+  style.select.addEventListener("pointerdown", (event) => {
+    if (styleOptions && menu(styleOptions, event, insertStyle)) {
+      event.preventDefault?.();
     }
   });
   style.select.addEventListener("change", () => {
-    if (style.select.value) {
-      insertToken(node, input, `[[style:${style.select.value}]], `);
-      style.select.value = "";
-    }
-  });
-  style.search.addEventListener("input", () => {
-    if (styleOptions) {
-      filterOptions(style.select, styleOptions, style.search.value);
-    }
+    insertStyle(style.select.value);
   });
   refresh.addEventListener("click", () => {
     domWidget.lfggReady = load();

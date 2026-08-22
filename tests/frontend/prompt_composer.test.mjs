@@ -165,8 +165,8 @@ test("constrains library controls to a compact node-width layout", async () => {
   assert.equal(widget.element.style.display, "grid");
   assert.equal(widget.element.style.width, "100%");
   assert.equal(widget.element.style.minWidth, "0");
-  assert.equal(widget.element.style.height, "136px");
-  assert.equal(widget.element.style.maxHeight, "136px");
+  assert.equal(widget.element.style.height, "104px");
+  assert.equal(widget.element.style.maxHeight, "104px");
   assert.equal(widget.element.style.alignContent, "start");
   assert.equal(widget.element.style.boxSizing, "border-box");
   assert.equal(byRole(widget, "selectors").style.gridTemplateColumns, "repeat(2, minmax(0, 1fr))");
@@ -176,22 +176,17 @@ test("constrains library controls to a compact node-width layout", async () => {
     assert.equal(select.style.minWidth, "0");
     assert.equal(select.style.maxWidth, "100%");
   }
-  for (const role of ["wildcards-search", "styles-search"]) {
-    const search = byRole(widget, role);
-    assert.equal(search.type, "search");
-    assert.equal(search.style.width, "100%");
-  }
   assert.equal(byRole(widget, "actions").style.display, "flex");
   assert.equal(byRole(widget, "status").style.textOverflow, "ellipsis");
   assert.equal(byRole(widget, "status").textContent, "1 wildcard · 1 style");
-  assert.deepEqual(widget.computeSize(), [0, 136]);
-  assert.equal(widget.options.getMinHeight(), 136);
-  assert.equal(widget.options.getMaxHeight(), 136);
-  assert.equal(widget.options.getHeight(), 136);
+  assert.deepEqual(widget.computeSize(), [0, 104]);
+  assert.equal(widget.options.getMinHeight(), 104);
+  assert.equal(widget.options.getMaxHeight(), 104);
+  assert.equal(widget.options.getHeight(), 104);
   assert.deepEqual(node.size, [360, 330]);
 });
 
-test("searches wildcard and style options without enabling headings", async () => {
+test("opens wildcard and style choices as searchable combo menus", async () => {
   const node = graphNode();
   const widget = installPromptComposer(node, {
     document: documentStub,
@@ -210,23 +205,38 @@ test("searches wildcard and style options without enabling headings", async () =
   });
   await widget.lfggReady;
 
-  const wildcardSearch = byRole(widget, "wildcards-search");
-  wildcardSearch.value = "PETS";
-  wildcardSearch.dispatch("input");
-  assert.deepEqual(
-    byRole(widget, "wildcards").children.map(({ textContent }) => textContent),
-    ["Add wildcard…", "animals/pets"],
-  );
+  const menus = [];
+  const previousLiteGraph = globalThis.LiteGraph;
+  globalThis.LiteGraph = {
+    ContextMenu: class {
+      constructor(items, options) {
+        menus.push({ items, options });
+      }
+    },
+  };
 
-  const styleSearch = byRole(widget, "styles-search");
-  styleSearch.value = "camera";
-  styleSearch.dispatch("input");
-  assert.equal(byRole(widget, "styles").children[1].textContent, "--- Camera ---");
-  assert.equal(byRole(widget, "styles").children[1].disabled, true);
+  try {
+    byRole(widget, "wildcards").dispatch("pointerdown");
+    assert.equal(menus[0].options.className, "dark");
+    assert.deepEqual(
+      menus[0].items.map(({ content }) => content),
+      ["animals/pets", "places/mountains"],
+    );
+    menus[0].options.callback(menus[0].items[0]);
+    assert.equal(node.widgets[0].value, "front __animals/pets__, ");
 
-  styleSearch.value = "";
-  styleSearch.dispatch("input");
-  assert.equal(byRole(widget, "styles").children.length, 4);
+    byRole(widget, "styles").dispatch("pointerdown");
+    assert.equal(menus[1].items[0].disabled, true);
+    menus[1].options.callback(menus[1].items[0]);
+    assert.equal(node.widgets[0].value, "front __animals/pets__, ");
+    menus[1].options.callback(menus[1].items[1]);
+    assert.equal(
+      node.widgets[0].value,
+      "front __animals/pets__, [[style:Cinematic]], ",
+    );
+  } finally {
+    globalThis.LiteGraph = previousLiteGraph;
+  }
 });
 
 test("inserts wildcard and style tokens at the caret and replaces selected text", async () => {
