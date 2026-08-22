@@ -1143,6 +1143,33 @@ def development_manifest():
         "output_name": ["text"],
         "output_tooltips": ["Text after every replacement."],
     }
+    manifest["nodes"]["LFGG_StringJoin"] = {
+        "display_name": "LFGG String Join",
+        "description": "Joins supplied text inputs in order with a literal separator.",
+        "category": "LFGG/text",
+        "input": {
+            "required": {
+                "separator": [
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "tooltip": "Literal text placed between supplied inputs.",
+                    },
+                ]
+            },
+            "optional": {
+                f"text_{index}": [
+                    "STRING",
+                    {"forceInput": True, "tooltip": "Ordered text input."},
+                ]
+                for index in range(1, 33)
+            },
+        },
+        "output": ["STRING"],
+        "output_name": ["text"],
+        "output_tooltips": ["Joined text."],
+    }
     manifest["nodes"]["LFGG_StringReplaceRegex"] = {
         "display_name": "LFGG String Replace (Regex)",
         "description": (

@@ -71,6 +71,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_PromptComposer": "LFGG Prompt Composer",
         "LFGG_RoutingOrganizer": "LFGG Routing Organizer",
         "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
+        "LFGG_StringJoin": "LFGG String Join",
         "LFGG_StringReplace": "LFGG String Replace",
         "LFGG_StringReplaceRegex": "LFGG String Replace (Regex)",
         "LFGG_BooleanSwitch": "LFGG Boolean Switch",
@@ -88,6 +89,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_PromptComposer",
         "LFGG_RoutingOrganizer",
         "LFGG_SaveImageDynamic",
+        "LFGG_StringJoin",
         "LFGG_StringReplace",
         "LFGG_StringReplaceRegex",
         "LFGG_BooleanSwitch",
@@ -111,6 +113,12 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
     assert string_replace.FUNCTION == "replace"
     assert string_replace.RETURN_TYPES == ("STRING",)
     assert string_replace.RETURN_NAMES == ("text",)
+
+    string_join = package.NODE_CLASS_MAPPINGS["LFGG_StringJoin"]
+    assert string_join.CATEGORY == "LFGG/text"
+    assert string_join.FUNCTION == "join"
+    assert string_join.RETURN_TYPES == ("STRING",)
+    assert string_join.RETURN_NAMES == ("text",)
 
     string_replace_regex = package.NODE_CLASS_MAPPINGS["LFGG_StringReplaceRegex"]
     assert string_replace_regex.CATEGORY == "LFGG/text"
@@ -908,6 +916,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         "node --test tests/frontend/prompt_composer.test.mjs",
         "node --test tests/frontend/routing_organizer.test.mjs",
         "node --test tests/frontend/switches.test.mjs",
+        "node --test tests/frontend/string_join.test.mjs",
         "node --test tests/frontend/value_inspector.test.mjs",
         "do not read or write files",
         "exclusive creation of final PNG files",
@@ -976,8 +985,10 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         "LFGG Boolean Switch",
         "LFGG Index Switch",
         "LFGG String Replace",
+        "LFGG String Join",
         "LFGG String Replace (Regex)",
         "LFGG_StringReplace` and `LFGG_StringReplaceRegex",
+        "LFGG_StringJoin",
         "invalid capture references",
         "no hard match timeout",
         "False` to `false`",
@@ -1036,6 +1047,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
             "LFGG_RoutingOrganizer",
             "LFGG_BooleanSwitch",
             "LFGG_IndexSwitch",
+            "LFGG_StringJoin",
             "LFGG_StringReplace",
             "LFGG_StringReplaceRegex",
             "LFGG_ValueInspector",

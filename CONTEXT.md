@@ -215,6 +215,11 @@ _Avoid_: Empty style, separator style
 
 ### Text replacement
 
+**String join**:
+A successor node that combines ordered input strings by placing one separator
+between each adjacent pair. Stable ID: `LFGG_StringJoin`.
+_Avoid_: String concatenate, text combiner, special text node
+
 **String replace**:
 A successor node that replaces every exact occurrence of search text in source
 text. Stable ID: `LFGG_StringReplace`.

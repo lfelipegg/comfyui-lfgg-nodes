@@ -10,6 +10,7 @@ if __package__:
     from .lfgg_nodes.prompt_composer import PromptComposer
     from .lfgg_nodes.routing_organizer import RoutingOrganizer
     from .lfgg_nodes.save_image_dynamic import SaveImageDynamic
+    from .lfgg_nodes.string_join import StringJoin
     from .lfgg_nodes.string_replace import StringReplace, StringReplaceRegex
     from .lfgg_nodes.switches import BooleanSwitch, IndexSwitch
     from .lfgg_nodes.value_inspector import ValueInspector
@@ -26,6 +27,7 @@ else:
     from lfgg_nodes.prompt_composer import PromptComposer
     from lfgg_nodes.routing_organizer import RoutingOrganizer
     from lfgg_nodes.save_image_dynamic import SaveImageDynamic
+    from lfgg_nodes.string_join import StringJoin
     from lfgg_nodes.string_replace import StringReplace, StringReplaceRegex
     from lfgg_nodes.switches import BooleanSwitch, IndexSwitch
     from lfgg_nodes.value_inspector import ValueInspector
@@ -52,6 +54,7 @@ NODE_CLASS_MAPPINGS = _merge_class_mappings(
     {"LFGG_PromptComposer": PromptComposer},
     {"LFGG_RoutingOrganizer": RoutingOrganizer},
     {"LFGG_SaveImageDynamic": SaveImageDynamic},
+    {"LFGG_StringJoin": StringJoin},
     {"LFGG_StringReplace": StringReplace},
     {"LFGG_StringReplaceRegex": StringReplaceRegex},
     {"LFGG_BooleanSwitch": BooleanSwitch},
@@ -69,6 +72,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LFGG_PromptComposer": "LFGG Prompt Composer",
     "LFGG_RoutingOrganizer": "LFGG Routing Organizer",
     "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
+    "LFGG_StringJoin": "LFGG String Join",
     "LFGG_StringReplace": "LFGG String Replace",
     "LFGG_StringReplaceRegex": "LFGG String Replace (Regex)",
     "LFGG_BooleanSwitch": "LFGG Boolean Switch",

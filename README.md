@@ -44,6 +44,7 @@ accelerators are not claimed.
 | LFGG Load and Crop Image | one still image, ratio, exact source-pixel crop | cropped image, alpha-derived mask |
 | LFGG Power LoRA Loader (Folder) | MODEL, CLIP, folder, ordered LoRA rows | MODEL, CLIP |
 | LFGG Prompt Composer | multiline template, local style/wildcard libraries, seed | prompt, negative prompt |
+| LFGG String Join | literal separator, 2–32 ordered string inputs | joined text |
 | LFGG String Replace | multiline text, literal search/replacement, casing | replaced text |
 | LFGG String Replace (Regex) | multiline text, literal/regex search/replacement, casing | replaced text |
 | LFGG Save Image Dynamic | IMAGE, path/filename templates, metadata toggle, optional model label | saved-image previews |
@@ -238,6 +239,15 @@ with an actionable error. These nodes make no file or network I/O. Regexes are
 locally authored workflow patterns; Python's standard library engine has no
 hard match timeout.
 
+`LFGG String Join` is in `LFGG/text`, with stable ID `LFGG_StringJoin`. It
+joins connected `text_1` through `text_32` in order with a literal `separator`.
+It begins with two inputs and adds one trailing socket after the final input
+receives a real link, up to 32; the saved count never shrinks and restored
+disconnected sockets do not grow. Missing inputs are omitted, while supplied
+empty strings and whitespace are preserved. The separator, each input, and the
+joined output are valid UTF-8 text limited to 1 MiB; invalid values fail with an
+actionable error. It makes no file or network I/O.
+
 `LFGG Value Inspector` is a terminal output node in `LFGG/debug`. Stable ID
 `LFGG_ValueInspector`. Connect any value and queue the workflow to show a
 read-only diagnostic report inside the node. One scheduled value is shown
@@ -356,6 +366,7 @@ node --test tests/frontend/video_cutter.test.mjs
 node --test tests/frontend/prompt_composer.test.mjs
 node --test tests/frontend/routing_organizer.test.mjs
 node --test tests/frontend/switches.test.mjs
+node --test tests/frontend/string_join.test.mjs
 node --test tests/frontend/value_inspector.test.mjs
 python -m ruff check .
 python -m pytest -q tests/unit
