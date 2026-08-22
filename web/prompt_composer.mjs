@@ -66,6 +66,23 @@ function labeledSelect(document, text, role) {
   caption.textContent = text;
   select.dataset.role = role;
   select.setAttribute("aria-label", text);
+  Object.assign(label.style, {
+    display: "grid",
+    gap: "4px",
+    minWidth: "0",
+  });
+  Object.assign(caption.style, {
+    fontSize: "11px",
+    lineHeight: "1.2",
+    opacity: "0.75",
+  });
+  Object.assign(select.style, {
+    width: "100%",
+    minWidth: "0",
+    maxWidth: "100%",
+    height: "28px",
+    boxSizing: "border-box",
+  });
   label.append(caption, select);
   return { label, select };
 }
@@ -89,17 +106,64 @@ export function installPromptComposer(
   if (!promptWidget) return;
   const input = promptWidget.inputEl;
   const root = document.createElement("div");
-  const wildcard = labeledSelect(document, "Add wildcard…", "wildcards");
-  const style = labeledSelect(document, "Add style…", "styles");
+  const selectors = document.createElement("div");
+  const actions = document.createElement("div");
+  const wildcard = labeledSelect(document, "Wildcard", "wildcards");
+  const style = labeledSelect(document, "Style", "styles");
   const refresh = document.createElement("button");
   const status = document.createElement("span");
+  Object.assign(root.style, {
+    display: "grid",
+    gap: "8px",
+    width: "100%",
+    minWidth: "0",
+    padding: "8px",
+    boxSizing: "border-box",
+  });
+  selectors.dataset.role = "selectors";
+  Object.assign(selectors.style, {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "8px",
+    minWidth: "0",
+  });
+  actions.dataset.role = "actions";
+  Object.assign(actions.style, {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    minWidth: "0",
+  });
   refresh.type = "button";
   refresh.textContent = "Refresh libraries";
   refresh.dataset.role = "refresh";
+  Object.assign(refresh.style, {
+    flex: "0 0 auto",
+    height: "28px",
+    padding: "0 10px",
+    boxSizing: "border-box",
+  });
   status.dataset.role = "status";
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
-  root.append(wildcard.label, style.label, refresh, status);
+  Object.assign(status.style, {
+    flex: "1 1 auto",
+    minWidth: "0",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    fontSize: "11px",
+    lineHeight: "1.3",
+    opacity: "0.8",
+  });
+  selectors.append(wildcard.label, style.label);
+  actions.append(refresh, status);
+  root.append(selectors, actions);
+
+  const setStatus = (message) => {
+    status.textContent = message;
+    status.title = message;
+  };
 
   let loaded = false;
   let request;
@@ -108,7 +172,7 @@ export function installPromptComposer(
     if (request) return request;
     request = (async () => {
       refresh.disabled = true;
-      status.textContent = "Refreshing prompt libraries…";
+      setStatus("Refreshing…");
       try {
         const result = await fetchLibraries();
         if (
@@ -132,15 +196,17 @@ export function installPromptComposer(
         replaceOptions(wildcard.select, wildcardOptions);
         replaceOptions(style.select, styleOptions);
         loaded = true;
-        status.textContent = `Loaded ${result.wildcards.length} wildcards and ${result.styles.length} styles.`;
+        const wildcardLabel = result.wildcards.length === 1 ? "wildcard" : "wildcards";
+        const styleLabel = result.styles.length === 1 ? "style" : "styles";
+        setStatus(`${result.wildcards.length} ${wildcardLabel} · ${result.styles.length} ${styleLabel}`);
       } catch (error) {
         if (!loaded) {
           unavailable(wildcard.select, "Wildcards unavailable", document);
           unavailable(style.select, "Styles unavailable", document);
         }
-        status.textContent = error instanceof Error
+        setStatus(error instanceof Error
           ? error.message
-          : "Prompt libraries are unavailable";
+          : "Prompt libraries are unavailable");
       } finally {
         refresh.disabled = false;
         request = undefined;
@@ -169,7 +235,7 @@ export function installPromptComposer(
     "lfgg_prompt_composer",
     "lfgg_prompt_composer",
     root,
-    { serialize: false, getMinHeight: () => 130 },
+    { serialize: false, getMinHeight: () => 104 },
   );
   domWidget.serialize = false;
   domWidget.options.serialize = false;
@@ -192,7 +258,7 @@ export function installPromptComposer(
   };
   node.setSize?.([
     Math.max(node.size?.[0] ?? 0, 360),
-    Math.max(node.size?.[1] ?? 0, 360),
+    Math.max(node.size?.[1] ?? 0, 330),
   ]);
   node[installed] = domWidget;
   domWidget.lfggReady = load();

@@ -9,6 +9,7 @@ class Element {
     this.children = [];
     this.dataset = {};
     this.listeners = {};
+    this.style = {};
     this.value = "";
     this.disabled = false;
     this.selectionStart = 0;
@@ -147,6 +148,36 @@ test("installs idempotent nonserialized selectors with disabled catalog entries"
   const serialized = { widgets_values: ["front END", null, 0] };
   node.onSerialize(serialized);
   assert.deepEqual(serialized.widgets_values, ["front END", 0]);
+});
+
+test("constrains library controls to a compact node-width layout", async () => {
+  const node = graphNode();
+  const widget = installPromptComposer(node, {
+    document: documentStub,
+    fetchLibraries: async () => ({
+      ok: true,
+      wildcards: [{ name: "a/very/long/nested/wildcard/name", disabled: false }],
+      styles: [{ name: "A very long style name", disabled: false }],
+    }),
+  });
+  await widget.lfggReady;
+
+  assert.equal(widget.element.style.display, "grid");
+  assert.equal(widget.element.style.width, "100%");
+  assert.equal(widget.element.style.minWidth, "0");
+  assert.equal(widget.element.style.boxSizing, "border-box");
+  assert.equal(byRole(widget, "selectors").style.gridTemplateColumns, "repeat(2, minmax(0, 1fr))");
+  for (const role of ["wildcards", "styles"]) {
+    const select = byRole(widget, role);
+    assert.equal(select.style.width, "100%");
+    assert.equal(select.style.minWidth, "0");
+    assert.equal(select.style.maxWidth, "100%");
+  }
+  assert.equal(byRole(widget, "actions").style.display, "flex");
+  assert.equal(byRole(widget, "status").style.textOverflow, "ellipsis");
+  assert.equal(byRole(widget, "status").textContent, "1 wildcard · 1 style");
+  assert.equal(widget.options.getMinHeight(), 104);
+  assert.deepEqual(node.size, [360, 330]);
 });
 
 test("inserts wildcard and style tokens at the caret and replaces selected text", async () => {
