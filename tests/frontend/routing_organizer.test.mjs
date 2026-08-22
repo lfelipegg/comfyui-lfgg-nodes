@@ -64,7 +64,7 @@ class FakeNode {
   }
 
   setSize(size) {
-    this.size = [...size];
+    this.size = size;
   }
 
   setDirtyCanvas() {
@@ -185,8 +185,10 @@ test("extends the backend definition instead of registering a frontend-only node
   node.type = ROUTING_ORGANIZER_ID;
   node.onNodeCreated();
   assert.equal(node.isVirtualNode, true);
-  assert.equal(node.inputs[0].name, "");
-  assert.equal(node.outputs[0].name, "");
+  assert.equal(node.inputs[0].name, "channel_1");
+  assert.equal(node.outputs[0].name, "channel_1");
+  assert.equal(node.inputs[0].label, " ");
+  assert.equal(node.outputs[0].label, " ");
 });
 
 function endpoint(graph, { input, output, type = "Fake" } = {}) {
@@ -241,6 +243,53 @@ test("keeps disconnected workflow slots compact and migrates the legacy title", 
   assert.equal(node.inputs.length, 1);
   assert.equal(node.outputs.length, 1);
   assert.equal(node.title, "LFGG Routing Organizer");
+});
+
+test("keeps every linked input when ComfyUI restores slots by name", () => {
+  const graph = new FakeGraph();
+  const { node, controls } = organizer(graph);
+  controls.add();
+  const saved = node.inputs.map((input, index) => ({
+    ...input,
+    name: "",
+    link: index + 11,
+  }));
+
+  class BackendNode extends FakeNode {
+    configure(data) {
+      const byName = new Map(data.inputs.map((input) => [input.name, input]));
+      const definedNames = new Set(this.inputs.map((input) => input.name));
+      this.inputs = [
+        ...this.inputs.map((input) => byName.get(input.name) ?? input),
+        ...data.inputs.filter((input) => !definedNames.has(input.name)),
+      ];
+      this.onConfigure?.(data);
+    }
+  }
+
+  extendRoutingOrganizer(
+    BackendNode,
+    { name: ROUTING_ORGANIZER_ID },
+    { LiteGraph: liteGraph, app: {} },
+  );
+  const restored = new BackendNode("LFGG Routing Organizer");
+  restored.type = ROUTING_ORGANIZER_ID;
+  new FakeGraph().add(restored);
+  restored.onNodeCreated();
+  restored.configure({ inputs: saved });
+
+  assert.deepEqual(restored.inputs.map((input) => input.link), [11, 12, null]);
+});
+
+test("preserves a manual size while enforcing the channel minimum", () => {
+  const graph = new FakeGraph();
+  const { node, controls } = organizer(graph);
+  node.setSize([480, 160]);
+
+  node.onConfigure({});
+  controls.rename(0, "long routing label");
+
+  assert.deepEqual(node.size, [480, 160]);
 });
 
 test("propagates types, permits fan-out and rejects routing cycles", () => {

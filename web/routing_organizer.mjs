@@ -265,6 +265,20 @@ function dirty(node) {
   node.graph?.setDirtyCanvas?.(true, true);
 }
 
+function channelSlotName(index) {
+  return `channel_${index + 1}`;
+}
+
+function normalizeSavedSlots(data) {
+  for (const slots of [data?.inputs, data?.outputs]) {
+    slots?.forEach((slot, index) => {
+      slot.name = channelSlotName(index);
+      slot.label = " ";
+    });
+  }
+  if (data?.title === ROUTING_ORGANIZER_ID) data.title = ROUTING_ORGANIZER_NAME;
+}
+
 export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
   if (node[installed]) return node[installed];
   if (!LiteGraph) throw new Error("LFGG Routing Organizer requires LiteGraph");
@@ -276,6 +290,8 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
   node.mode = LiteGraph.ALWAYS ?? 0;
 
   const controls = { node };
+  let automaticSize = null;
+  let manuallySized = false;
 
   const state = () => node.properties[STATE_KEY];
   const connected = (index) =>
@@ -283,8 +299,9 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
     Boolean(node.outputs?.[index]?.links?.length);
 
   const addSlot = (entry = { label: null, used: false }) => {
-    node.addInput("", "*");
-    node.addOutput("", "*");
+    const index = node.inputs?.length ?? 0;
+    node.addInput(channelSlotName(index), "*", { label: " " });
+    node.addOutput(channelSlotName(index), "*", { label: " " });
     state().push(entry);
   };
 
@@ -312,7 +329,12 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
     while ((node.outputs?.length ?? 0) < count) node.addOutput("", "*");
     while (node.inputs.length > count) node.removeInput(node.inputs.length - 1);
     while (node.outputs.length > count) node.removeOutput(node.outputs.length - 1);
-    for (const slot of [...node.inputs, ...node.outputs]) slot.name = "";
+    for (let index = 0; index < count; index += 1) {
+      for (const slot of [node.inputs[index], node.outputs[index]]) {
+        slot.name = channelSlotName(index);
+        slot.label = " ";
+      }
+    }
     if (state().at(-1).used && state().length < MAX_CHANNELS) addSlot();
     for (let index = 0; index < state().length - 1; index += 1) {
       state()[index].used = true;
@@ -329,7 +351,24 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
       (length, _entry, index) => Math.max(length, controls.label(index).length),
       ROUTING_ORGANIZER_NAME.length,
     ) ?? ROUTING_ORGANIZER_NAME.length;
-    node.setSize?.([Math.min(520, Math.max(220, 42 + longest * 7)), state().length * slotHeight + 6]);
+    const minimum = [
+      Math.min(520, Math.max(220, 42 + longest * 7)),
+      state().length * slotHeight + 6,
+    ];
+    if (
+      automaticSize &&
+      (node.size?.[0] !== automaticSize[0] || node.size?.[1] !== automaticSize[1])
+    ) {
+      manuallySized = true;
+    }
+    const size = manuallySized
+      ? [
+          Math.max(node.size?.[0] ?? 0, minimum[0]),
+          Math.max(node.size?.[1] ?? 0, minimum[1]),
+        ]
+      : minimum;
+    automaticSize = manuallySized ? null : [...size];
+    node.setSize?.(size);
   };
 
   controls.activate = (index) => {
@@ -571,9 +610,14 @@ export function extendRoutingOrganizer(nodeType, nodeData, { LiteGraph, app }) {
   if (nodeType.prototype[extended]) return true;
 
   const original = nodeType.prototype.onNodeCreated;
+  const originalConfigure = nodeType.prototype.configure;
   nodeType.prototype.onNodeCreated = function () {
     original?.apply(this, arguments);
     installRoutingOrganizer(this, { LiteGraph, app });
+  };
+  nodeType.prototype.configure = function (data) {
+    normalizeSavedSlots(data);
+    return originalConfigure?.apply(this, arguments);
   };
   nodeType.prototype[extended] = true;
   nodeType.collapsable = false;
