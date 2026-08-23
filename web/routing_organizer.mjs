@@ -277,6 +277,7 @@ function normalizeSavedSlots(data) {
       slot.label = " ";
     });
   }
+  data?.inputs?.forEach((slot) => delete slot.widget);
   if (data?.title === ROUTING_ORGANIZER_ID) data.title = ROUTING_ORGANIZER_NAME;
 }
 
@@ -462,7 +463,7 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
       point.node.__outputType = type;
       if (point.node.type === ROUTING_ORGANIZER_ID && input) {
         input.type = type;
-        copyWidget(input, resolvedWidget);
+        delete input.widget;
         copyWidget(output, resolvedWidget);
       }
     }

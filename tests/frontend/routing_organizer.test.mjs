@@ -246,7 +246,7 @@ test("keeps disconnected workflow slots compact and migrates the legacy title", 
   assert.equal(node.title, "LFGG Routing Organizer");
 });
 
-test("keeps every linked input when ComfyUI restores slots by name", () => {
+test("keeps linked inputs and strips widget markers during restore", () => {
   const graph = new FakeGraph();
   const { node, controls } = organizer(graph);
   controls.add();
@@ -254,6 +254,7 @@ test("keeps every linked input when ComfyUI restores slots by name", () => {
     ...input,
     name: "",
     link: index + 11,
+    widget: { name: `channel_${index + 1}` },
   }));
 
   class BackendNode extends FakeNode {
@@ -280,6 +281,7 @@ test("keeps every linked input when ComfyUI restores slots by name", () => {
   restored.configure({ inputs: saved });
 
   assert.deepEqual(restored.inputs.map((input) => input.link), [11, 12, null]);
+  assert.equal(restored.inputs.some((input) => input.widget), false);
 });
 
 test("preserves a manual size while enforcing the channel minimum", () => {
@@ -349,7 +351,8 @@ test("merges compatible widget constraints and rejects disjoint combos", () => {
 
   assert.ok(node.connect(0, first, 0));
   assert.ok(node.connect(0, second, 0));
-  assert.deepEqual(node.inputs[0].widget[configKey](), ["COMBO", { options: ["b"] }]);
+  assert.equal(node.inputs[0].widget, undefined);
+  assert.deepEqual(node.outputs[0].widget[configKey](), ["COMBO", { options: ["b"] }]);
   assert.equal(node.connect(0, third, 0), null);
 });
 
