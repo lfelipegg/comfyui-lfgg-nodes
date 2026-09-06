@@ -119,6 +119,7 @@ function menu(items, event, select) {
     })),
     {
       event: event?.eDown ?? event?.e ?? event,
+      className: "dark",
       callback: (item) => {
         if (!item?.disabled) select(item?.value ?? item?.content ?? item);
       },

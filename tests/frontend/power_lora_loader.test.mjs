@@ -387,10 +387,6 @@ test("opens row LoRA choices in the native themed context menu", () => {
   try {
     assert.equal(clickVisible(rowWidget, node, filename), true);
     assert.equal(menus.length, 1);
-    assert.equal(
-      Object.prototype.hasOwnProperty.call(menus[0].options, "className"),
-      false,
-    );
     assert.deepEqual(
       menus[0].items.map(({ content }) => content),
       ["anime/hero.safetensors", "photo.safetensors"],
@@ -430,6 +426,7 @@ test("opens folder and add selectors as searchable combo menus", () => {
     assert.equal(controls.folder.onPointerDown(folderPointer, node), true);
     folderPointer.onClick(folderPointer.eDown);
     assert.equal(menus[0].items.length, 6);
+    assert.equal(menus[0].options.className, "dark", "enable ComfyUI's native list filter");
     menus[0].options.callback(menus[0].items[2]);
     assert.equal(controls.folder.value, "b");
 
@@ -438,6 +435,7 @@ test("opens folder and add selectors as searchable combo menus", () => {
     assert.equal(controls.addWidget.onPointerDown(addPointer, node), true);
     addPointer.onClick(addPointer.eDown);
     assert.equal(menus[1].items.length, 5);
+    assert.equal(menus[1].options.className, "dark", "enable ComfyUI's native list filter");
     menus[1].options.callback(menus[1].items[4]);
     assert.equal(controls.addWidget.value, "e/five.safetensors");
 

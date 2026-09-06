@@ -70,6 +70,7 @@ function menu(choices, event, select) {
   }));
   new ContextMenu(items, {
     event,
+    className: "dark",
     callback: (item) => {
       if (!item?.disabled) select(item?.value ?? item?.content ?? item);
     },

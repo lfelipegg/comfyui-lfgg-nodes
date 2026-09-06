@@ -209,6 +209,7 @@ test("opens wildcard and style choices as searchable combo menus", async () => {
 
   try {
     byRole(widget, "wildcards").dispatch("pointerdown");
+    assert.equal(menus[0].options.className, "dark", "enable ComfyUI's native list filter");
     assert.deepEqual(
       menus[0].items.map(({ content }) => content),
       ["animals/pets", "places/mountains"],
@@ -217,6 +218,7 @@ test("opens wildcard and style choices as searchable combo menus", async () => {
     assert.equal(node.widgets[0].value, "front __animals/pets__, ");
 
     byRole(widget, "styles").dispatch("pointerdown");
+    assert.equal(menus[1].options.className, "dark", "enable ComfyUI's native list filter");
     assert.equal(menus[1].items[0].disabled, true);
     menus[1].options.callback(menus[1].items[0]);
     assert.equal(node.widgets[0].value, "front __animals/pets__, ");
