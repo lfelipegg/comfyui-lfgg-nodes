@@ -1,11 +1,14 @@
 # LFGG Prompt Composer
 
-Write the prompt in the multiline `prompt_template` box. Use **Add wildcard…**
-to insert `__folder/name__` at the caret, or **Add style…** to insert
+Write the prompt in the multiline `prompt_template` box. Use **Insert wildcard**
+to insert `__folder/name__` at the caret, or **Insert style** to insert
 `[[style:Exact Name]]`. The selectors are editing controls only; the template
 and seed are the persisted inputs. Empty wildcard files and CSV rows with no
 positive or negative value are shown disabled. Search filters either selector
 inside the dropdown after it opens.
+Insertion replaces selected text when a selection exists. The toolbar wraps at
+narrow node widths, and refresh progress or failure is shown without replacing
+the template or the last valid library choices.
 
 Configure one styles CSV and one wildcard root in
 `<ComfyUI user directory>/lfgg_nodes/config.json`:

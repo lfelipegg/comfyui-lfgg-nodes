@@ -4,15 +4,21 @@ Connect a standard ComfyUI `VIDEO`, then select one contiguous segment in
 `Time` or `Frames` mode. Time boundaries are start-inclusive and end-exclusive;
 frame indexes are zero-based and inclusive. `-1` selects the source end.
 
-The embedded player includes a playhead, dual boundary handles, ten sampled
-thumbnails, editable timecodes and frame indexes, nominal previous/next-frame
-buttons, Set Start/End buttons, and selection looping enabled by default. With
-focus in the editor, use Space to play or pause, Left/Right to step, and I/O to
-set the active boundaries. A connected active boundary is read-only.
-Each timecode and frame field is labeled; the playhead and boundary sliders
-also have accessible names. Disconnecting a boundary restores its saved local
-value without reloading the source. Thumbnail capture pauses while collapsed
-and resumes when the node is drawn expanded.
+The compact editor shows the native player, the active time/frame boundary
+pair, and a summary with explicit endpoint conventions. **Edit selection**
+opens the filmstrip, playhead, separate Start/End sliders, nominal
+previous/next-frame buttons, Set Start/End buttons, and selection looping.
+**Hide selection controls** leaves the segment unchanged.
+
+With focus in the editor, use Space to play or pause, Left/Right to step, and
+I/O to set the active boundaries. Native buttons, media controls, and text
+fields keep their normal keys. Connected boundaries remain discoverable and
+read-only; disconnecting restores saved local values.
+
+Ten thumbnails are captured only while the editor is open and the node is
+not collapsed. Completed captures are reused. The strict-Boolean workflow
+property `lfgg_editor_expanded` remembers only the open/closed view; it adds no
+executable input. Toggling does not reload metadata or change selection values.
 
 Changing modes preserves the same interval. Constant-frame-rate selections are
 exact; variable-frame-rate selections use the source's reported FPS as a

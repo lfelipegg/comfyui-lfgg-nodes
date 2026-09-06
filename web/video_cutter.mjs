@@ -1,4 +1,6 @@
 import { buildInputViewUrl } from "./crop_editor.mjs";
+import { UI, initializeRoot, setWidgetHidden } from "./node_ui.mjs";
+import { createEditorView, omitPresentationValues } from "./editor_view.mjs";
 
 const VIDEO_CUTTER_ID = "LFGG_VideoCutter";
 const THUMBNAIL_COUNT = 10;
@@ -100,11 +102,14 @@ export function installVideoCutter(
     buildViewUrl = buildInputViewUrl,
     buildOutputViewUrl = buildVideoViewUrl,
     fetchMetadata = async () => undefined,
+    isConfiguring = () => false,
+    events,
   } = {},
 ) {
   if (node?.comfyClass !== VIDEO_CUTTER_ID || !document) return undefined;
   if (node[installed]) {
     node[installed].refresh();
+    node[installed].view.restore();
     return node[installed].widget;
   }
   const byName = (name) => node.widgets?.find((candidate) => candidate.name === name);
@@ -116,10 +121,12 @@ export function installVideoCutter(
   if (![mode, startTime, endTime, firstFrame, lastFrame].every(Boolean)) return undefined;
 
   const root = element(document, "div", { tabIndex: 0 });
+  root.setAttribute("role", "group");
   Object.assign(root.style, {
-    display: "grid",
-    gap: "8px",
-    padding: "8px",
+    display: "flex",
+    flexDirection: "column",
+    gap: `${UI.gap}px`,
+    padding: `${UI.inset}px`,
     boxSizing: "border-box",
     width: "100%",
   });
@@ -128,7 +135,7 @@ export function installVideoCutter(
     preload: "metadata",
     playsInline: true,
   });
-  Object.assign(player.style, { width: "100%", maxHeight: "260px", background: "#111" });
+  Object.assign(player.style, { width: "100%", maxHeight: "180px", objectFit: "contain", background: "#111" });
   const thumbnailPlayer = element(document, "video", {
     muted: true,
     preload: "metadata",
@@ -162,25 +169,18 @@ export function installVideoCutter(
   playhead.setAttribute("aria-label", "Video playhead");
   startHandle.setAttribute("aria-label", "Selection start");
   endHandle.setAttribute("aria-label", "Selection end (exclusive)");
-  const handles = element(document, "div", {}, startHandle, endHandle);
+  const handles = element(document, "div");
   handles.dataset.role = "boundary-track";
   handles.className = "lfgg-video-cutter-boundary-track";
-  Object.assign(handles.style, { display: "grid", alignItems: "center" });
-  for (const handle of [startHandle, endHandle]) {
-    Object.assign(handle.style, { gridArea: "1 / 1", margin: "0", width: "100%" });
+  Object.assign(handles.style, { display: "grid", gap: "4px" });
+  for (const [handle, label] of [[startHandle, "Start"], [endHandle, "End (exclusive)"]]) {
+    Object.assign(handle.style, { margin: "0", width: "100%" });
+    const caption = element(document, "span", { textContent: label });
+    caption.style.fontSize = `${UI.secondarySize}px`;
+    const row = element(document, "label", {}, caption, handle);
+    Object.assign(row.style, { display: "grid", gridTemplateColumns: "100px minmax(0, 1fr)", alignItems: "center" });
+    handles.append(row);
   }
-  const boundaryStyle = element(document, "style", {
-    textContent: `
-.lfgg-video-cutter-boundary-track > .lfgg-video-cutter-boundary {
-  pointer-events: none;
-}
-.lfgg-video-cutter-boundary-track > .lfgg-video-cutter-boundary::-webkit-slider-thumb {
-  pointer-events: auto;
-}
-.lfgg-video-cutter-boundary-track > .lfgg-video-cutter-boundary::-moz-range-thumb {
-  pointer-events: auto;
-}`,
-  });
 
   const startTimeInput = element(document, "input", { type: "text" });
   startTimeInput.dataset.role = "start-timecode";
@@ -193,7 +193,7 @@ export function installVideoCutter(
   const labeledField = (input, caption, help) => {
     input.title = help;
     Object.assign(input.style, {
-      width: "100%", minWidth: "0", boxSizing: "border-box", height: "28px",
+      width: "100%", minWidth: "0", boxSizing: "border-box", minHeight: `${UI.controlHeight}px`,
     });
     const label = element(document, "label", {},
       element(document, "span", { textContent: caption }), input);
@@ -221,17 +221,29 @@ export function installVideoCutter(
   status.dataset.role = "status";
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
-  root.append(
-    boundaryStyle,
-    player,
-    thumbnailPlayer,
-    filmstrip,
-    playhead,
-    handles,
-    fields,
-    controls,
-    status,
-  );
+  const heading = element(document, "div", { textContent: "Selection" });
+  initializeRoot(node, root, document, heading);
+  const disclosure = element(document, "button", { type: "button", textContent: "Edit selection" });
+  disclosure.dataset.role = "editor-disclosure";
+  disclosure.setAttribute("aria-expanded", "false");
+  const summary = element(document, "div");
+  summary.dataset.role = "selection-summary";
+  const locks = element(document, "div");
+  locks.dataset.role = "boundary-locks";
+  locks.style.fontSize = `${UI.secondarySize}px`;
+  const timeline = element(document, "div");
+  timeline.dataset.role = "timeline";
+  Object.assign(timeline.style, { display: "grid", gap: `${UI.gap}px` });
+  const strip = element(document, "div", {}, filmstrip);
+  Object.assign(strip.style, { position: "relative", minHeight: "48px" });
+  const interval = element(document, "div");
+  interval.setAttribute("aria-hidden", "true");
+  Object.assign(interval.style, { position: "absolute", top: "0", bottom: "0", pointerEvents: "none", background: "var(--lfgg-text)", opacity: "0.18" });
+  strip.append(interval);
+  const thumbnailStatus = element(document, "div", { textContent: "Thumbnails appear when a source is available." });
+  thumbnailStatus.style.fontSize = `${UI.secondarySize}px`;
+  timeline.append(strip, thumbnailStatus, playhead, handles, controls);
+  root.append(heading, player, thumbnailPlayer, fields, locks, summary, disclosure, timeline, status);
 
   const controller = {
     metadata: undefined,
@@ -247,6 +259,9 @@ export function installVideoCutter(
     pendingRefresh: undefined,
     thumbnailsPending: false,
   };
+  let applyView;
+  const view = createEditorView(node, { isConfiguring, changed: expanded => applyView(expanded) });
+  controller.view = view;
   const frameTime = (frame) => frame / controller.metadata.reported_fps;
   const selectionEndTime = () => controller.endFrame === controller.metadata.nominal_frame_count
     ? controller.metadata.duration
@@ -273,9 +288,23 @@ export function installVideoCutter(
     setStart.disabled = unavailable;
     setEnd.disabled = unavailable;
     loop.disabled = unavailable;
+    const timeMode = controller.lastMode === "Time";
+    fields.children[0].hidden = fields.children[1].hidden = !timeMode;
+    fields.children[2].hidden = fields.children[3].hidden = timeMode;
+    for (const widget of [startTime, endTime, firstFrame, lastFrame]) {
+      setWidgetHidden(node, widget, !unavailable && controller.validSelection !== false && !linked(node, widget.name));
+    }
+    const connected = [startTime, endTime, firstFrame, lastFrame].filter(widget => linked(node, widget.name)).map(widget => widget.name);
+    locks.textContent = connected.length ? `Controlled upstream: ${connected.join(", ")}. Disconnect to edit saved local values.` : "";
+    const label = unavailable ? "Video selection unavailable"
+      : controller.validSelection === false ? "Invalid video selection" : "Video selection";
+    root.setAttribute("aria-label", label);
+    if (controller.widget) controller.widget.label = label;
   };
   const clearPreviewState = () => {
     controller.metadata = undefined;
+    summary.textContent = "";
+    controller.validSelection = undefined;
     controller.startFrame = 0;
     controller.endFrame = 1;
     controller.previewOffset = 0;
@@ -319,19 +348,24 @@ export function installVideoCutter(
     endTimeInput.value = formatTimecode(selectionEndTime());
     firstFrameInput.value = String(controller.startFrame);
     lastFrameInput.value = String(controller.endFrame - 1);
+    summary.textContent = `${formatTimecode(frameTime(controller.startFrame))} – ${formatTimecode(selectionEndTime())} (end exclusive) · ${formatTimecode(selectionEndTime() - frameTime(controller.startFrame))} duration · frames ${controller.startFrame}–${controller.endFrame - 1} inclusive`;
+    interval.style.left = `${controller.startFrame / maximum * 100}%`;
+    interval.style.width = `${(controller.endFrame - controller.startFrame) / maximum * 100}%`;
     updateLocks();
     node.setDirtyCanvas?.(true, true);
   };
   const setSelection = (start, end, persist = true) => {
     const maximum = controller.metadata?.nominal_frame_count;
     if (!Number.isInteger(start) || !Number.isInteger(end) || !maximum || start < 0 || end > maximum || end <= start) {
+      controller.validSelection = false;
       status.textContent = "Selection must stay in bounds and contain at least one frame.";
       if (controller.metadata) updateDom();
       return false;
     }
     controller.startFrame = start;
+    controller.validSelection = true;
     controller.endFrame = end;
-    status.textContent = `${formatTimecode(frameTime(start))} – ${formatTimecode(selectionEndTime())}`;
+    status.textContent = "";
     if (persist) writeWidgets();
     updateDom();
     return true;
@@ -383,14 +417,15 @@ export function installVideoCutter(
     return true;
   };
   const captureThumbnails = () => {
-    if (!controller.metadata || !thumbnailPlayer.src || !controller.previewDuration) return;
+    if (!controller.metadata || !controller.thumbnailSource || !controller.previewDuration) return;
     const request = ++controller.thumbnailRequest;
-    controller.thumbnailsPending = Boolean(node.flags?.collapsed);
+    controller.thumbnailsPending = Boolean(node.flags?.collapsed) || !view.expanded;
     if (controller.thumbnailsPending) return;
+    if (thumbnailPlayer.getAttribute?.("src") !== controller.thumbnailSource) thumbnailPlayer.src = controller.thumbnailSource;
     let index = 0;
     const capture = () => {
       if (request !== controller.thumbnailRequest || index >= thumbnails.length) return;
-      if (node.flags?.collapsed) {
+      if (node.flags?.collapsed || !view.expanded) {
         controller.thumbnailsPending = true;
         thumbnailPlayer.onseeked = null;
         return;
@@ -398,8 +433,11 @@ export function installVideoCutter(
       const canvas = thumbnails[index];
       canvas.getContext?.("2d")?.drawImage?.(thumbnailPlayer, 0, 0, canvas.width, canvas.height);
       index += 1;
+      thumbnailStatus.textContent = index === thumbnails.length ? "" : `Loading thumbnails ${index}/${thumbnails.length}`;
       if (index < thumbnails.length) {
         thumbnailPlayer.currentTime = controller.previewDuration * index / (thumbnails.length - 1);
+      } else {
+        thumbnailPlayer.onseeked = null;
       }
     };
     const begin = () => {
@@ -413,6 +451,23 @@ export function installVideoCutter(
     if ((thumbnailPlayer.readyState ?? 2) >= 2) begin();
     else thumbnailPlayer.onloadeddata = begin;
   };
+  applyView = (expanded) => {
+    if (!expanded && timeline.contains?.(document.activeElement)) disclosure.focus();
+    timeline.hidden = !expanded;
+    timeline.style.display = expanded ? "grid" : "none";
+    player.style.maxHeight = expanded ? "260px" : "180px";
+    disclosure.textContent = expanded ? "Hide selection controls" : "Edit selection";
+    disclosure.setAttribute("aria-expanded", String(expanded));
+    if (!expanded) {
+      if (thumbnailPlayer.onseeked || thumbnailPlayer.onloadeddata) controller.thumbnailsPending = true;
+      controller.thumbnailRequest += 1;
+      thumbnailPlayer.onseeked = null;
+      thumbnailPlayer.onloadeddata = null;
+    } else if (controller.thumbnailsPending && !node.flags?.collapsed) {
+      captureThumbnails();
+    }
+  };
+  disclosure.addEventListener("click", () => view.setExpanded(!view.expanded));
   controller.refresh = ({ force = true } = {}) => {
     const source = resolveLoadVideoInput(node, getGraph());
     const inputLink = node.inputs?.find(({ name }) => name === "video")?.link;
@@ -435,7 +490,8 @@ export function installVideoCutter(
       if (changedSource) clearPreviewState();
       const url = buildViewUrl(source);
       player.src = url;
-      thumbnailPlayer.src = url;
+      controller.thumbnailSource = url;
+      status.textContent = "Loading video metadata…";
       controller.previewOffset = 0;
       try {
         const metadata = await fetchMetadata(source);
@@ -527,7 +583,7 @@ export function installVideoCutter(
     }
   });
   root.addEventListener("keydown", (event) => {
-    if (["INPUT", "TEXTAREA", "SELECT"].includes(event.target?.tagName)) return;
+    if (["INPUT", "TEXTAREA", "SELECT", "BUTTON", "SUMMARY", "VIDEO"].includes(event.target?.tagName) || event.target?.isContentEditable) return;
     if (event.key === " ") {
       event.preventDefault();
       if (player.paused) player.play?.(); else player.pause?.();
@@ -549,6 +605,7 @@ export function installVideoCutter(
   composeCallback(mode, () => {
     if (!controller.metadata) {
       controller.lastMode = mode.value;
+      updateLocks();
       return;
     }
     writeWidgets();
@@ -601,13 +658,13 @@ export function installVideoCutter(
         controller.source = source;
         const url = buildViewUrl(source);
         player.src = url;
-        thumbnailPlayer.src = url;
+        controller.thumbnailSource = url;
         controller.previewOffset = 0;
         controller.previewDuration = metadata.duration;
       } else if (descriptor) {
         controller.source = undefined;
         player.src = buildOutputViewUrl(descriptor);
-        thumbnailPlayer.src = player.src;
+        controller.thumbnailSource = player.src;
         controller.previewOffset = metadata.selection_start;
         controller.previewDuration = previewDuration;
       } else {
@@ -620,12 +677,12 @@ export function installVideoCutter(
 
   const widget = node.addDOMWidget("lfgg_video_cutter", "lfgg_video_cutter", root, {
     serialize: false,
-    getMinHeight: () => 500,
+    getMinHeight: () => root.scrollHeight || 180,
     onDraw: () => {
       if (resolveLoadVideoInput(node, getGraph()) !== controller.source) {
         widget.lfggReady = controller.refresh();
       }
-      if (controller.thumbnailsPending && !node.flags?.collapsed) captureThumbnails();
+      if (controller.thumbnailsPending && view.expanded && !node.flags?.collapsed) captureThumbnails();
     },
   });
   widget.serialize = false;
@@ -633,17 +690,39 @@ export function installVideoCutter(
   const originalSerialize = node.onSerialize;
   node.onSerialize = function (serialized) {
     const result = originalSerialize?.apply(this, arguments);
-    if (
-      Array.isArray(serialized.widgets_values) &&
-      serialized.widgets_values.length === node.widgets.length
-    ) {
-      serialized.widgets_values.splice(node.widgets.indexOf(widget), 1);
-    }
+    omitPresentationValues(node, serialized, [widget]);
     return result;
   };
   controller.widget = widget;
   node[installed] = controller;
-  node.setSize?.([Math.max(node.size?.[0] ?? 0, 360), Math.max(node.size?.[1] ?? 0, 620)]);
+  const configured = node.onAfterGraphConfigured;
+  node.onAfterGraphConfigured = function (...args) {
+    const result = configured?.apply(this, args);
+    widget.lfggReady = controller.refresh({ force: false });
+    return result;
+  };
+  view.restore();
+  const graphChanged = () => {
+    if (node.graph === getGraph() && !isConfiguring()) widget.lfggReady = controller.refresh({ force: false });
+  };
+  events?.addEventListener("graphChanged", graphChanged);
+  const observer = typeof ResizeObserver === "function" ? new ResizeObserver(() => {
+    view.fit(true);
+    if (controller.thumbnailsPending && view.expanded && !node.flags?.collapsed) captureThumbnails();
+  }) : undefined;
+  observer?.observe(root);
+  const removed = node.onRemoved;
+  node.onRemoved = function (...args) {
+    events?.removeEventListener("graphChanged", graphChanged);
+    observer?.disconnect();
+    controller.metadataRequest += 1;
+    controller.thumbnailRequest += 1;
+    player.pause?.();
+    thumbnailPlayer.pause?.();
+    thumbnailPlayer.onseeked = null;
+    thumbnailPlayer.onloadeddata = null;
+    return removed?.apply(this, args);
+  };
   widget.lfggReady = controller.refresh();
   return widget;
 }

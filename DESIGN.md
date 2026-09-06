@@ -13,7 +13,7 @@ colors:
 typography:
   body-md:
     fontFamily: "system-ui, sans-serif"
-    fontSize: 12px
+    fontSize: 13px
     fontWeight: 400
     lineHeight: 1.4
   label-lg:
@@ -23,7 +23,7 @@ typography:
     lineHeight: 1.2
   label-md:
     fontFamily: "system-ui, sans-serif"
-    fontSize: 11px
+    fontSize: 12px
     fontWeight: 400
     lineHeight: 1.3
   label-sm:
@@ -53,21 +53,21 @@ components:
     textColor: "{colors.on-surface}"
     typography: "{typography.body-md}"
     rounded: "{rounded.md}"
-    padding: "{spacing.sm}"
+    padding: "{spacing.lg}"
   compact-control:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.on-surface}"
     typography: "{typography.body-md}"
     rounded: "{rounded.sm}"
     padding: "{spacing.xs}"
-    height: 28px
+    height: 32px
   dynamic-row:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.on-surface}"
     typography: "{typography.body-md}"
     rounded: "{rounded.none}"
     padding: "{spacing.xs}"
-    height: 24px
+    height: 40px
   diagnostic-report:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.on-surface}"
@@ -81,7 +81,7 @@ components:
 Purpose: Define the durable interaction and visual rules for every LFGG node.
 Read when: Designing, implementing, or reviewing a registered node or its frontend UI.
 Source of truth: `README.md` defines node behavior; this file defines shared node UX and presentation.
-Last reviewed: 2026-08-22
+Last reviewed: 2026-09-06
 
 ## Overview
 
@@ -95,8 +95,10 @@ enhancement: the node must keep an executable standard-widget fallback, and a
 missing or failed extension must not corrupt workflow state.
 
 The pack is not a separate branded shell. Do not globally recolor ComfyUI or
-make every LFGG node visually loud. Distinction comes from the `LFGG ` name,
-clear labels, and useful interaction rather than decoration.
+make every LFGG node visually loud. Use one small muted-teal identity marker
+beside an owned section label; native-only nodes receive no marker. Never tint
+panels, recolor sockets, or brand primary buttons. The `LFGG ` title remains the
+accessible identity.
 
 ## Colors
 
@@ -117,11 +119,16 @@ Maintain readable contrast in light, dark, and custom palettes. A preview may
 dim non-selected content, but executable values and essential instructions
 must remain legible.
 
+Shared presentation lives in `web/node_ui.mjs` and its scoped `node_ui.css`.
+Use a 3px by 12px marker with an 8px label gap. Select `#70B8AE` or `#327D73`
+according to contrast against the rendered surface, including custom palettes.
+Identity color is never a state or focus indicator.
+
 ## Typography
 
 Inherit ComfyUI's active UI font for DOM controls. Canvas widgets use the
-system sans fallback at 12px, 11px for supporting labels, 10px only for dense
-column headings, and 14px semibold for a single preview emphasis. Use the code
+system sans fallback at 13px, 12px for supporting labels, and 14px semibold for
+a single preview emphasis. Use the code
 token only for diagnostic or exact machine-readable output.
 
 Write short, concrete labels in sentence case. Prefer domain words already
@@ -131,9 +138,10 @@ overloaded layout fit.
 
 ## Layout
 
-Use an 8px default inset and gap, 4px between tightly related controls, and 2px
-only for dense media strips. The 10px and 12px tokens cover row insets and
-preview breathing room; do not invent a parallel spacing scale.
+Use a 12px owned-panel inset, 8px ordinary gap, 12px between task groups, and
+4px between tightly related controls. Reserve 2px for dense media strips.
+Shared metrics come from `web/node_ui.mjs`; native widget and slot geometry
+remains host-owned.
 
 Keep the common path compact. Group controls by task order, place transient
 selectors or actions next to the field they affect, and show advanced controls
@@ -163,9 +171,9 @@ preview panels, `{rounded.sm}` for compact DOM controls only when the host does
 not provide a shape, and square rows for dense ordered data. Do not introduce
 pills or decorative containers without a semantic need.
 
-Canvas hit regions may be larger than their marks. Keep dense row actions at
-least 24px high and DOM controls at the established 28px height; never make an
-important action depend on a tiny glyph alone.
+Canvas hit regions may be larger than their marks. Owned numeric/toggle targets
+and DOM controls are at least 32px high; LoRA rows are at least 40px. Grow
+content rather than shrinking text or overlapping hit areas.
 
 ## Components
 
@@ -198,6 +206,15 @@ important action depend on a tiny glyph alone.
 - Provide explicit empty, loading, unresolved, stale, disabled, and error
   states. Preserve the last valid data when a refresh fails and report the
   failure in actionable language.
+- Keep the concrete widget returned by `addCustomWidget`; renderer state and
+  redraw callbacks belong to that instance. Hide native widgets through their
+  supported widget metadata, not by removing executable inputs. Handle both
+  positional serialization holes and serializers that already omit them.
+- Resolve Canvas width from the current node in the legacy renderer and from
+  the actual widget canvas in Nodes 2.0. Keep native widget hit bounds aligned
+  with that drawing width; stale retained widths must not block visible targets.
+- Use the shared native prompt adapter for editable/selectable text: the host
+  dialog service when available, otherwise the native canvas prompt.
 
 ### Dynamic rows and sockets
 
@@ -207,6 +224,17 @@ important action depend on a tiny glyph alone.
   choices, and show missing saved choices instead of silently substituting.
 - Restore serialized state without adding phantom rows or sockets. Prove an
   actual link exists before growing from a restore callback.
+- LoRA rows share one two-dimensional layout for drawing, sizing, and hit
+  testing. Stack controls when name and strength lanes cannot fit. Measure
+  basename ellipsis, show distinguishing folder context, and expose the exact
+  stored path through a selectable native prompt. Enabled state uses a neutral
+  checkbox, not identity color.
+- Routing labels stay aligned with native sockets. Use native input labels in
+  Nodes 2.0, where node foreground drawing is unavailable, and a non-serializing
+  custom-widget footer for the hint and single identity marker.
+  When a routing label changes, reconstruct only its pack-owned native input
+  slot to notify the shallow Nodes 2.0 renderer. Preserve its native class,
+  links, type, metadata, and pending-channel membership; do not patch prototypes.
 
 ### Rich editors and reports
 
@@ -217,6 +245,20 @@ important action depend on a tiny glyph alone.
   keys or prevent ordinary text editing.
 - Reports are read-only, selectable, bounded, and monospace. Mark previous
   results stale while newer execution is pending.
+- Crop and video start compact. The shared strict-Boolean
+  `node.properties.lfgg_editor_expanded` stores only disclosure state. Missing
+  or malformed values mean compact. Toggling does not reload sources, query
+  metadata, normalize executable values, or discard manual sizing.
+- Crop remains draggable while compact; expansion adds native precise inputs.
+  Share responsive viewport geometry between drawing and dragging. Use a
+  two-tone frame and a source-pixel caption, with 200px/360px compact/expanded
+  content caps rather than forced heights.
+- Video keeps the active boundary pair visible while compact. Expansion shows
+  one grouped timeline with distinct native range rows, selected interval,
+  bounded thumbnails, and transport. Defer thumbnail work while closed or
+  collapsed, and reuse completed captures.
+- Use public graph-change and graph-configured events for linked-source
+  updates across renderers. Do not wrap upstream widgets or introduce polling.
 
 ## Do's and Don'ts
 

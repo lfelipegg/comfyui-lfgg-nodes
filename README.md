@@ -123,6 +123,11 @@ are preserved. A failed preview shows a recovery message; reselect or upload the
 image to retry. Execution results received during loading apply once that image
 is ready.
 
+The crop preview starts compact and remains draggable. **Edit crop** reveals
+the precise X/Y/width controls and a larger preview; height stays read-only.
+The dimensions caption is in source pixels. **Hide crop controls** changes
+only presentation, as does resizing the node.
+
 `LFGG Power LoRA Loader (Folder)` is in `LFGG/loaders`. It provides recursive
 folder filtering for future selections, including every child folder, plus
 `All LoRAs` to disable filtering. Changing the folder preserves existing rows,
@@ -132,6 +137,11 @@ remove, replace, or toggle rows. Each strength has arrows for 0.05 adjustments;
 click the value itself for direct numeric entry. One combined strength is shown
 by default. Enable `Separate Model and Clip strength` in the node settings to
 show and edit the model and CLIP strengths independently.
+Rows stack their strength controls at narrow widths instead of compressing
+filenames. Basenames are ellipsized with folder context when needed; **Show
+full path** opens a selectable native prompt. The node's native context menu
+also exposes row operations. Disabled rows retain readable values but do not
+accept strength edits.
 
 Refresh node definitions after adding or removing LoRA files. A saved folder
 that no longer exists remains visible but offers no new choices; existing rows
@@ -196,32 +206,41 @@ end-exclusive. Frame ranges are zero-based and inclusive. `-1` means source end
 for `end_time` or `last_frame`; other negative, reversed, empty, or out-of-bounds
 selections fail rather than clamp. Changing modes preserves the same segment.
 
-The build-free editor provides a source player, playhead, dual boundary
-handles, ten client-side thumbnails, editable timecodes and frame indexes, Set
-Start/End, nominal previous/next-frame controls, and selection looping enabled
-by default. Focus-scoped Space, Left/Right, and I/O control playback and marks.
-Connected active boundaries are read-only. There is no waveform. The editor
-adds no serialized value; all six backend inputs remain the executable
-fallback.
-Timecode and frame fields have visible labels, and all three sliders have
-accessible names. Unrelated connection changes update locks without reloading
-the video; disconnecting a boundary restores its saved local value. Source
-changes and execution refresh the preview. Thumbnail capture waits while the
-node is collapsed and resumes when it is drawn expanded.
+The build-free editor starts with the source player, active time/frame boundary
+pair, and an explicit segment summary. **Edit selection** reveals the filmstrip,
+playhead, separately labeled boundary sliders, previous/next-frame controls,
+Set Start/End, and selection looping. **Hide selection controls** returns to
+the compact view without changing the segment or reloading its metadata.
+Ten bounded client-side thumbnails are decoded only while the editor is open
+and the node is not collapsed; completed thumbnails are reused.
+
+Focus-scoped Space, Left/Right, and I/O control playback and marks. These
+shortcuts do not intercept native buttons, media controls, or text fields.
+Connected boundaries remain discoverable and read-only, including inactive
+inputs. Disconnecting restores the saved local value. Unavailable or invalid
+previews leave the native numeric fallback visible. There is no waveform.
+
+Crop and video editors share one presentation-only workflow property,
+`node.properties.lfgg_editor_expanded`. Only Boolean `true` opens the editor;
+old workflows and malformed values open compact. It does not enter API prompts
+or replace any backend input. This UI adds no external network calls.
 
 `LFGG Routing Organizer` is a virtual node in `LFGG/workflow` with a minimal
 backend definition for package discovery and frontend-only routing behavior.
 Stable ID `LFGG_RoutingOrganizer`. Each routing channel has one input socket,
-one matching output socket, and one centered label; outputs may fan out. The
+one matching output socket, and one label; outputs may fan out. Labels are
+centered in the legacy renderer and use native input labels in Nodes 2.0. The
 first connection selects the channel's ComfyUI wire type, including compatible
 widget and combo types, and chained native reroutes or routing organizers
 propagate that type without entering prompt execution.
 
 The node begins with one empty channel and supports up to 32 channels.
-Right-click for Add, Rename, and Remove actions, or double-click a label to
-rename it. Unconnected unlabeled channels beyond the first are removed after
-disconnect or workflow normalization. Labels are trimmed to 64 Unicode
-characters and numbered defaults follow their current positions.
+Right-click for Add, Rename, and Remove actions. The legacy renderer also
+supports double-clicking a label to rename it; Nodes 2.0 lists numbered channel
+actions in the native menu. Long labels are visually ellipsized, and the rename
+prompt retains the complete label. Unconnected unlabeled channels beyond the
+first are removed after disconnect or workflow normalization. Labels are
+trimmed to 64 Unicode characters and numbered defaults follow their positions.
 Removing a connected channel reconnects its upstream source directly to every
 compatible downstream target; a channel is kept if that splice cannot be done
 without losing links. Deleting the whole organizer uses ComfyUI's normal
@@ -278,6 +297,9 @@ The `*` input is ComfyUI's V1 wildcard escape hatch, so native reroutes and some
 custom socket types may have link-type limitations. The report is session-only:
 it is not saved into workflow JSON, and a previous report is marked stale while
 a later execution is pending or fails. Normal ComfyUI caching applies.
+Enlarging the node gives the selectable report more room. Overflow scrolls
+inside the report; a separate status line identifies waiting, current, or
+stale content without replacing the last successful report.
 
 ## File and network behavior
 
@@ -395,6 +417,11 @@ python -m pytest -q tests/integration --comfy-ref v0.28.0 --archive node.zip --d
 
 The handwritten frontend extension has no generated-asset build. There is no
 runtime installer or compatibility `requirements.txt`.
+Candidate archive tests check the intended file inventory and bytes against the
+current source. Release verification additionally requires
+`--approved-release-manifest release/<version>-archive.sha256`; both release
+workflow archive checks supply it. Existing approved release manifests are
+immutable and are not regenerated for ordinary development changes.
 
 ## Release operators
 

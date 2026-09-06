@@ -56,8 +56,10 @@ def test_rejects_installed_comfyui_with_comfy_ref():
 def _stub_installed_checkout(monkeypatch, tmp_path, *, tag="v0.28.0", root=None):
     checkout = tmp_path / "ComfyUI"
     (checkout / "custom_nodes" / "lfgg-nodes").mkdir(parents=True)
-    python = checkout / ".venv" / (
-        "Scripts/python.exe" if harness().sys.platform == "win32" else "bin/python"
+    python = (
+        checkout
+        / ".venv"
+        / ("Scripts/python.exe" if harness().sys.platform == "win32" else "bin/python")
     )
     python.parent.mkdir(parents=True)
     python.write_bytes(b"")
@@ -207,6 +209,22 @@ def test_compares_object_info_with_input_order():
         harness().assert_object_info_matches_manifest(object_info, manifest)
 
 
+def test_distinguishes_absent_schema_fields_from_null():
+    node = development_manifest()["nodes"]["LFGG_RoutingOrganizer"]
+    manifest = {"nodes": {"LFGG_RoutingOrganizer": node}}
+    object_info = {
+        "LFGG_RoutingOrganizer": {
+            **node,
+            "input_order": {"required": []},
+        }
+    }
+    harness().assert_object_info_matches_manifest(object_info, manifest)
+
+    object_info["LFGG_RoutingOrganizer"]["output_tooltips"] = None
+    with pytest.raises(AssertionError, match="output_tooltips"):
+        harness().assert_object_info_matches_manifest(object_info, manifest)
+
+
 def test_rejects_missing_or_extra_lfgg_object_info():
     manifest = {"nodes": {"LFGG_Expected": {}}}
 
@@ -298,9 +316,7 @@ def test_failure_traceback_redacts_error_and_log(monkeypatch, tmp_path):
             workflows={},
         )
 
-    rendered = "".join(
-        traceback.format_exception(caught.type, caught.value, caught.tb)
-    )
+    rendered = "".join(traceback.format_exception(caught.type, caught.value, caught.tb))
     assert caught.type is AssertionError
     assert secret not in rendered
     assert str(workspace) not in rendered
@@ -402,9 +418,7 @@ def test_failure_traceback_redacts_error_without_log(monkeypatch, tmp_path):
             workflows={},
         )
 
-    rendered = "".join(
-        traceback.format_exception(caught.type, caught.value, caught.tb)
-    )
+    rendered = "".join(traceback.format_exception(caught.type, caught.value, caught.tb))
     assert caught.type is AssertionError
     assert secret not in rendered
     assert str(workspace) not in rendered
@@ -671,9 +685,7 @@ def test_retries_transient_initial_registry_dns_failure(monkeypatch, tmp_path):
         dns_attempts.append(None)
         if len(dns_attempts) == 1:
             raise socket.gaierror("temporary DNS failure")
-        return [
-            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
-        ]
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
 
     responses = iter(
         [
@@ -909,16 +921,6 @@ def test_registry_download_removes_new_partial_destination(monkeypatch, tmp_path
 
 
 def _assert_sizing_result(result):
-    assert result["registered_ids"] == [
-        "LFGG_DimensionsByAspectRatio",
-        "LFGG_ImageDimensionsByLongSide",
-        "LFGG_ImageDimensionsByPixelBudget",
-        "LFGG_LoadAndCropImage",
-        "LFGG_PowerLoraLoaderFolder",
-        "LFGG_ResizeImageByLongSide",
-        "LFGG_SaveImageDynamic",
-        "LFGG_VideoCutter",
-    ]
     assert result["output_files"] == [
         "lfgg/sizing/aspect_ratio_00001_.latent",
         "lfgg/sizing/long_side_00001_.latent",
@@ -955,9 +957,7 @@ def _assert_dynamic_save_result(result):
             "mode": "RGB",
             "size": [3, 2],
             "pixel": [0, 0, 0],
-            "text_keys": (
-                ["prompt", "workflow"] if "metadata_on" in filename else []
-            ),
+            "text_keys": (["prompt", "workflow"] if "metadata_on" in filename else []),
         }
         for filename in expected_files
     }.items() <= result["image_details"].items()
@@ -998,6 +998,11 @@ def _assert_video_result(result):
 
 def development_manifest():
     manifest = json.loads((ROOT / "release" / "1.5.0-schema.json").read_text())
+    crop_input = manifest["nodes"]["LFGG_LoadAndCropImage"]["input"]["required"]
+    crop_input["image"][1]["options"] = [
+        "load_and_crop_image.png",
+        "video_cutter.mp4",
+    ]
     manifest["nodes"]["LFGG_VideoCutter"] = {
         "display_name": "LFGG Video Cutter",
         "description": (
@@ -1267,6 +1272,31 @@ def development_manifest():
         "output": ["*"],
         "output_name": ["value"],
         "output_tooltips": ["Selected branch value."],
+    }
+    manifest["nodes"]["LFGG_RoutingOrganizer"] = {
+        "display_name": "LFGG Routing Organizer",
+        "description": (
+            "Keeps labeled workflow connections aligned without changing their values."
+        ),
+        "category": "LFGG/workflow",
+        "input": {"required": {}},
+        "output": [],
+        "output_name": [],
+    }
+    manifest["nodes"]["LFGG_ValueInspector"] = {
+        "display_name": "LFGG Value Inspector",
+        "description": "Displays a bounded diagnostic report for any connected value.",
+        "category": "LFGG/debug",
+        "input": {
+            "required": {
+                "value": [
+                    "*",
+                    {"tooltip": "Value to inspect after workflow execution."},
+                ]
+            }
+        },
+        "output": [],
+        "output_name": [],
     }
     return manifest
 

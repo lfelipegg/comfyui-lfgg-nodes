@@ -7,6 +7,7 @@ const install = (node) =>
     buildViewUrl: (value) => api.apiURL(buildInputViewUrl(value)),
     getGraph: () => app.graph,
     isConfiguring: () => app.configuringGraph,
+    events: api,
   });
 
 app.registerExtension({

@@ -1,5 +1,6 @@
+import { UI, initializeRoot } from "./node_ui.mjs";
+
 const NODE_ID = "LFGG_PromptComposer";
-const CONTROLS_HEIGHT = 104;
 const installed = Symbol("lfggPromptComposer");
 const catalogs = new WeakMap();
 
@@ -68,7 +69,6 @@ function menu(choices, event, select) {
     disabled: choice.disabled,
   }));
   new ContextMenu(items, {
-    className: "dark",
     event,
     callback: (item) => {
       if (!item?.disabled) select(item?.value ?? item?.content ?? item);
@@ -108,20 +108,22 @@ function labeledSelect(document, text, role) {
   select.setAttribute("aria-label", text);
   Object.assign(label.style, {
     display: "grid",
-    gap: "4px",
+    gap: `${UI.tightGap}px`,
     minWidth: "0",
+    flex: "1 1 140px",
   });
   Object.assign(caption.style, {
-    fontSize: "11px",
-    lineHeight: "1.2",
-    opacity: "0.75",
+    display: "flex",
+    alignItems: "center",
+    minWidth: "0",
+    fontSize: `${UI.secondarySize}px`,
+    lineHeight: "1.3",
   });
   Object.assign(select.style, {
     width: "100%",
     minWidth: "0",
     maxWidth: "100%",
-    height: "28px",
-    boxSizing: "border-box",
+    minHeight: `${UI.controlHeight}px`,
   });
   label.append(caption, select);
   return { label, select };
@@ -148,64 +150,65 @@ export function installPromptComposer(
   const root = document.createElement("div");
   const selectors = document.createElement("div");
   const actions = document.createElement("div");
-  const wildcard = labeledSelect(document, "Wildcard", "wildcards");
-  const style = labeledSelect(document, "Style", "styles");
+  const caretHint = document.createElement("span");
+  const wildcard = labeledSelect(document, "Insert wildcard", "wildcards");
+  const style = labeledSelect(document, "Insert style", "styles");
   const refresh = document.createElement("button");
   const status = document.createElement("span");
   Object.assign(root.style, {
     display: "grid",
-    gap: "8px",
+    gap: `${UI.gap}px`,
     width: "100%",
     minWidth: "0",
-    height: `${CONTROLS_HEIGHT}px`,
-    maxHeight: `${CONTROLS_HEIGHT}px`,
+    height: "auto",
     alignContent: "start",
-    padding: "8px",
+    padding: `${UI.inset}px`,
     boxSizing: "border-box",
   });
   selectors.dataset.role = "selectors";
   Object.assign(selectors.style, {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: "8px",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: `${UI.gap}px`,
     minWidth: "0",
+  });
+  caretHint.dataset.role = "caret-hint";
+  caretHint.textContent = "Inserts at the prompt caret and replaces selected text.";
+  Object.assign(caretHint.style, {
+    color: "var(--lfgg-secondary)",
+    fontSize: `${UI.secondarySize}px`,
+    lineHeight: "1.4",
+    overflowWrap: "anywhere",
   });
   actions.dataset.role = "actions";
   Object.assign(actions.style, {
     display: "flex",
     alignItems: "center",
-    gap: "8px",
     minWidth: "0",
   });
   refresh.type = "button";
   refresh.textContent = "Refresh libraries";
   refresh.dataset.role = "refresh";
   Object.assign(refresh.style, {
-    flex: "0 0 auto",
-    height: "28px",
-    padding: "0 10px",
-    boxSizing: "border-box",
+    minHeight: `${UI.controlHeight}px`,
+    padding: `0 ${UI.gap}px`,
   });
   status.dataset.role = "status";
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
   Object.assign(status.style, {
-    flex: "1 1 auto",
+    display: "block",
     minWidth: "0",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    fontSize: "11px",
-    lineHeight: "1.3",
-    opacity: "0.8",
+    whiteSpace: "normal",
+    overflowWrap: "anywhere",
   });
   selectors.append(wildcard.label, style.label);
-  actions.append(refresh, status);
-  root.append(selectors, actions);
+  actions.append(refresh);
+  root.append(selectors, caretHint, actions, status);
+  initializeRoot(node, root, document, wildcard.label.children[0]);
 
   const setStatus = (message) => {
     status.textContent = message;
-    status.title = message;
   };
 
   let loaded = false;
@@ -217,16 +220,16 @@ export function installPromptComposer(
     if (request) return request;
     request = (async () => {
       refresh.disabled = true;
-      setStatus("Refreshing…");
+      setStatus("Refreshing prompt libraries…");
       try {
         const result = await loadCatalog(fetchLibraries, refreshCatalog);
         const nextWildcardOptions = buildOptions(
-          "Add wildcard…",
+          "Choose wildcard…",
           result.wildcards,
           document,
         );
         const nextStyleOptions = buildOptions(
-          "Add style…",
+          "Choose style…",
           result.styles,
           document,
         );
@@ -282,18 +285,30 @@ export function installPromptComposer(
     domWidget.lfggReady = load(true);
   });
 
+  const contentHeight = () => {
+    const measured = Math.ceil(
+      root.scrollHeight
+      || root.getBoundingClientRect?.().height
+      || 0,
+    );
+    return measured || (
+      UI.inset * 2
+      + UI.controlHeight * 2
+      + UI.secondarySize * 3
+      + UI.gap * 3
+    );
+  };
   domWidget = node.addDOMWidget(
     "lfgg_prompt_composer",
     "lfgg_prompt_composer",
     root,
     {
       serialize: false,
-      getMinHeight: () => CONTROLS_HEIGHT,
-      getMaxHeight: () => CONTROLS_HEIGHT,
-      getHeight: () => CONTROLS_HEIGHT,
+      getMinHeight: contentHeight,
+      getHeight: contentHeight,
     },
   );
-  domWidget.computeSize = () => [0, CONTROLS_HEIGHT];
+  domWidget.computeSize = () => [0, contentHeight()];
   domWidget.serialize = false;
   domWidget.options.serialize = false;
   const domIndex = node.widgets.indexOf(domWidget);
@@ -313,10 +328,6 @@ export function installPromptComposer(
     }
     return result;
   };
-  node.setSize?.([
-    Math.max(node.size?.[0] ?? 0, 360),
-    Math.max(node.size?.[1] ?? 0, 330),
-  ]);
   node[installed] = domWidget;
   domWidget.lfggReady = load();
   return domWidget;

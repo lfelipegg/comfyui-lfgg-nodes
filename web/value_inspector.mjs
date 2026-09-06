@@ -1,3 +1,5 @@
+import { UI, initializeRoot } from "./node_ui.mjs";
+
 export const VALUE_INSPECTOR_ID = "LFGG_ValueInspector";
 export const VALUE_INSPECTOR_NAME = "LFGG Value Inspector";
 
@@ -13,12 +15,28 @@ export function installValueInspector(
   }
 
   const root = document.createElement("div");
+  const heading = document.createElement("div");
   const report = document.createElement("pre");
-  Object.assign(root.style, {
-    width: "100%",
-    height: "180px",
+  const status = document.createElement("span");
+  heading.dataset.role = "heading";
+  heading.textContent = "Value report";
+  Object.assign(heading.style, {
+    display: "flex",
+    alignItems: "center",
     minWidth: "0",
-    padding: "8px",
+    fontSize: "14px",
+    fontWeight: "600",
+    lineHeight: "1.2",
+  });
+  Object.assign(root.style, {
+    display: "grid",
+    gridTemplateRows: "auto minmax(0, 1fr) auto",
+    gap: `${UI.gap}px`,
+    width: "100%",
+    height: "100%",
+    minWidth: "0",
+    minHeight: "0",
+    padding: `${UI.inset}px`,
     boxSizing: "border-box",
     overflow: "hidden",
   });
@@ -30,31 +48,47 @@ export function installValueInspector(
   report.textContent = INITIAL_REPORT;
   Object.assign(report.style, {
     width: "100%",
-    height: "100%",
+    minWidth: "0",
+    minHeight: "0",
     margin: "0",
     overflow: "auto",
     whiteSpace: "pre-wrap",
     overflowWrap: "anywhere",
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-    fontSize: "12px",
+    fontSize: `${UI.secondarySize}px`,
     lineHeight: "1.4",
     userSelect: "text",
     boxSizing: "border-box",
   });
-  root.append(report);
+  status.dataset.role = "status";
+  status.dataset.state = "waiting";
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  status.textContent = "Waiting for execution.";
+  Object.assign(status.style, {
+    minWidth: "0",
+    overflowWrap: "anywhere",
+  });
+  root.append(heading, report, status);
+  initializeRoot(node, root, document, heading);
 
   let lastReport;
-  const render = (stale = false) => {
-    report.dataset.stale = String(stale);
-    report.textContent = stale
-      ? `[stale — latest successful report]\n${lastReport}`
-      : (lastReport ?? INITIAL_REPORT);
+  const render = (state, message) => {
+    report.dataset.stale = String(state === "stale");
+    report.textContent = lastReport ?? INITIAL_REPORT;
+    status.dataset.state = state;
+    status.textContent = message;
   };
 
   const originalExecutionStart = node.onExecutionStart;
   node.onExecutionStart = function (...args) {
     const result = originalExecutionStart?.apply(this, args);
-    if (lastReport !== undefined) render(true);
+    render(
+      lastReport === undefined ? "waiting" : "stale",
+      lastReport === undefined
+        ? "Waiting for execution."
+        : "Waiting for execution · showing previous report.",
+    );
     return result;
   };
 
@@ -64,8 +98,27 @@ export function installValueInspector(
     const next = message?.report?.[0];
     if (typeof next === "string") {
       lastReport = next;
-      render();
+      render("current", "Current report.");
+    } else {
+      render(
+        lastReport === undefined ? "waiting" : "stale",
+        lastReport === undefined
+          ? "No report received."
+          : "No current report received · showing previous report.",
+      );
     }
+    return result;
+  };
+
+  const originalExecutionError = node.onExecutionError;
+  node.onExecutionError = function (...args) {
+    const result = originalExecutionError?.apply(this, args);
+    render(
+      lastReport === undefined ? "waiting" : "stale",
+      lastReport === undefined
+        ? "Execution failed before a report was available."
+        : "Execution failed · showing previous report.",
+    );
     return result;
   };
 
@@ -73,7 +126,7 @@ export function installValueInspector(
     "lfgg_value_inspector",
     "lfgg_value_inspector",
     root,
-    { serialize: false, getMinHeight: () => 180 },
+    { serialize: false, getMinHeight: () => 104 },
   );
   widget.serialize = false;
   widget.options.serialize = false;
@@ -90,10 +143,6 @@ export function installValueInspector(
     }
     return result;
   };
-  node.setSize?.([
-    Math.max(node.size?.[0] ?? 0, 360),
-    Math.max(node.size?.[1] ?? 0, 240),
-  ]);
   node[installed] = widget;
   return widget;
 }

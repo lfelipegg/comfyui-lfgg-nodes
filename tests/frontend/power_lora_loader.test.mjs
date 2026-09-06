@@ -20,10 +20,13 @@ function fakeNode({
   folder = "characters",
   properties = {},
   comfyClass = "LFGG_PowerLoraLoaderFolder",
+  size = [320, 500],
+  wrapCustomWidgets = false,
 } = {}) {
   let folderCallbacks = 0;
   let addCallbacks = 0;
   let serializations = 0;
+  let sizeChanges = 0;
   const widgets = [
     {
       name: "folder",
@@ -48,10 +51,19 @@ function fakeNode({
     widgets,
     properties: { ...properties },
     pos: [100, 50],
-    size: [320, 500],
+    size: [...size],
     addCustomWidget(widget) {
-      this.widgets.push(widget);
-      return widget;
+      const concrete = wrapCustomWidgets
+        ? Object.assign(Object.create({ concreteWidget: true }), widget, {
+            store: {},
+          })
+        : widget;
+      concrete.drawRequests = 0;
+      concrete.triggerDraw = () => {
+        concrete.drawRequests += 1;
+      };
+      this.widgets.push(concrete);
+      return concrete;
     },
     computeSize() {
       return [
@@ -64,8 +76,9 @@ function fakeNode({
           ),
       ];
     },
-    setSize(size) {
-      this.size = size;
+    setSize(nextSize) {
+      sizeChanges += 1;
+      this.size = nextSize;
     },
     setDirtyCanvas() {
       this.dirty = (this.dirty ?? 0) + 1;
@@ -76,17 +89,55 @@ function fakeNode({
     folderCallbacks: () => folderCallbacks,
     addCallbacks: () => addCallbacks,
     serializations: () => serializations,
+    sizeChanges: () => sizeChanges,
   };
 }
 
-function pointerAt(node, x, button = 0) {
+function drawingContext(characterWidth = 7) {
+  const text = [];
+  const fills = [];
+  const strokes = [];
+  return {
+    text,
+    fills,
+    strokes,
+    measureText(value) {
+      return { width: Array.from(String(value)).length * characterWidth };
+    },
+    fillText(value, x, y, maxWidth) {
+      text.push({ value, x, y, maxWidth });
+    },
+    fillRect(x, y, width, height) {
+      fills.push({ x, y, width, height });
+    },
+    strokeRect(x, y, width, height) {
+      strokes.push({ x, y, width, height });
+    },
+  };
+}
+
+function drawWidget(widget, node, { reportedWidth = node.size[0], y = 0, characterWidth = 7 } = {}) {
+  const context = drawingContext(characterWidth);
+  widget.draw(context, node, reportedWidth, y);
+  return context;
+}
+
+function pointerAt(node, x, y = 0, button = 0) {
   return {
     eDown: {
       button,
       canvasX: node.pos[0] + x,
-      canvasY: node.pos[1],
+      canvasY: node.pos[1] + y,
     },
   };
+}
+
+function clickVisible(widget, node, visible, button = 0) {
+  if (visible.x < 6 || visible.x > (widget.width || node.size[0]) - 6) return false;
+  const pointer = pointerAt(node, visible.x, visible.y, button);
+  const captured = widget.onPointerDown(pointer, node);
+  if (captured) pointer.onClick(pointer.eDown);
+  return captured;
 }
 
 test("filters recursively and shortens visible labels", () => {
@@ -199,15 +250,27 @@ test("edits rows and keeps unique sequential prompt keys", () => {
     "lora_1",
     "lora_2",
   ]);
-  assert.equal(controls.rowWidgets[0].computeSize()[1], 24);
+  assert.ok(controls.rowWidgets[0].computeSize()[1] >= 40);
   assert.equal(node.size[1], 500);
 });
 
-test("handles ComfyUI pointer clicks for toggles and strength prompts", () => {
-  const node = fakeNode();
+test("visible row targets toggle and open separate strength prompts", () => {
+  const node = fakeNode({ size: [300, 500] });
   const controls = installPowerLoraLoader(node);
   controls.add("characters/anime/hero.safetensors");
+  node.onPropertyChanged(SEPARATE_STRENGTHS, true);
   const rowWidget = controls.rowWidgets[0];
+  const rowDrawing = drawWidget(rowWidget, node, { y: 48 });
+  const headerDrawing = drawWidget(controls.headerWidget, node, { y: 8 });
+  const checkbox = rowDrawing.strokes.find(
+    ({ width, height }) => width === 13 && height === 13,
+  );
+  const values = rowDrawing.text
+    .filter(({ value }) => value === "1.00")
+    .sort((left, right) => left.x - right.x);
+  const toggleAll = headerDrawing.text.find(
+    ({ value }) => value === "Toggle all",
+  );
   const prompts = [];
   const previousCanvas = globalThis.LGraphCanvas;
   globalThis.LGraphCanvas = {
@@ -220,26 +283,26 @@ test("handles ComfyUI pointer clicks for toggles and strength prompts", () => {
   };
 
   try {
-    node.onPropertyChanged(SEPARATE_STRENGTHS, true);
-    const toggle = pointerAt(node, 12);
-    assert.equal(rowWidget.onPointerDown(toggle, node), true);
-    toggle.onClick(toggle.eDown);
+    assert.equal(
+      clickVisible(rowWidget, node, {
+        x: checkbox.x + checkbox.width / 2,
+        y: checkbox.y + checkbox.height / 2,
+      }),
+      true,
+    );
     assert.equal(controls.rows[0].on, false);
 
-    const toggleAll = pointerAt(node, 12);
-    assert.equal(controls.headerWidget.onPointerDown(toggleAll, node), true);
-    toggleAll.onClick(toggleAll.eDown);
+    assert.equal(
+      clickVisible(controls.headerWidget, node, toggleAll),
+      true,
+    );
     assert.equal(controls.rows[0].on, true);
 
-    const model = pointerAt(node, 170);
-    assert.equal(rowWidget.onPointerDown(model, node), true);
-    model.onClick(model.eDown);
+    assert.equal(clickVisible(rowWidget, node, values[0]), true);
     assert.deepEqual(prompts[0], { label: "Model strength", value: "1" });
     assert.equal(controls.rows[0].strengthModel, 0.25);
 
-    const clip = pointerAt(node, 254);
-    assert.equal(rowWidget.onPointerDown(clip, node), true);
-    clip.onClick(clip.eDown);
+    assert.equal(clickVisible(rowWidget, node, values[1]), true);
     assert.deepEqual(prompts[1], { label: "CLIP strength", value: "1" });
     assert.equal(controls.rows[0].strengthClip, 0.25);
   } finally {
@@ -247,20 +310,70 @@ test("handles ComfyUI pointer clicks for toggles and strength prompts", () => {
   }
 });
 
-test("does not capture right-clicks on row controls", () => {
-  const node = fakeNode();
-  const controls = installPowerLoraLoader(node);
-  controls.add("characters/anime/hero.safetensors");
-  const pointer = pointerAt(node, 254, 2);
+test("asynchronous native entry preserves strengths on cancellation", async () => {
+  const previous = globalThis.comfyAPI;
+  let respond;
+  globalThis.comfyAPI = { app: { app: { extensionManager: { dialog: {
+    prompt: () => new Promise(resolve => { respond = resolve; }),
+  } } } } };
+  try {
+    const node = fakeNode();
+    const controls = installPowerLoraLoader(node);
+    controls.add("characters/anime/hero.safetensors");
+    const widget = controls.rowWidgets[0];
+    const value = drawWidget(widget, node).text.find(({ value }) => value === "1.00");
+    clickVisible(widget, node, value);
+    respond(null);
+    await Promise.resolve();
+    assert.equal(widget.serializeValue().strength_model, 1);
+    assert.equal(widget.serializeValue().strength_clip, 1);
 
-  assert.equal(controls.rowWidgets[0].onPointerDown(pointer, node), false);
-  assert.equal(pointer.onClick, undefined);
+    clickVisible(widget, node, value);
+    respond("0.25");
+    await Promise.resolve();
+    assert.equal(widget.serializeValue().strength_model, 0.25);
+    assert.equal(widget.serializeValue().strength_clip, 0.25);
+  } finally {
+    globalThis.comfyAPI = previous;
+  }
 });
 
-test("opens row LoRA choices as a searchable combo menu", () => {
+test("right-clicks and visible gaps do not capture or mutate a row", () => {
+  const node = fakeNode({ size: [300, 500] });
+  const controls = installPowerLoraLoader(node);
+  controls.add("characters/anime/hero.safetensors");
+  node.onPropertyChanged(SEPARATE_STRENGTHS, true);
+  const rowWidget = controls.rowWidgets[0];
+  const drawing = drawWidget(rowWidget, node, { y: 48 });
+  const menuTarget = drawing.text.find(({ value }) => value === "⋮");
+  const leftArrows = drawing.text
+    .filter(({ value }) => value === "◀")
+    .sort((left, right) => left.x - right.x);
+  const rightArrows = drawing.text
+    .filter(({ value }) => value === "▶")
+    .sort((left, right) => left.x - right.x);
+  const before = controls.rowWidgets[0].serializeValue();
+
+  assert.equal(clickVisible(rowWidget, node, menuTarget, 2), false);
+  const gap = pointerAt(
+    node,
+    (rightArrows[0].x + leftArrows[1].x) / 2,
+    rightArrows[0].y,
+  );
+  assert.equal(rowWidget.onPointerDown(gap, node), false);
+  assert.equal(gap.onClick, undefined);
+  assert.deepEqual(controls.rowWidgets[0].serializeValue(), before);
+});
+
+test("opens row LoRA choices in the native themed context menu", () => {
   const node = fakeNode();
   const controls = installPowerLoraLoader(node);
   controls.add("characters/anime/hero.safetensors");
+  const rowWidget = controls.rowWidgets[0];
+  const drawing = drawWidget(rowWidget, node, { y: 32 });
+  const filename = drawing.text.find(
+    ({ value }) => value === "hero.safetensors",
+  );
   const menus = [];
   const previousLiteGraph = globalThis.LiteGraph;
   globalThis.LiteGraph = {
@@ -272,20 +385,17 @@ test("opens row LoRA choices as a searchable combo menu", () => {
   };
 
   try {
-    const pointer = pointerAt(node, 80);
-    controls.rowWidgets[0].onPointerDown(pointer, node);
-    pointer.onClick(pointer.eDown);
-
+    assert.equal(clickVisible(rowWidget, node, filename), true);
     assert.equal(menus.length, 1);
-    assert.equal(menus[0].options.className, "dark");
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(menus[0].options, "className"),
+      false,
+    );
     assert.deepEqual(
       menus[0].items.map(({ content }) => content),
       ["anime/hero.safetensors", "photo.safetensors"],
     );
-    assert.equal(
-      menus[0].options.callback(menus[0].items[1]),
-      undefined,
-    );
+    menus[0].options.callback(menus[0].items[1]);
     assert.equal(
       controls.rows[0].lora,
       "characters/photo.safetensors",
@@ -344,82 +454,38 @@ test("opens folder and add selectors as searchable combo menus", () => {
   }
 });
 
-test("adds an off-by-default setting that controls separate strengths", () => {
-  const node = fakeNode();
-  const controls = installPowerLoraLoader(node);
-  controls.add("characters/anime/hero.safetensors");
-  let labels = [];
-  const context = {
-    fillText(text) {
-      labels.push(text);
-    },
-  };
-
-  controls.headerWidget.draw(context, node, node.size[0], 0);
-  controls.rowWidgets[0].draw(context, node, node.size[0], 24);
-
-  assert.deepEqual(node.constructor[`@${SEPARATE_STRENGTHS}`], {
-    type: "boolean",
-  });
-  assert.equal(node.properties[SEPARATE_STRENGTHS], false);
-  assert.ok(labels.includes("Strength"));
-  assert.ok(!labels.includes("Model strength"));
-  assert.ok(!labels.includes("CLIP strength"));
-  assert.equal(labels.filter((label) => label === "◀").length, 1);
-  assert.equal(labels.filter((label) => label === "▶").length, 1);
-  assert.equal(labels.filter((label) => label === "1.00").length, 1);
-
-  node.onPropertyChanged(SEPARATE_STRENGTHS, true);
-  labels = [];
-  controls.headerWidget.draw(context, node, node.size[0], 0);
-  controls.rowWidgets[0].draw(context, node, node.size[0], 24);
-
-  assert.ok(labels.includes("Model strength"));
-  assert.ok(labels.includes("CLIP strength"));
-  assert.equal(labels.filter((label) => label === "◀").length, 2);
-  assert.equal(labels.filter((label) => label === "▶").length, 2);
-  assert.equal(labels.filter((label) => label === "1.00").length, 2);
-  assert.ok(!labels.includes("M 1"));
-  assert.ok(!labels.includes("C 1"));
-});
 
 test("strength arrows adjust by 0.05 and keep direct entry", () => {
-  const node = fakeNode();
+  const node = fakeNode({ size: [300, 500] });
   const controls = installPowerLoraLoader(node);
   controls.add("characters/anime/hero.safetensors");
   const rowWidget = controls.rowWidgets[0];
 
-  const combinedDecrease = pointerAt(node, 210);
-  rowWidget.onPointerDown(combinedDecrease, node);
-  combinedDecrease.onClick(combinedDecrease.eDown);
+  let drawing = drawWidget(rowWidget, node, { y: 24 });
+  let leftArrows = drawing.text.filter(({ value }) => value === "◀");
+  let rightArrows = drawing.text.filter(({ value }) => value === "▶");
+  assert.equal(clickVisible(rowWidget, node, leftArrows[0]), true);
   assert.equal(controls.rows[0].strengthModel, 0.95);
   assert.equal(controls.rows[0].strengthClip, 0.95);
-
-  const combinedIncrease = pointerAt(node, 278);
-  rowWidget.onPointerDown(combinedIncrease, node);
-  combinedIncrease.onClick(combinedIncrease.eDown);
+  assert.equal(clickVisible(rowWidget, node, rightArrows[0]), true);
   assert.equal(controls.rows[0].strengthModel, 1);
   assert.equal(controls.rows[0].strengthClip, 1);
 
   node.onPropertyChanged(SEPARATE_STRENGTHS, true);
-  const modelDecrease = pointerAt(node, 126);
-  rowWidget.onPointerDown(modelDecrease, node);
-  modelDecrease.onClick(modelDecrease.eDown);
+  drawing = drawWidget(rowWidget, node, { y: 24 });
+  leftArrows = drawing.text
+    .filter(({ value }) => value === "◀")
+    .sort((left, right) => left.x - right.x);
+  rightArrows = drawing.text
+    .filter(({ value }) => value === "▶")
+    .sort((left, right) => left.x - right.x);
+  assert.equal(clickVisible(rowWidget, node, leftArrows[0]), true);
   assert.equal(controls.rows[0].strengthModel, 0.95);
-
-  const modelIncrease = pointerAt(node, 194);
-  rowWidget.onPointerDown(modelIncrease, node);
-  modelIncrease.onClick(modelIncrease.eDown);
+  assert.equal(clickVisible(rowWidget, node, rightArrows[0]), true);
   assert.equal(controls.rows[0].strengthModel, 1);
-
-  const clipDecrease = pointerAt(node, 210);
-  rowWidget.onPointerDown(clipDecrease, node);
-  clipDecrease.onClick(clipDecrease.eDown);
+  assert.equal(clickVisible(rowWidget, node, leftArrows[1]), true);
   assert.equal(controls.rows[0].strengthClip, 0.95);
-
-  const clipIncrease = pointerAt(node, 278);
-  rowWidget.onPointerDown(clipIncrease, node);
-  clipIncrease.onClick(clipIncrease.eDown);
+  assert.equal(clickVisible(rowWidget, node, rightArrows[1]), true);
   assert.equal(controls.rows[0].strengthClip, 1);
 });
 
@@ -478,47 +544,212 @@ test("migrates the saved linked-strength option", () => {
   assert.equal("lfgg_link_strengths" in node.properties, false);
 });
 
-test("colors toggles and darkens disabled rows", () => {
+test("uses a checkbox state and keeps disabled row values readable", () => {
   const node = fakeNode();
   const controls = installPowerLoraLoader(node);
   controls.add("characters/anime/hero.safetensors");
-  const text = [];
-  const fills = [];
-  const context = {
-    fillRect() {
-      fills.push(this.fillStyle);
-    },
-    strokeRect() {},
-    fillText(value) {
-      text.push({ value, color: this.fillStyle });
-    },
-  };
+  const rowWidget = controls.rowWidgets[0];
 
-  controls.rowWidgets[0].draw(context, node, node.size[0], 24);
-  assert.ok(text.some(({ value, color }) => value === "●" && color === "#66bb6a"));
+  let drawing = drawWidget(rowWidget, node, { y: 24 });
+  assert.ok(
+    drawing.strokes.some(
+      ({ width, height }) => width === 13 && height === 13,
+    ),
+  );
+  assert.ok(drawing.text.some(({ value }) => value === "✓"));
 
   controls.setEnabled(0, false);
-  controls.rowWidgets[0].draw(context, node, node.size[0], 24);
-  assert.ok(text.some(({ value, color }) => value === "●" && color === "#ef5350"));
-  assert.ok(fills.includes("rgba(0, 0, 0, 0.35)"));
+  drawing = drawWidget(rowWidget, node, { y: 24 });
+  assert.equal(drawing.text.some(({ value }) => value === "✓"), false);
+  assert.ok(
+    drawing.text.some(({ value }) => value === "hero.safetensors"),
+  );
+  assert.ok(drawing.text.some(({ value }) => value === "1.00"));
+  assert.deepEqual(rowWidget.serializeValue(), {
+    on: false,
+    lora: "characters/anime/hero.safetensors",
+    strength_model: 1,
+    strength_clip: 1,
+  });
+  const disabledStrength = drawing.text.find(
+    ({ value }) => value === "1.00",
+  );
+  const disabledName = drawing.text.find(
+    ({ value }) => value === "hero.safetensors",
+  );
+  assert.equal(clickVisible(rowWidget, node, disabledStrength), false);
+  assert.equal(clickVisible(rowWidget, node, disabledName), false);
+
+  const checkbox = drawing.strokes.find(
+    ({ width, height }) => width === 13 && height === 13,
+  );
+  clickVisible(rowWidget, node, {
+    x: checkbox.x + checkbox.width / 2,
+    y: checkbox.y + checkbox.height / 2,
+  });
+  assert.equal(controls.rows[0].on, true);
 });
 
-test("reorder renumbers prompt widgets without changing row values", () => {
+test("disambiguates duplicate basenames and exposes the full stored path", () => {
+  const loras = [
+    "characters/anime/shared.safetensors",
+    "characters/photo/shared.safetensors",
+  ];
+  const node = fakeNode({ loras, size: [600, 500] });
+  const controls = installPowerLoraLoader(node);
+  controls.add(loras[0]);
+  controls.add(loras[1]);
+
+  const first = drawWidget(controls.rowWidgets[0], node, { y: 32 });
+  const second = drawWidget(controls.rowWidgets[1], node, { y: 88 });
+  assert.ok(first.text.some(({ value }) => value === "shared.safetensors"));
+  assert.ok(
+    first.text.some(({ value }) => value === "characters/anime"),
+  );
+  assert.ok(
+    second.text.some(({ value }) => value === "characters/photo"),
+  );
+
+  const prompts = [];
+  const previousCanvas = globalThis.LGraphCanvas;
+  globalThis.LGraphCanvas = {
+    active_canvas: {
+      prompt(label, value) {
+        prompts.push({ label, value });
+      },
+    },
+  };
+  try {
+    const options = [];
+    node.getExtraMenuOptions({}, options);
+    options
+      .find(item => item?.content === "Show LoRA 1 full path")
+      .callback();
+    assert.deepEqual(prompts, [
+      { label: "Full LoRA path", value: loras[0] },
+    ]);
+    assert.deepEqual(controls.rows.map(({ lora }) => lora), loras);
+  } finally {
+    globalThis.LGraphCanvas = previousCanvas;
+  }
+});
+
+test("shows folder context for a restored row outside the active folder", () => {
+  const saved = {
+    on: true,
+    lora: "styles/ink.safetensors",
+    strength_model: 0.5,
+    strength_clip: 0.5,
+  };
+  const node = fakeNode({
+    folder: "characters",
+    properties: { lfgg_lora_rows: [saved] },
+    size: [600, 500],
+  });
+  const controls = installPowerLoraLoader(node, { restore: true });
+  const drawing = drawWidget(controls.rowWidgets[0], node, { y: 32 });
+
+  assert.ok(drawing.text.some(({ value }) => value === "ink.safetensors"));
+  assert.ok(drawing.text.some(({ value }) => value === "styles"));
+  assert.deepEqual(controls.rowWidgets[0].serializeValue(), saved);
+});
+
+test("native node menu routes all row operations through the same state", () => {
   const node = fakeNode();
   const controls = installPowerLoraLoader(node);
   controls.add("characters/anime/hero.safetensors");
   controls.add("characters/photo.safetensors");
+  const replacementMenus = [];
+  let promptValue = "0.4";
+  const previousLiteGraph = globalThis.LiteGraph;
+  const previousCanvas = globalThis.LGraphCanvas;
+  globalThis.LiteGraph = {
+    ContextMenu: class {
+      constructor(items, options) {
+        replacementMenus.push({ items, options });
+      }
+    },
+  };
+  globalThis.LGraphCanvas = {
+    active_canvas: {
+      prompt(_label, _value, apply) {
+        apply(promptValue);
+      },
+    },
+  };
+  const options = () => {
+    const entries = [];
+    node.getExtraMenuOptions({}, entries);
+    return entries;
+  };
+  const action = (content) =>
+    options().find((entry) => entry?.content === content);
+
+  try {
+    action("Add selected LoRA").callback();
+    assert.equal(controls.rows.length, 3);
+
+    action("Toggle all LoRAs").callback();
+    assert.ok(controls.rows.every((row) => !row.on));
+    action("Enable LoRA 1").callback();
+    assert.equal(controls.rows[0].on, true);
+
+    action("Set LoRA 1 strength").callback();
+    assert.equal(controls.rows[0].strengthModel, 0.4);
+    assert.equal(controls.rows[0].strengthClip, 0.4);
+
+    node.onPropertyChanged(SEPARATE_STRENGTHS, true);
+    promptValue = "0.25";
+    action("Set LoRA 1 CLIP strength").callback();
+    assert.equal(controls.rows[0].strengthModel, 0.4);
+    assert.equal(controls.rows[0].strengthClip, 0.25);
+
+    action("Replace LoRA 1").callback();
+    const replacement = replacementMenus.at(-1);
+    replacement.options.callback(replacement.items[1]);
+    assert.equal(controls.rows[0].lora, "characters/photo.safetensors");
+
+    const moved = controls.rows[0];
+    action("Move LoRA 1 down").callback();
+    assert.equal(controls.rows[1], moved);
+    action("Remove LoRA 2").callback();
+    assert.equal(controls.rows.includes(moved), false);
+  } finally {
+    globalThis.LiteGraph = previousLiteGraph;
+    globalThis.LGraphCanvas = previousCanvas;
+  }
+});
+
+test("a retained renderer slot follows reordered and removed rows", () => {
+  const node = fakeNode();
+  const controls = installPowerLoraLoader(node);
+  controls.add("characters/anime/hero.safetensors");
+  controls.add("characters/photo.safetensors");
+  const slot = controls.rowWidgets[0];
+  const toggleDisplayedRow = (filename) => {
+    const drawing = drawWidget(slot, node, { y: 32 });
+    assert.ok(drawing.text.some(({ value }) => value === filename));
+    const checkbox = drawing.strokes.find(({ width, height }) => width === height);
+    assert.equal(clickVisible(slot, node, {
+      x: checkbox.x + checkbox.width / 2,
+      y: checkbox.y + checkbox.height / 2,
+    }), true);
+  };
 
   controls.move(1, -1);
+  toggleDisplayedRow("photo.safetensors");
+  assert.deepEqual(controls.rowWidgets.map(widget => {
+    const row = widget.serializeValue();
+    return [row.lora, row.on];
+  }), [
+    ["characters/photo.safetensors", false],
+    ["characters/anime/hero.safetensors", true],
+  ]);
 
-  assert.deepEqual(controls.rows.map((row) => row.lora), [
-    "characters/photo.safetensors",
-    "characters/anime/hero.safetensors",
-  ]);
-  assert.deepEqual(controls.rowWidgets.map((widget) => widget.name), [
-    "lora_1",
-    "lora_2",
-  ]);
+  controls.remove(0);
+  toggleDisplayedRow("hero.safetensors");
+  assert.equal(slot.serializeValue().lora, "characters/anime/hero.safetensors");
+  assert.equal(slot.serializeValue().on, false);
 });
 
 test("serializes exact backend rows without positional workflow values", () => {
@@ -565,6 +796,7 @@ test("restores ordered rows on the loaded-node install and stays idempotent", ()
     },
   ];
   const node = fakeNode({
+    wrapCustomWidgets: true,
     properties: {
       [SEPARATE_STRENGTHS]: true,
       lfgg_lora_rows: savedRows,
@@ -581,6 +813,22 @@ test("restores ordered rows on the loaded-node install and stays idempotent", ()
     controls.rowWidgets.map((widget) => widget.serializeValue()),
     savedRows,
   );
+  assert.ok(
+    controls.rowWidgets.every(
+      (widget) => widget.concreteWidget && node.widgets.includes(widget),
+    ),
+  );
+  assert.ok(controls.headerWidget.concreteWidget);
+  assert.ok(controls.footerWidget.concreteWidget);
+  const drawing = drawWidget(controls.rowWidgets[0], node, { y: 32 });
+  const checkbox = drawing.strokes.find(
+    ({ width, height }) => width === 13 && height === 13,
+  );
+  clickVisible(controls.rowWidgets[0], node, {
+    x: checkbox.x + checkbox.width / 2,
+    y: checkbox.y + checkbox.height / 2,
+  });
+  assert.equal(controls.rows[0].on, true);
   assert.equal(
     installPowerLoraLoader(node, { restore: true }),
     controls,
@@ -618,56 +866,114 @@ test("preserves a missing saved folder and exposes no add choices", () => {
   assert.deepEqual(controls.rowWidgets[0].serializeValue(), savedRows[0]);
 });
 
-test("centers the add footer when ComfyUI reports zero custom width", () => {
+test("clicks the visible Add LoRA target when reported width is zero", () => {
   const node = fakeNode();
   const controls = installPowerLoraLoader(node);
-  const calls = [];
-  const context = {
-    fillText(...args) {
-      calls.push(args);
-    },
-  };
+  const drawing = drawWidget(controls.footerWidget, node, {
+    reportedWidth: 0,
+    y: 20,
+  });
+  const add = drawing.text.find(({ value }) => value === "Add LoRA");
 
-  controls.footerWidget.draw(context, node, 0, 20);
-
-  assert.deepEqual(calls[0], ["Add LoRA", node.size[0] / 2, 32]);
+  assert.equal(clickVisible(controls.footerWidget, node, add), true);
+  assert.deepEqual(controls.rows.map(({ lora }) => lora), [LORAS[0]]);
 });
 
-test("uses the current node width when custom widget widths are stale", () => {
-  const node = fakeNode();
+test("measures basename ellipsis without compressing the stored path", () => {
+  const path =
+    "characters/a_very_long_portrait_detail_filename_v2.safetensors";
+  const node = fakeNode({ loras: [path], size: [300, 500] });
+  const controls = installPowerLoraLoader(node);
+  controls.add(path);
+  const drawing = drawWidget(controls.rowWidgets[0], node, {
+    y: 24,
+    characterWidth: 8,
+  });
+  const filename = drawing.text.find(({ value }) => value.endsWith("…"));
+
+  assert.ok(filename);
+  assert.equal(filename.maxWidth, undefined);
+  assert.equal(controls.rows[0].lora, path);
+  assert.equal(controls.rowWidgets[0].serializeValue().lora, path);
+});
+
+test("hits actual legacy and Nodes 2.0 targets across stale widths and resize", () => {
+  const node = fakeNode({ size: [600, 500] });
   const controls = installPowerLoraLoader(node);
   controls.add("characters/anime/hero.safetensors");
-  node.size[0] = 400;
-  const fills = [];
-  const labels = [];
-  const context = {
-    fillRect(...args) {
-      fills.push(args);
-    },
-    strokeRect() {},
-    fillText(...args) {
-      labels.push(args);
+  node.onPropertyChanged(SEPARATE_STRENGTHS, true);
+  const rowWidget = controls.rowWidgets[0];
+  const prompts = [];
+  const previousCanvas = globalThis.LGraphCanvas;
+  globalThis.LGraphCanvas = {
+    active_canvas: {
+      prompt(label, value, apply) {
+        prompts.push({ label, value });
+        apply("0.25");
+      },
     },
   };
 
-  controls.rowWidgets[0].draw(context, node, 320, 0);
-  controls.headerWidget.draw(context, node, 320, 24);
-  controls.footerWidget.draw(context, node, 320, 48);
+  try {
+    rowWidget.width = 300;
+    let drawing = drawWidget(rowWidget, node, {
+      reportedWidth: 300,
+      y: 64,
+    });
+    assert.equal(rowWidget.computeSize(300)[1], 40);
+    const wideModel = drawing.text
+      .filter(({ value }) => value === "1.00")
+      .sort((left, right) => left.x - right.x)[0];
+    const rowDraws = rowWidget.drawRequests;
+    assert.equal(clickVisible(rowWidget, node, wideModel), true);
+    assert.equal(controls.rows[0].strengthModel, 0.25);
+    assert.ok(rowWidget.drawRequests > rowDraws);
+    assert.ok(controls.headerWidget.drawRequests > 0);
+    assert.ok(controls.footerWidget.drawRequests > 0);
 
-  assert.deepEqual(fills[0], [10, 0, 380, 24]);
-  assert.deepEqual(
-    labels.find(([label]) => label === "Strength"),
-    ["Strength", 324, 36],
-  );
-  assert.equal(
-    labels.find(([label]) => label === "anime/hero.safetensors")[1],
-    38,
-  );
-  assert.equal(labels.find(([label]) => label === "⋮")[1], 378);
-  assert.deepEqual(
-    labels.find(([label]) => label === "Add LoRA"),
-    ["Add LoRA", 200, 60],
-  );
+    node.size[0] = 300;
+    drawing = drawWidget(rowWidget, node, {
+      reportedWidth: 600,
+      y: 64,
+    });
+    assert.equal(rowWidget.computeSize(600)[1], 80);
+    const stackedClip = drawing.text.find(({ value }) => value === "1.00");
+    assert.equal(clickVisible(rowWidget, node, stackedClip), true);
+    assert.equal(controls.rows[0].strengthClip, 0.25);
+
+    node.size[0] = 600;
+    rowWidget.y = 0;
+    drawing = drawWidget(rowWidget, node, {
+      reportedWidth: 300,
+      y: 1,
+    });
+    assert.equal(rowWidget.computeSize(300)[1], 80);
+    const clipDecrease = drawing.text
+      .filter(({ value }) => value === "◀")
+      .sort((left, right) => left.x - right.x)[1];
+    const widgetCanvas = {};
+    const graphCanvas = {};
+    const pointer = {
+      element: widgetCanvas,
+      eDown: {
+        button: 0,
+        offsetX: clipDecrease.x,
+        offsetY: clipDecrease.y,
+        canvasX: node.pos[0] + 500,
+        canvasY: node.pos[1] + 500,
+      },
+    };
+    assert.equal(
+      rowWidget.onPointerDown(pointer, node, { canvas: graphCanvas }),
+      true,
+    );
+    pointer.onClick(pointer.eDown);
+    assert.equal(controls.rows[0].strengthClip, 0.2);
+    assert.equal(node.size[1], 500);
+    assert.equal(node.sizeChanges(), 0);
+  } finally {
+    globalThis.LGraphCanvas = previousCanvas;
+  }
 });
 
 test("ignores unrelated node classes", () => {

@@ -1,3 +1,6 @@
+import { UI, canvasTheme, drawIdentity, fitText, nativePrompt, resolvedWidth } from "./node_ui.mjs";
+import { omitPresentationValues } from "./editor_view.mjs";
+
 export const ROUTING_ORGANIZER_ID = "LFGG_RoutingOrganizer";
 export const ROUTING_ORGANIZER_NAME = "LFGG Routing Organizer";
 export const MAX_CHANNELS = 32;
@@ -5,6 +8,7 @@ export const MAX_CHANNELS = 32;
 const STATE_KEY = "lfgg_routing_channels";
 const LABEL_LIMIT = 64;
 const installed = Symbol("lfggRoutingOrganizer");
+const FOOTER_HEIGHT = UI.controlHeight;
 const extended = Symbol("lfggRoutingOrganizerExtension");
 const ignoredWidgetOptions = new Set([
   "control_after_generate",
@@ -295,6 +299,23 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
   const pending = new Set();
   let automaticSize = null;
   let manuallySized = false;
+  let footer;
+  const settings = app?.ui?.settings;
+  const modernRenderer = () => settings?.getSettingValue?.("Comfy.VueNodes.Enabled") === true;
+  const syncLabels = () => {
+    for (let index = 0; index < (node.inputs?.length ?? 0); index += 1) {
+      const label = modernRenderer() ? controls.label(index) : " ";
+      const input = node.inputs[index];
+      if (input.label !== label) {
+        // Nodes 2.0 tracks slot identity, not deep label mutations.
+        const Slot = Object.getPrototypeOf(input).constructor;
+        const replacement = new Slot({ ...input, label }, node);
+        node.inputs[index] = replacement;
+        if (pending.delete(input)) pending.add(replacement);
+      }
+    }
+    footer?.triggerDraw?.();
+  };
 
   const state = () => node.properties[STATE_KEY];
   const connected = (index, verifyLinks = false) => {
@@ -361,10 +382,10 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
     }
     if (spare < 0 && state().length < MAX_CHANNELS) addSlot();
     for (let index = 0; index < state().length; index += 1) {
-      for (const slot of [node.inputs[index], node.outputs[index]]) {
-        slot.name = channelSlotName(index);
-        slot.label = " ";
-      }
+      const name = channelSlotName(index);
+      node.inputs[index].name = name;
+      node.outputs[index].name = name;
+      node.outputs[index].label = " ";
     }
     controls.resize();
     return state();
@@ -373,14 +394,11 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
   controls.label = (index) => state()?.[index]?.label ?? `channel ${index + 1}`;
 
   controls.resize = () => {
+    syncLabels();
     const slotHeight = LiteGraph.NODE_SLOT_HEIGHT ?? 20;
-    const longest = state()?.reduce(
-      (length, _entry, index) => Math.max(length, controls.label(index).length),
-      ROUTING_ORGANIZER_NAME.length,
-    ) ?? ROUTING_ORGANIZER_NAME.length;
     const minimum = [
-      Math.min(520, Math.max(220, 42 + longest * 7)),
-      state().length * slotHeight + 6,
+      220,
+      state().length * slotHeight + UI.tightGap * 2 + FOOTER_HEIGHT,
     ];
     if (
       automaticSize &&
@@ -522,16 +540,18 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
 
   const rowAt = (position) => {
     const slotHeight = LiteGraph.NODE_SLOT_HEIGHT ?? 20;
-    const index = Math.floor(position?.[1] / slotHeight);
-    return index >= 0 && index < state().length ? index : -1;
+    const y = position?.[1];
+    const channelHeight = state().length * slotHeight;
+    if (!Number.isFinite(y) || y < 0 || y >= channelHeight) return -1;
+    return Math.floor(y / slotHeight);
   };
 
   const promptRename = (index, canvas, event) => {
-    canvas?.prompt?.("Channel label", controls.label(index), (value) => {
+    nativePrompt(node, "Channel label", controls.label(index), event, (value) => {
       node.graph?.beforeChange?.(node);
       controls.rename(index, value);
       node.graph?.afterChange?.(node);
-    }, event);
+    }, canvas);
   };
 
   const originalConnectionsChange = node.onConnectionsChange;
@@ -588,21 +608,73 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
     controls.normalize();
     serialized.properties ??= {};
     serialized.properties[STATE_KEY] = state().map(({ label, used }) => ({ label, used }));
+    if (footer) omitPresentationValues(node, serialized, [footer]);
   };
 
+  const drawFooter = (ctx, _node, width, y) => {
+    width = resolvedWidth(_node, width, footer?.y === 0 && y === 1);
+    if (footer) footer.width = width;
+    const colors = canvasTheme();
+    ctx.save?.();
+    ctx.font = `${UI.secondarySize}px sans-serif`;
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = colors.background;
+    ctx.fillRect(0, y, width, FOOTER_HEIGHT);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.strokeStyle = colors.outline;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    drawIdentity(ctx, UI.inset, y + (FOOTER_HEIGHT - 12) / 2, colors.background);
+    const hint = state().length === 1 && !state()[0].used && !state()[0].label
+      ? "Right-click to add a channel"
+      : modernRenderer() ? "Right-click for channel actions" : "Right-click for actions · Double-click a row to rename";
+    const hintX = UI.inset + 3 + UI.gap;
+    ctx.fillStyle = colors.secondary;
+    ctx.textAlign = "left";
+    ctx.fillText(fitText(ctx, hint, Math.max(0, width - hintX - UI.inset)), hintX, y + FOOTER_HEIGHT / 2);
+    ctx.restore?.();
+  };
+  if (typeof node.addCustomWidget === "function") {
+    footer = node.addCustomWidget({
+      name: "lfgg_routing_footer",
+      type: "lfgg_routing_footer",
+      serialize: false,
+      options: { serialize: false },
+      computeSize: () => [0, FOOTER_HEIGHT],
+      draw: drawFooter,
+    });
+  }
   const originalDraw = node.onDrawForeground;
   node.onDrawForeground = function (ctx) {
     originalDraw?.apply(this, arguments);
+    if (modernRenderer()) return;
     const slotHeight = LiteGraph.NODE_SLOT_HEIGHT ?? 20;
+    const colors = canvasTheme();
     ctx.save?.();
-    ctx.fillStyle = LiteGraph.WIDGET_TEXT_COLOR ?? "#dddddd";
-    ctx.font = `${LiteGraph.NODE_SUBTEXT_SIZE ?? 12}px sans-serif`;
+    ctx.fillStyle = colors.text;
+    ctx.font = `${LiteGraph.NODE_SUBTEXT_SIZE ?? UI.secondarySize}px sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
+    const labelWidth = Math.max(0, node.size[0] - UI.inset * 2 - 48);
     for (let index = 0; index < state().length; index += 1) {
-      ctx.fillText(controls.label(index), node.size[0] / 2, (index + 0.7) * slotHeight);
+      ctx.fillText(fitText(ctx, controls.label(index), labelWidth), node.size[0] / 2, (index + 0.7) * slotHeight);
     }
+    if (!footer) drawFooter(ctx, node, node.size[0], state().length * slotHeight + UI.tightGap);
     ctx.restore?.();
+  };
+  let rendererFrame;
+  const rendererChanged = () => {
+    if (rendererFrame != null) cancelAnimationFrame(rendererFrame);
+    rendererFrame = requestAnimationFrame(() => { rendererFrame = undefined; syncLabels(); });
+  };
+  settings?.addEventListener?.("Comfy.VueNodes.Enabled.change", rendererChanged);
+  const originalRemoved = node.onRemoved;
+  node.onRemoved = function (...args) {
+    if (rendererFrame != null) cancelAnimationFrame(rendererFrame);
+    settings?.removeEventListener?.("Comfy.VueNodes.Enabled.change", rendererChanged);
+    return originalRemoved?.apply(this, args);
   };
 
   const originalDoubleClick = node.onDblClick;
@@ -622,7 +694,14 @@ export function installRoutingOrganizer(node, { LiteGraph, app } = {}) {
     const mouse = canvas?.graph_mouse ?? [node.pos[0], node.pos[1] - 1];
     const channel = rowAt([mouse[0] - node.pos[0], mouse[1] - node.pos[1]]);
     const items = [{ content: "Add channel", disabled: state().length >= MAX_CHANNELS, callback: controls.add }];
-    if (channel >= 0) {
+    if (modernRenderer()) {
+      for (let index = 0; index < state().length; index += 1) {
+        items.push(
+          { content: `Rename channel ${index + 1}`, callback: (_item, _options, event) => promptRename(index, canvas, event) },
+          { content: `Remove channel ${index + 1}`, disabled: state().length === 1, callback: () => controls.remove(index) },
+        );
+      }
+    } else if (channel >= 0) {
       items.push(
         { content: "Rename channel", callback: (_item, _options, event) => promptRename(channel, canvas, event) },
         { content: "Remove channel", disabled: state().length === 1, callback: () => controls.remove(channel) },

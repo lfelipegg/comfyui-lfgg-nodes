@@ -13,6 +13,12 @@ folder choices. Toggle all is available above the rows.
 One combined strength is shown by default and applies to both model and CLIP.
 Enable `Separate Model and Clip strength` in the node settings to show and edit
 the two strengths independently. The option is saved with the workflow.
+At narrow widths, strength controls move below the filename instead of
+squeezing it. The basename is ellipsized, with folder context for duplicate
+names or rows outside the current folder. **Show full path** opens the exact
+stored path in a selectable native prompt. The node's native context menu
+also exposes row operations. Disabled rows keep readable values; only their
+toggle and row menu remain active.
 
 Enabled rows run from top to bottom. A row is skipped when disabled or when
 both strengths are zero. The outputs are the final `model` and `clip` after

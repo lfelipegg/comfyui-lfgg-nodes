@@ -59,6 +59,7 @@ def assert_object_info_matches_manifest(object_info, manifest):
         "output_name",
         "output_tooltips",
     )
+    absent = object()
     for node_id, expected in manifest["nodes"].items():
         actual = object_info[node_id]
         for section, inputs in expected["input"].items():
@@ -66,7 +67,7 @@ def assert_object_info_matches_manifest(object_info, manifest):
                 f"{node_id} {section} input order does not match manifest"
             )
         for field in fields:
-            assert actual[field] == expected[field], (
+            assert actual.get(field, absent) == expected.get(field, absent), (
                 f"{node_id} {field} does not match manifest"
             )
 

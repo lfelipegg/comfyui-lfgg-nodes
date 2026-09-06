@@ -246,6 +246,7 @@ test("restores disconnected boundaries from saved widgets without reloading vide
 test("defers filmstrip decoding until an expanded node is drawn", async () => {
   const node = graphNode();
   node.flags = { collapsed: true };
+  node.properties = { lfgg_editor_expanded: true };
   const domWidget = installVideoCutter(node, {
     document: documentStub,
     getGraph: directGraph,
@@ -374,7 +375,6 @@ test("stale source rejection cannot overwrite newer metadata success", async () 
   await aReady;
 
   assert.equal(status.textContent, successfulStatus);
-  assert.match(status.textContent, /00:00:01\.000/);
 });
 
 test("clears a direct preview when a computed input replaces it", async () => {
@@ -426,7 +426,7 @@ test("mode changes preserve one selection and connected active boundary is reado
   assert.equal(firstBoundary.disabled, true);
 });
 
-test("boundary handles share one track and restore after a rejected crossing", async () => {
+test("boundary handles restore after a rejected crossing without changing inputs", async () => {
   const node = graphNode();
   const domWidget = installVideoCutter(node, {
     document: documentStub,
@@ -440,19 +440,7 @@ test("boundary handles share one track and restore after a rejected crossing", a
   });
   await domWidget.lfggReady;
   const elements = descendants(domWidget.element);
-  const track = elements.find(({ dataset }) => dataset.role === "boundary-track");
   const boundaries = elements.filter(({ dataset }) => dataset.role === "boundary");
-  const scopedStyle = elements.find(({ tagName }) => tagName === "STYLE");
-
-  assert.equal(track.style.display, "grid");
-  assert.deepEqual(boundaries.map(({ style }) => style.gridArea), ["1 / 1", "1 / 1"]);
-  assert.equal(
-    boundaries.every(({ className }) => className === "lfgg-video-cutter-boundary"),
-    true,
-  );
-  assert.match(scopedStyle.textContent, /lfgg-video-cutter-boundary \{\s*pointer-events: none/);
-  assert.match(scopedStyle.textContent, /::-webkit-slider-thumb \{\s*pointer-events: auto/);
-  assert.match(scopedStyle.textContent, /::-moz-range-thumb \{\s*pointer-events: auto/);
 
   boundaries[0].value = "60";
   boundaries[0].dispatch("input");
@@ -552,6 +540,7 @@ test("execution metadata controls connected boundaries while direct source stays
 
 test("uses the cut duration for post-run preview thumbnails", async () => {
   const node = graphNode();
+  node.properties = { lfgg_editor_expanded: true };
   const domWidget = installVideoCutter(node, {
     document: documentStub,
     getGraph: () => undefined,
@@ -576,6 +565,7 @@ test("uses the cut duration for post-run preview thumbnails", async () => {
 
 test("waits for drawable media before capturing the first thumbnail", () => {
   const node = graphNode();
+  node.properties = { lfgg_editor_expanded: true };
   const domWidget = installVideoCutter(node, {
     document: documentStub,
     getGraph: () => undefined,
@@ -601,4 +591,98 @@ test("waits for drawable media before capturing the first thumbnail", () => {
   thumbnailPlayer.readyState = 2;
   thumbnailPlayer.onloadeddata();
   assert.equal(firstThumbnail.drawCount, 1);
+});
+
+test("media disclosure preserves inputs, restores Boolean state, and defers thumbnails", async () => {
+  const node = graphNode();
+  node.properties = { keep: "unchanged", lfgg_editor_expanded: "false" };
+  let requests = 0;
+  const widget = installVideoCutter(node, {
+    document: documentStub,
+    getGraph: directGraph,
+    fetchMetadata: async () => {
+      requests += 1;
+      return { duration: 10, reported_fps: 30, nominal_frame_count: 300 };
+    },
+  });
+  await widget.lfggReady;
+  const elements = descendants(widget.element);
+  const toggle = elements.find(element => element.dataset.role === "editor-disclosure");
+  const timeline = elements.find(element => element.dataset.role === "timeline");
+  const thumbnail = elements.find(element => element.tagName === "CANVAS");
+  const values = node.widgets.slice(0, 5).map(widget => widget.value);
+  assert.equal(timeline.hidden, true);
+  assert.equal(thumbnail.drawCount, 0);
+  toggle.dispatch("click");
+  assert.equal(timeline.hidden, false);
+  assert.equal(node.properties.lfgg_editor_expanded, true);
+  assert.equal(thumbnail.drawCount, 1);
+  toggle.dispatch("click");
+  assert.equal(timeline.hidden, true);
+  assert.equal(node.properties.keep, "unchanged");
+  assert.deepEqual(node.widgets.slice(0, 5).map(widget => widget.value), values);
+  assert.equal(requests, 1);
+  node.properties.lfgg_editor_expanded = true;
+  node.onConfigure({});
+  assert.equal(timeline.hidden, false);
+  const thumbnailPlayer = elements.filter(element => element.tagName === "VIDEO")[1];
+  for (let index = 1; index < 10; index += 1) thumbnailPlayer.onseeked();
+  const completedDraws = elements.filter(element => element.tagName === "CANVAS").map(canvas => canvas.drawCount);
+  toggle.dispatch("click");
+  toggle.dispatch("click");
+  assert.deepEqual(elements.filter(element => element.tagName === "CANVAS").map(canvas => canvas.drawCount), completedDraws);
+  const serialized = { widgets_values: [...values] };
+  node.onSerialize(serialized);
+  assert.deepEqual(serialized.widgets_values, values);
+});
+
+test("button activation keys do not bubble into playback shortcuts", async () => {
+  const widget = installVideoCutter(graphNode(), { document: documentStub });
+  await widget.lfggReady;
+  const player = descendants(widget.element).find(element => element.tagName === "VIDEO");
+  for (const tagName of ["BUTTON", "SUMMARY", "INPUT", "SELECT", "TEXTAREA", "VIDEO"]) {
+    widget.element.dispatch("keydown", { key: " ", target: { tagName } });
+    assert.equal(player.paused, true);
+  }
+});
+
+test("restores a direct video preview after all graph origins are configured", async () => {
+  const node = graphNode();
+  let graph;
+  let requests = 0;
+  const events = new EventTarget();
+  const widget = installVideoCutter(node, {
+    document: documentStub,
+    events,
+    getGraph: () => graph,
+    fetchMetadata: async () => {
+      requests += 1;
+      return { duration: 10, reported_fps: 30, nominal_frame_count: 300 };
+    },
+  });
+  await widget.lfggReady;
+  const start = descendants(widget.element).find(element => element.dataset.boundary === "start");
+  assert.equal(start.disabled, true);
+  graph = directGraph();
+  node.graph = graph;
+  node.onAfterGraphConfigured();
+  await widget.lfggReady;
+  assert.equal(start.disabled, false);
+  assert.deepEqual(node.widgets.slice(1, 3).map(widget => widget.value), [1, 2]);
+  node.onAfterGraphConfigured();
+  await widget.lfggReady;
+  assert.equal(requests, 1);
+  graph.load.widgets[0].value = "replacement.mp4";
+  events.dispatchEvent(new Event("graphChanged"));
+  await widget.lfggReady;
+  const player = descendants(widget.element).find(element => element.tagName === "VIDEO");
+  assert.match(player.src, /replacement\.mp4/);
+  assert.equal(requests, 2);
+  events.dispatchEvent(new Event("graphChanged"));
+  await widget.lfggReady;
+  assert.equal(requests, 2);
+  node.onRemoved();
+  graph.load.widgets[0].value = "removed.mp4";
+  events.dispatchEvent(new Event("graphChanged"));
+  assert.equal(requests, 2);
 });

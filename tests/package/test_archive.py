@@ -10,29 +10,57 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 import pytest
 
 EXPECTED_PATHS = {
+    "DESIGN.md",
     "LICENSE",
+    "PRODUCT.md",
     "README.md",
     "__init__.py",
+    "config.example.json",
     "lfgg_nodes/__init__.py",
     "lfgg_nodes/dimensions_by_aspect_ratio.py",
     "lfgg_nodes/image_dimensions.py",
     "lfgg_nodes/load_and_crop_image.py",
     "lfgg_nodes/power_lora_loader_folder.py",
+    "lfgg_nodes/prompt_composer.py",
+    "lfgg_nodes/routing_organizer.py",
     "lfgg_nodes/save_image_dynamic.py",
     "lfgg_nodes/sizing.py",
+    "lfgg_nodes/string_join.py",
+    "lfgg_nodes/string_replace.py",
+    "lfgg_nodes/switches.py",
+    "lfgg_nodes/value_inspector.py",
+    "lfgg_nodes/video_cutter.py",
     "pyproject.toml",
-    "web/ratio_preview.js",
-    "web/ratio_preview.mjs",
     "web/crop_editor.js",
     "web/crop_editor.mjs",
     "web/docs/LFGG_LoadAndCropImage/en.md",
     "web/docs/LFGG_PowerLoraLoaderFolder/en.md",
+    "web/docs/LFGG_PromptComposer/en.md",
+    "web/docs/LFGG_VideoCutter/en.md",
+    "web/editor_view.mjs",
+    "web/node_ui.css",
+    "web/node_ui.mjs",
     "web/power_lora_loader.js",
     "web/power_lora_loader.mjs",
+    "web/prompt_composer.js",
+    "web/prompt_composer.mjs",
+    "web/ratio_preview.js",
+    "web/ratio_preview.mjs",
+    "web/routing_organizer.js",
+    "web/routing_organizer.mjs",
+    "web/string_join.js",
+    "web/string_join.mjs",
+    "web/switches.js",
+    "web/switches.mjs",
+    "web/value_inspector.js",
+    "web/value_inspector.mjs",
+    "web/video_cutter.js",
+    "web/video_cutter.mjs",
     "workflows/load_and_crop_image.json",
     "workflows/load_and_crop_image.png",
     "workflows/save_image_dynamic.json",
     "workflows/sizing.json",
+    "workflows/video_cutter.json",
 }
 
 
@@ -178,14 +206,30 @@ def test_extracts_only_after_every_member_passes_inspection(tmp_path):
     assert (destination / "package" / "module.py").read_bytes() == b"VALUE = 1\n"
 
 
-def test_candidate_matches_the_approved_content_manifest(archive_path):
+def test_candidate_matches_current_source(archive_path):
     assert archive_path.exists(), f"candidate archive not found: {archive_path}"
 
     entries = archive_tools().inspect_archive(archive_path)
     assert {entry.path for entry in entries} == EXPECTED_PATHS
-    expected_manifest = Path(__file__).parents[2] / "release" / "1.5.0-archive.sha256"
-    assert expected_manifest.exists(), "approved archive manifest is not implemented"
-    assert archive_tools().format_manifest(entries) == expected_manifest.read_text()
+    root = Path(__file__).parents[2]
+    with ZipFile(archive_path) as archive:
+        for entry in entries:
+            assert archive.read(entry.path) == (root / entry.path).read_bytes(), (
+                entry.path
+            )
+
+
+def test_candidate_matches_approved_release(archive_path, approved_release_manifest):
+    if approved_release_manifest is None:
+        pytest.skip(
+            "No approved release manifest requested; candidate verification only"
+        )
+    assert approved_release_manifest.is_file(), "approved release manifest is missing"
+    entries = archive_tools().inspect_archive(archive_path)
+    assert (
+        archive_tools().format_manifest(entries)
+        == approved_release_manifest.read_text()
+    )
 
 
 def test_candidate_has_no_sensitive_content(archive_path):

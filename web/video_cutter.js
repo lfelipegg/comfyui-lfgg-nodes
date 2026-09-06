@@ -19,9 +19,11 @@ const metadata = async (input) => {
 const install = (node) =>
   installVideoCutter(node, {
     getGraph: () => app.graph,
+    isConfiguring: () => app.configuringGraph,
     buildViewUrl: (value) => api.apiURL(buildInputViewUrl(value)),
     buildOutputViewUrl: (value) => api.apiURL(buildVideoViewUrl(value)),
     fetchMetadata: metadata,
+    events: api,
   });
 
 app.registerExtension({

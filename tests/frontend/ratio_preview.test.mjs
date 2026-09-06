@@ -31,8 +31,13 @@ function fakeNode() {
     inputs: [],
     size: [320, 100],
     addCustomWidget(widget) {
-      this.widgets.push(widget);
-      return widget;
+      const concrete = {
+        ...widget,
+        options: { ...widget.options },
+        normalized: true,
+      };
+      this.widgets.push(concrete);
+      return concrete;
     },
     computeSize() {
       return [
@@ -86,6 +91,9 @@ function recordingContext() {
     },
     fillText(...args) {
       calls.push(["fillText", ...args]);
+    },
+    fillRect(...args) {
+      calls.push(["fillRect", ...args]);
     },
     measureText(text) {
       return { width: text.length * 7 };
@@ -149,6 +157,8 @@ test("contains ratios within the available preview bounds", () => {
 test("installs a derived preview and conditionally hides custom controls", () => {
   const node = fakeNode();
   const preview = installRatioPreview(node);
+  let redraws = 0;
+  preview.triggerDraw = () => { redraws += 1; };
   const ratio = node.widgets.find((widget) => widget.name === "aspect_ratio");
   const customWidth = node.widgets.find(
     (widget) => widget.name === "custom_ratio_width",
@@ -160,9 +170,12 @@ test("installs a derived preview and conditionally hides custom controls", () =>
   assert.equal(node.widgets[1], preview);
   assert.equal(preview.serialize, false);
   assert.equal(preview.options.serialize, false);
-  assert.deepEqual(preview.computeSize(), [0, 120]);
-  assert.equal(customWidth.hidden, true);
+  assert.ok(preview.computeSize()[1] >= 80);
+  assert.ok(preview.computeSize()[1] <= 104);
+  assert.equal(preview.normalized, true);
   assert.equal(customHeight.hidden, true);
+  assert.equal(customWidth.options.hidden, true);
+  assert.equal(customHeight.options.hidden, true);
   assert.equal(customWidth.value, 3);
   assert.equal(customHeight.value, 4);
   assert.equal(node.size[0], 320);
@@ -172,18 +185,26 @@ test("installs a derived preview and conditionally hides custom controls", () =>
   assert.equal(node.callbackCalls(), 1);
   assert.equal(customWidth.hidden, false);
   assert.equal(customHeight.hidden, false);
+  assert.equal(customWidth.options.hidden, false);
+  assert.equal(customHeight.options.hidden, false);
+  assert.equal(redraws, 1);
   assert.equal(node.size[0], 320);
 
   ratio.value = "16:9";
   ratio.callback("16:9");
   assert.equal(customWidth.hidden, true);
   assert.equal(customHeight.hidden, true);
+  assert.equal(customWidth.options.hidden, true);
+  assert.equal(customHeight.options.hidden, true);
 
   node.inputs = [{ name: "aspect_ratio", link: 7 }];
   node.onConnectionsChange();
   assert.equal(node.connectionCalls(), 1);
   assert.equal(customWidth.hidden, false);
   assert.equal(customHeight.hidden, false);
+  assert.equal(customWidth.options.hidden, false);
+  assert.equal(customHeight.options.hidden, false);
+  assert.ok(redraws > 1);
   assert.deepEqual(preview.getState(), {
     kind: "dynamic",
     label: "Dynamic ratio",
@@ -198,7 +219,7 @@ test("installs a derived preview and conditionally hides custom controls", () =>
   });
 });
 
-test("draws a fixed panel grid behind the ratio shape at legible detail", () => {
+test("draws a compact reference grid, ratio state and one identity marker", () => {
   const node = fakeNode();
   const preview = installRatioPreview(node);
   const detailed = recordingContext();
@@ -207,41 +228,26 @@ test("draws a fixed panel grid behind the ratio shape at legible detail", () => 
   preview.draw(detailed, node, 320, 10, 20, false);
   preview.draw(lowQuality, node, 320, 10, 20, true);
 
-  const shape = detailed.calls.filter(([name]) => name === "roundRect")[1];
-  const gridMoves = detailed.calls.filter(([name]) => name === "moveTo");
-  const gridLines = detailed.calls.filter(([name]) => name === "lineTo");
-  assert.equal(gridLines.length, 10);
-  assert.ok(gridMoves[1][1] < shape[1]);
-  assert.ok(gridLines[1][1] > shape[1] + shape[3]);
-  const firstGridLine = detailed.calls.findIndex(
-    ([name]) => name === "lineTo",
+  assert.ok(
+    detailed.calls.some(
+      ([name, text]) => name === "fillText" && text === "16:9",
+    ),
   );
-  const gridStroke = detailed.calls.findIndex(
-    ([name], index) => index > firstGridLine && name === "stroke",
-  );
-  const shapeFill = detailed.calls.findIndex(
-    ([name], index) => index > gridStroke && name === "fill",
-  );
-  assert.ok(gridStroke < shapeFill);
+  assert.ok(detailed.calls.some(([name]) => name === "lineTo"));
   assert.equal(
-    detailed.calls.filter(([name]) => name === "clip").length,
-    0,
+    detailed.calls.filter(
+      ([name, _x, _y, width, height]) =>
+        name === "fillRect" && width === 3 && height === 12,
+    ).length,
+    1,
   );
   assert.equal(
-    detailed.calls.filter(([name]) => name === "fillText").length,
-    2,
-  );
-  assert.equal(
-    lowQuality.calls.filter(([name]) => name === "lineTo").length,
-    0,
-  );
-  assert.equal(
-    lowQuality.calls.filter(([name]) => name === "fillText").length,
-    0,
+    lowQuality.calls.some(([name]) => name === "fillText"),
+    false,
   );
 });
 
-test("draws the fixed grid behind an invalid ratio label", () => {
+test("shows invalid ratio state without inventing geometry", () => {
   const node = fakeNode();
   node.widgets.find((widget) => widget.name === "aspect_ratio").value = "Custom";
   node.widgets.find(
@@ -257,13 +263,9 @@ test("draws the fixed grid behind an invalid ratio label", () => {
       ([name, text]) => name === "fillText" && text === "Invalid ratio",
     ),
   );
-  assert.equal(
-    context.calls.filter(([name]) => name === "lineTo").length,
-    10,
-  );
 });
 
-test("draws the fixed grid behind a dynamic ratio label", () => {
+test("shows dynamic ratio state without stale geometry", () => {
   const node = fakeNode();
   node.inputs = [{ name: "aspect_ratio", link: 7 }];
   const preview = installRatioPreview(node);
@@ -275,10 +277,6 @@ test("draws the fixed grid behind a dynamic ratio label", () => {
     context.calls.some(
       ([name, text]) => name === "fillText" && text === "Dynamic ratio",
     ),
-  );
-  assert.equal(
-    context.calls.filter(([name]) => name === "lineTo").length,
-    10,
   );
 });
 
@@ -321,7 +319,7 @@ test("shows descriptive selector labels while retaining raw values", () => {
   assert.equal(ratio.value, "9:16");
 });
 
-test("moves labels below a ratio shape when they cannot fit inside", () => {
+test("gives extreme ratios extra room and places their labels outside the shape", () => {
   const node = fakeNode();
   const ratio = node.widgets.find((widget) => widget.name === "aspect_ratio");
   const customWidth = node.widgets.find(
@@ -336,13 +334,14 @@ test("moves labels below a ratio shape when they cannot fit inside", () => {
   const preview = installRatioPreview(node);
   const context = recordingContext();
 
+  assert.equal(preview.computeSize()[1], 104);
   preview.draw(context, node, 320, 10, 20, false);
 
   const shape = context.calls.filter(([name]) => name === "roundRect")[1];
   const ratioLabel = context.calls.find(
     ([name, text]) => name === "fillText" && text === "100:1",
   );
-  assert.ok(ratioLabel[3] > shape[2] + shape[4]);
+  assert.ok(ratioLabel[2] - context.measureText("100:1").width / 2 > shape[1] + shape[3]);
 });
 
 test("keeps the existing five workflow widget values in their original order", () => {

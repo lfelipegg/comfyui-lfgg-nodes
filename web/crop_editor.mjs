@@ -1,4 +1,6 @@
 import { fitRatio, greatestCommonDivisor } from "./ratio_preview.mjs";
+import { UI, canvasTheme, drawIdentity, fitText, resolvedWidth, setWidgetHidden } from "./node_ui.mjs";
+import { createEditorView, omitPresentationValues } from "./editor_view.mjs";
 
 const invalid = { kind: "invalid" };
 const doesNotFit = { kind: "ratio-does-not-fit" };
@@ -209,8 +211,7 @@ export function resolveStaticInt(node, name, graph) {
 }
 
 const CROP_NODE_ID = "LFGG_LoadAndCropImage";
-const CROP_PREVIEW_HEIGHT = 360;
-const CROP_PREVIEW_INSET = 8;
+const CROP_PREVIEW_INSET = UI.inset;
 const installedCropEditor = Symbol("lfggCropEditor");
 const cropInputNames = new Set(["crop_x", "crop_y", "crop_width", "crop_height"]);
 
@@ -234,20 +235,18 @@ function composeCallback(widget, update) {
   };
 }
 
-function resizeNode(node, allowShrink) {
-  const [, minimumHeight] = node.computeSize();
-  node.setSize([
-    node.size[0],
-    allowShrink ? minimumHeight : Math.max(node.size[1], minimumHeight),
-  ]);
+function previewHeight(width, source, expanded) {
+  const available = Math.max(1, width - CROP_PREVIEW_INSET * 2);
+  const proportional = source ? available * source.height / source.width : 120;
+  return Math.max(96, Math.min(expanded ? 360 : 200, proportional)) + 52;
 }
 
-function cropBounds(width, y) {
+function cropBounds(width, y, height) {
   return {
     x: CROP_PREVIEW_INSET,
     y: y + CROP_PREVIEW_INSET,
     width: Math.max(1, width - CROP_PREVIEW_INSET * 2),
-    height: CROP_PREVIEW_HEIGHT - CROP_PREVIEW_INSET * 2,
+    height: height - 52,
   };
 }
 
@@ -270,7 +269,10 @@ function drawFrame(ctx, imageBounds, frame, sourceWidth, sourceHeight, lowQualit
   ctx.fillRect(rectangle.x + rectangle.width, rectangle.y, imageBounds.x + imageBounds.width - rectangle.x - rectangle.width, rectangle.height);
   ctx.fillRect(imageBounds.x, rectangle.y + rectangle.height, imageBounds.width, imageBounds.y + imageBounds.height - rectangle.y - rectangle.height);
   ctx.globalAlpha = 1;
-  ctx.strokeStyle = border;
+  ctx.strokeStyle = "#111111";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height);
+  ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 2;
   ctx.strokeRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height);
   if (lowQuality) return rectangle;
@@ -287,11 +289,6 @@ function drawFrame(ctx, imageBounds, frame, sourceWidth, sourceHeight, lowQualit
     ctx.rect?.(x - handleSize / 2, y - handleSize / 2, handleSize, handleSize);
     ctx.fill();
   }
-  ctx.fillStyle = theme.WIDGET_TEXT_COLOR ?? "#eeeeee";
-  ctx.font = "12px sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(`${frame.width} × ${frame.height}`, rectangle.x + rectangle.width / 2, rectangle.y + rectangle.height / 2);
   return rectangle;
 }
 
@@ -348,6 +345,7 @@ export function installCropEditor(
     buildViewUrl = (value) => value,
     getGraph = () => undefined,
     isConfiguring = () => false,
+    events,
   } = {},
 ) {
   if (node?.comfyClass !== CROP_NODE_ID) return undefined;
@@ -355,6 +353,7 @@ export function installCropEditor(
     node[installedCropEditor].isConfiguring = isConfiguring;
     node[installedCropEditor].refresh();
     node[installedCropEditor].update(false);
+    node[installedCropEditor].view.restore();
     return node[installedCropEditor].widget;
   }
   const byName = (name) => node.widgets?.find((widget) => widget.name === name);
@@ -368,8 +367,18 @@ export function installCropEditor(
   if (![image, ratioWidth, ratioHeight, cropX, cropY, cropWidth, cropHeight].every(Boolean)) {
     return undefined;
   }
+  if (typeof node.addWidget !== "function" || typeof node.addCustomWidget !== "function") return undefined;
+  node.hideOutputImages = true;
+  const background = node.onDrawBackground;
+  node.onDrawBackground = function (...args) {
+    // Legacy preview creation does not honor hideOutputImages.
+    if (this.imgs?.length) this.imgs = undefined;
+    return background?.apply(this, args);
+  };
   cropHeight.disabled = true;
   cropHeight.readonly = true;
+  cropHeight.options ??= {};
+  cropHeight.options.read_only = true;
 
   const controller = {
     source: undefined,
@@ -381,6 +390,31 @@ export function installCropEditor(
     observedStaticRatio: undefined,
     isConfiguring,
   };
+  let disclosure;
+  let redrawPending = false;
+  const redraw = () => {
+    node.setDirtyCanvas?.(true, true);
+    if (redrawPending) return;
+    redrawPending = true;
+    queueMicrotask(() => {
+      redrawPending = false;
+      controller.widget?.triggerDraw?.();
+    });
+  };
+  const showView = (expanded) => {
+    for (const widget of [cropX, cropY, cropWidth, cropHeight]) {
+      setWidgetHidden(node, widget, !expanded && controller.imageState.kind !== "error");
+    }
+    disclosure.label = expanded ? "Hide crop controls" : "Edit crop";
+    if (controller.widget) {
+      controller.widget.computedHeight = height();
+      controller.widget.label = controller.imageState.label || "Crop preview";
+    }
+    redraw();
+  };
+  const view = createEditorView(node, { isConfiguring: () => controller.isConfiguring(), changed: showView });
+  controller.view = view;
+  const height = (width = node.size[0]) => previewHeight(width, controller.source, view.expanded);
   const staticRatioKey = () => {
     const width = resolveStaticInt(node, "ratio_width", getGraph());
     const height = resolveStaticInt(node, "ratio_height", getGraph());
@@ -406,6 +440,8 @@ export function installCropEditor(
   const setEditing = (enabled) => {
     for (const widget of [cropX, cropY, cropWidth]) {
       widget.disabled = !enabled || controller.imageState.kind !== "ready";
+      widget.options ??= {};
+      widget.options.read_only = widget.disabled;
     }
     cropHeight.disabled = true;
   };
@@ -415,7 +451,7 @@ export function installCropEditor(
     cropY.value = frame.y;
     cropWidth.value = frame.width;
     cropHeight.value = frame.height;
-    node.setDirtyCanvas?.(true, true);
+    redraw();
   };
   const reset = () => {
     controller.pendingCrop = undefined;
@@ -423,7 +459,7 @@ export function installCropEditor(
     setEditing(resolved.kind === "value");
     if (!controller.source || resolved.kind !== "value") {
       controller.frame = undefined;
-      node.setDirtyCanvas?.(true, true);
+      redraw();
       return;
     }
     const frame = initializeFrame(controller.source.width, controller.source.height, resolved.width, resolved.height);
@@ -468,7 +504,7 @@ export function installCropEditor(
     controller.image = undefined;
     controller.imageState = { kind: "loading", label: "Loading selected image…" };
     setEditing(false);
-    node.setDirtyCanvas?.(true, true);
+    showView(view.expanded);
     node.imgs = [];
     const loaded = createImage();
     loaded.onerror = () => {
@@ -477,7 +513,9 @@ export function installCropEditor(
         kind: "error",
         label: "Image unavailable\nReselect or upload the image.",
       };
-      node.setDirtyCanvas?.(true, true);
+      showView(view.expanded);
+      view.fit();
+      redraw();
     };
     loaded.onload = () => {
       if (request !== controller.loadRequest || controller.imageState.kind !== "loading") return;
@@ -490,6 +528,8 @@ export function installCropEditor(
       controller.image = loaded;
       controller.imageState = { kind: "ready" };
       controller.source = { width, height };
+      showView(view.expanded);
+      view.fit(true);
       const pendingCrop = controller.pendingCrop;
       controller.pendingCrop = undefined;
       if (applyExecutionCrop(pendingCrop)) return;
@@ -520,22 +560,38 @@ export function installCropEditor(
       loaded.onerror();
     }
   };
-  const preview = {
+  let preview = {
     type: "lfgg_crop_editor",
     name: "lfgg_crop_editor",
     serialize: false,
     options: { serialize: false },
-    computeSize: () => [0, CROP_PREVIEW_HEIGHT],
+    computeSize: (width) => [0, height(Math.max(width || 0, node.size[0]))],
     getState: () => {
       if (controller.imageState.kind !== "ready") return controller.imageState;
       const resolved = currentRatio();
       if (resolved.kind === "dynamic") return { kind: "dynamic", label: "Run to resolve connected ratio" };
-      return resolved.kind === "value" ? { kind: "ready" } : invalid;
+      if (resolved.kind !== "value") return { ...invalid, label: "Enter a positive integer ratio" };
+      return controller.frame ? { kind: "ready" } : { ...doesNotFit, label: "Ratio does not fit source image" };
     },
-    draw(ctx, _node, width, y, _height, lowQuality) {
+    draw(ctx, _node, _width, y, _height, lowQuality) {
       observeStaticRatio();
+      const width = resolvedWidth(node, _width, controller.widget.y === 0 && y === 1);
+      controller.widget.width = width;
+      const totalHeight = height(width);
+      const bounds = cropBounds(width, y, totalHeight);
+      const theme = canvasTheme();
+      const captionY = bounds.y + bounds.height + 20;
+      drawIdentity(ctx, UI.inset, captionY - 6, theme.background);
+      ctx.font = `${UI.fontSize}px sans-serif`;
+      ctx.fillStyle = theme.text;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      const caption = controller.frame
+        ? `${controller.frame.width} × ${controller.frame.height} source pixels`
+        : controller.source ? preview.getState().label : "Crop preview";
+      ctx.fillText(fitText(ctx, caption, bounds.width - 16), UI.inset + 11, captionY);
       if (controller.imageState.kind !== "ready") {
-        const bounds = cropBounds(width, y);
+        const bounds = cropBounds(width, y, totalHeight);
         ctx.fillStyle = (globalThis.LiteGraph ?? {}).WIDGET_TEXT_COLOR ?? "#eeeeee";
         ctx.font = "12px sans-serif";
         ctx.textAlign = "center";
@@ -548,23 +604,10 @@ export function installCropEditor(
       if (!controller.image || !controller.source) return;
       controller.drawY = y;
       controller.drawWidth = width;
-      const contained = fitPreviewImage(controller.source.width, controller.source.height, cropBounds(width, y));
+      const contained = fitPreviewImage(controller.source.width, controller.source.height, bounds);
       if (contained.kind) return;
       ctx.drawImage(controller.image, contained.x, contained.y, contained.width, contained.height);
-      if (!controller.frame) {
-        if (currentRatio().kind === "dynamic" && !lowQuality) {
-          ctx.fillStyle = (globalThis.LiteGraph ?? {}).WIDGET_TEXT_COLOR ?? "#eeeeee";
-          ctx.font = "12px sans-serif";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(
-            "Run to resolve connected ratio",
-            contained.x + contained.width / 2,
-            contained.y + contained.height / 2,
-          );
-        }
-        return;
-      }
+      if (!controller.frame) return;
       ctx.save?.();
       ctx.beginPath?.();
       ctx.rect?.(contained.x, contained.y, contained.width, contained.height);
@@ -575,12 +618,19 @@ export function installCropEditor(
       drawFrame(ctx, contained, controller.frame, controller.source.width, controller.source.height, lowQuality);
       ctx.restore?.();
     },
-    onPointerDown(event, position) {
+    onPointerDown(event, pointerNode, canvas) {
+      if (event.eDown?.button != null && event.eDown.button !== 0) return false;
+      const localPoint = (pointerEvent) => event.element && event.element !== canvas?.canvas
+        ? { x: pointerEvent.offsetX, y: pointerEvent.offsetY }
+        : { x: pointerEvent.canvasX - pointerNode.pos[0], y: pointerEvent.canvasY - pointerNode.pos[1] };
+      if (!event.eDown) return false;
+      const position = localPoint(event.eDown);
+      if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) return false;
       if (!controller.source || !controller.frame || currentRatio().kind !== "value") return false;
       const contained = fitPreviewImage(
         controller.source.width,
         controller.source.height,
-        cropBounds(controller.drawWidth ?? node.size[0], controller.drawY ?? 0),
+        cropBounds(controller.drawWidth ?? node.size[0], controller.drawY ?? 0, height(controller.drawWidth)),
       );
       if (contained.kind) return false;
       const display = {
@@ -598,28 +648,32 @@ export function installCropEditor(
         y: (point.y - contained.y) * controller.source.height / contained.height,
       });
       const startPoint = sourcePoint(position);
-      event.onDragStart?.(() => {});
-      event.onDrag?.((point) => {
-        const pointer = sourcePoint(point);
+      event.onDragStart = () => {};
+      event.onDrag = (pointerEvent) => {
+        const pointer = sourcePoint(localPoint(pointerEvent));
         const resolved = currentRatio();
         const next = corner
           ? resizeFrame(start, corner, pointer.x, pointer.y, controller.source.width, controller.source.height, resolved.width, resolved.height)
           : moveFrame(start, pointer.x - startPoint.x, pointer.y - startPoint.y, controller.source.width, controller.source.height);
         if (!next.kind) sync(next);
-      });
-      event.onDragEnd?.(() => {});
-      event.finally?.(() => node.setDirtyCanvas?.(true, true));
+      };
+      event.onDragEnd = event.onDrag;
       return true;
     },
   };
-  controller.widget = preview;
   controller.update = (shrink) => {
     observeStaticRatio();
-    resizeNode(node, shrink && !controller.isConfiguring());
+    view.fit(shrink);
   };
-  node.addCustomWidget(preview);
+  preview = node.addCustomWidget(preview);
+  controller.widget = preview;
   node.widgets.splice(node.widgets.indexOf(preview), 1);
   node.widgets.splice(node.widgets.indexOf(image) + 1, 0, preview);
+  disclosure = node.addWidget("button", "Edit crop", null, () => view.setExpanded(!view.expanded), { serialize: false });
+  disclosure.serialize = false;
+  disclosure.options ??= {};
+  disclosure.options.serialize = false;
+  view.restore();
   node[installedCropEditor] = controller;
 
   composeCallback(image, () => loadSelectedImage(false));
@@ -669,14 +723,22 @@ export function installCropEditor(
   const originalSerialize = node.onSerialize;
   node.onSerialize = function (serialized) {
     const result = originalSerialize?.apply(this, arguments);
-    if (Array.isArray(serialized.widgets_values) && serialized.widgets_values.length === node.widgets.length) {
-      serialized.widgets_values.splice(node.widgets.indexOf(preview), 1);
-    }
+    omitPresentationValues(node, serialized, [preview, disclosure]);
     return result;
   };
   controller.refresh = () => {
     rememberStaticRatio();
     loadSelectedImage(true);
+  };
+  const graphChanged = () => {
+    if (node.graph === getGraph() && !controller.isConfiguring()) controller.update(false);
+  };
+  events?.addEventListener("graphChanged", graphChanged);
+  const removed = node.onRemoved;
+  node.onRemoved = function (...args) {
+    events?.removeEventListener("graphChanged", graphChanged);
+    controller.loadRequest += 1;
+    return removed?.apply(this, args);
   };
   controller.update(false);
   controller.refresh();

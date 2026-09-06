@@ -167,6 +167,34 @@ function organizer(graph, app = {}) {
   return { node, controls: installRoutingOrganizer(node, { LiteGraph: liteGraph, app }) };
 }
 
+function recordingContext() {
+  const calls = [];
+  return {
+    calls,
+    save() {},
+    restore() {},
+    beginPath() {},
+    moveTo(...args) {
+      calls.push(["moveTo", ...args]);
+    },
+    lineTo(...args) {
+      calls.push(["lineTo", ...args]);
+    },
+    stroke() {
+      calls.push(["stroke"]);
+    },
+    fillRect(...args) {
+      calls.push(["fillRect", ...args]);
+    },
+    fillText(...args) {
+      calls.push(["fillText", ...args]);
+    },
+    measureText(text) {
+      return { width: text.length * 7 };
+    },
+  };
+}
+
 test("extends the backend definition instead of registering a frontend-only node", () => {
   class BackendNode extends FakeNode {
     constructor() {
@@ -485,4 +513,85 @@ test("exposes compact channel actions while removing execution-only menus", () =
   assert.deepEqual(prompts, [{ title: "Channel label", value: "channel 1" }]);
   assert.equal(controls.label(0), "positive");
   assert.equal(node.changeMode(4), false);
+});
+
+test("ellipsizes drawn labels without changing them and excludes the footer from channel actions", () => {
+  const graph = new FakeGraph();
+  const { node, controls } = organizer(graph);
+  const fullLabel = "a routing label long enough to overlap both native sockets";
+  controls.rename(0, fullLabel);
+  const context = recordingContext();
+
+  node.onDrawForeground(context);
+  const renderedLabel = context.calls.find(([name]) => name === "fillText")[1];
+  assert.ok(renderedLabel.endsWith("…"));
+  assert.equal(controls.label(0), fullLabel);
+  assert.equal(
+    context.calls.filter(
+      ([name, _x, _y, width, height]) =>
+        name === "fillRect" && width === 3 && height === 12,
+    ).length,
+    1,
+  );
+
+  const prompts = [];
+  const footerY = node.size[1] - 16;
+  const canvas = {
+    graph_mouse: [10, footerY],
+    prompt() {
+      prompts.push(true);
+    },
+  };
+  const options = [];
+  node.getExtraMenuOptions(canvas, options);
+  assert.deepEqual(
+    options.filter(Boolean).map(({ content }) => content),
+    ["Add channel"],
+  );
+  node.onDblClick({}, [10, footerY], canvas);
+  assert.deepEqual(prompts, []);
+});
+
+test("modern routing retains labels and rename actions without persisting its footer", () => {
+  const graph = new FakeGraph();
+  const node = graph.add(new FakeNode());
+  node.type = ROUTING_ORGANIZER_ID;
+  node.widgets = [];
+  node.addCustomWidget = widget => {
+    const concrete = { ...widget };
+    node.widgets.push(concrete);
+    return concrete;
+  };
+  let modern = true;
+  const controls = installRoutingOrganizer(node, {
+    LiteGraph: liteGraph,
+    app: { ui: { settings: { getSettingValue: () => modern } } },
+  });
+  const label = "A complete channel label — 素材の詳細";
+  controls.rename(0, label);
+  assert.equal(node.inputs[0].label, label);
+  const prompts = [];
+  const canvas = { graph_mouse: [0, -1], prompt: (_title, value) => prompts.push(value) };
+  const options = [];
+  node.getExtraMenuOptions(canvas, options);
+  options.find(item => item?.content === "Rename channel 1").callback();
+  assert.deepEqual(prompts, [label]);
+  controls.add();
+  const serialized = { widgets_values: [undefined] };
+  node.onSerialize(serialized);
+  assert.deepEqual(serialized.widgets_values, []);
+  assert.deepEqual(serialized.properties.lfgg_routing_channels, [
+    { label, used: true },
+    { label: null, used: true },
+    { label: null, used: false },
+  ]);
+  modern = false;
+  controls.normalize();
+  assert.equal(controls.label(0), label);
+  assert.equal(node.inputs[0].label, " ");
+  modern = true;
+  controls.resize();
+  const restored = {};
+  node.onSerialize(restored);
+  assert.deepEqual(restored.properties.lfgg_routing_channels, serialized.properties.lfgg_routing_channels);
 });

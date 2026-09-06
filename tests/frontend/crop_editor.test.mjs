@@ -252,8 +252,14 @@ function cropNode() {
     widgets,
     inputs: widgets.slice(1).map(({ name }) => ({ name, link: null })),
     size: [320, 160],
-    addCustomWidget(widget) { this.widgets.push(widget); return widget; },
-    computeSize() { return [this.size[0], 40 + this.widgets.reduce((total, widget) => total + (widget.computeSize?.()[1] ?? 20), 0)]; },
+    pos: [0, 0],
+    addCustomWidget(widget) { const installed = { ...widget }; this.widgets.push(installed); return installed; },
+    addWidget(type, name, value, callback, options) {
+      const widget = { type, name, value, callback, options };
+      this.widgets.push(widget);
+      return widget;
+    },
+    computeSize() { return [this.size[0], 40 + this.widgets.filter(widget => !widget.hidden).reduce((total, widget) => total + (widget.computeSize?.()[1] ?? 20), 0)]; },
     setSize(size) { this.size = size; },
     setDirtyCanvas() { this.dirty = (this.dirty ?? 0) + 1; },
     onConnectInput() { this.connected = (this.connected ?? 0) + 1; return "previous"; },
@@ -287,6 +293,7 @@ function cropContext() {
   const calls = [];
   return {
     calls,
+    measureText(text) { return { width: Array.from(text).length * 7 }; },
     save() {}, restore() {}, beginPath() {}, stroke() {},
     rect(...args) { calls.push(["rect", ...args]); },
     fill() { calls.push(["handle"]); },
@@ -298,14 +305,20 @@ function cropContext() {
 }
 
 function dragEvent() {
-  const callbacks = {};
   return {
-    onDragStart(callback) { assert.equal(typeof callback, "function"); callbacks.start = callback; },
-    onDrag(callback) { assert.equal(typeof callback, "function"); callbacks.drag = callback; },
-    onDragEnd(callback) { assert.equal(typeof callback, "function"); callbacks.end = callback; },
-    finally(callback) { assert.equal(typeof callback, "function"); callbacks.finally = callback; },
-    move(position) { callbacks.start?.(); callbacks.drag?.(position); callbacks.end?.(); callbacks.finally?.(); },
+    move(position) {
+      const event = { canvasX: position.x, canvasY: position.y };
+      this.onDragStart?.(this, event);
+      this.onDrag?.(event);
+      this.onDragEnd?.(event);
+      this.finally?.();
+    },
   };
+}
+
+function pointerDown(preview, node, pointer, position) {
+  pointer.eDown = { canvasX: position.x, canvasY: position.y, button: 0 };
+  return preview.onPointerDown(pointer, node, {});
 }
 
 function installedCropNode(options = {}) {
@@ -315,6 +328,7 @@ function installedCropNode(options = {}) {
     buildViewUrl: (value) => `/view?filename=${value}`,
     getGraph: () => options.graph,
     isConfiguring: () => options.configuring ?? false,
+    events: options.events,
   });
   return { node, preview };
 }
@@ -330,7 +344,6 @@ test("installs exactly one canvas after image and ignores other or incomplete no
   assert.equal(node.widgets[1], preview);
   assert.equal(preview.serialize, false);
   assert.equal(preview.options.serialize, false);
-  assert.deepEqual(preview.computeSize(), [0, 360]);
   assert.equal(node.widgets.find((widget) => widget.name === "crop_height").disabled, true);
   assert.equal(installCropEditor(node), preview);
   assert.equal(node.widgets.filter((widget) => widget.name === "lfgg_crop_editor").length, 1);
@@ -374,7 +387,7 @@ test("loads the selected image on install and restores only a matching persisted
   assert.deepEqual(cropValues(restored.node), [25, 50, 100, 100]);
   const context = cropContext();
   restored.preview.draw(context, restored.node, 320, 20, 360, false);
-  assert.equal(context.calls[0][0], "image");
+  assert.ok(context.calls.some(([name]) => name === "image"));
 
   assert.deepEqual(cropValues(install({}).node), [100, 0, 200, 200]);
   assert.deepEqual(
@@ -410,7 +423,7 @@ test("locks pending and failed image loads without changing saved crop values", 
   node.widgets[0].callback();
   assert.equal(preview.getState().kind, "loading");
   assert.equal(node.widgets.find(({ name }) => name === "crop_width").disabled, true);
-  assert.equal(preview.onPointerDown(dragEvent(), { x: 100, y: 100 }), false);
+  assert.equal(pointerDown(preview, node, dragEvent(), { x: 100, y: 100 }), false);
   assert.deepEqual(cropValues(node), saved);
   requests[1].onerror?.();
   assert.equal(preview.getState().kind, "error");
@@ -502,7 +515,9 @@ test("ignores an older image request that resolves after graph reload", () => {
 
   const context = cropContext();
   preview.draw(context, node, 320, 20, 360, false);
-  assert.deepEqual(context.calls[0].slice(2), [8, 124, 304, 152]);
+  const drawnImage = context.calls.find(([name]) => name === "image");
+  assert.equal(drawnImage[1].naturalWidth, 400);
+  assert.equal(drawnImage[1].naturalHeight, 200);
 });
 
 test("normalizes numeric edits once and resets for local, constant, and computed ratios", () => {
@@ -546,7 +561,9 @@ test("observes primitive edits locally without wrapping upstream callbacks", () 
     },
   };
   const originalCallback = numeric.callback;
-  const { node, preview } = installedCropNode({ graph });
+  const events = new EventTarget();
+  const { node, preview } = installedCropNode({ graph, events });
+  node.graph = graph;
   node.inputs.find((input) => input.name === "ratio_width").link = 2;
   node.onConnectionsChange();
   node.onConnectionsChange();
@@ -567,7 +584,7 @@ test("observes primitive edits locally without wrapping upstream callbacks", () 
   assert.equal(numeric.callback, originalCallback);
   assert.equal(originalCalls, 1);
   assert.deepEqual(cropValues(node), [0, 0, 400, 200]);
-  preview.draw(cropContext(), node, 320, 20, 360, false);
+  events.dispatchEvent(new Event("graphChanged"));
   assert.deepEqual(cropValues(node), [100, 0, 200, 200]);
 
   const width = node.widgets.find((widget) => widget.name === "crop_width");
@@ -627,10 +644,7 @@ test("idempotent graph reload restores persisted state without upstream listener
   assert.equal(installCropEditor(node, options), preview);
   const context = cropContext();
   preview.draw(context, node, 320, 20, 360, false);
-  assert.equal(
-    context.calls.find(([name]) => name === "label")?.[1],
-    "100 × 50",
-  );
+  assert.deepEqual(cropValues(node), [25, 50, 100, 50]);
 
   numeric.value = 1;
   preview.draw(cropContext(), node, 320, 20, 360, false);
@@ -663,62 +677,46 @@ test("applies execution crop data, composes connection rules, and serializes onl
   assert.equal(node.connected, 1);
   assert.equal(node.onConnectInput(2, "INT", {}), false);
   assert.equal(node.connected, 2);
-  const serialized = { widgets_values: ["portrait.png", null, 2, 1, 20, 0, 200, 100] };
+  const serialized = { widgets_values: ["portrait.png", null, 2, 1, 20, 0, 200, 100, null] };
   node.onSerialize(serialized);
   assert.deepEqual(serialized.widgets_values, ["portrait.png", 2, 1, 20, 0, 200, 100]);
+  const trailingSkipped = { widgets_values: [] };
+  node.widgets.forEach((widget, index) => {
+    if (widget.serialize !== false) trailingSkipped.widgets_values[index] = widget.value;
+  });
+  node.onSerialize(trailingSkipped);
+  assert.deepEqual(trailingSkipped.widgets_values, ["portrait.png", 2, 1, 20, 0, 200, 100]);
 });
 
-test("draws image then four outside dims, border, handles, and label at normal quality", () => {
+
+test("drag targets follow the visible crop after resize and disclosure", () => {
   const { node, preview } = installedCropNode();
-  node.widgets[0].callback("portrait.png");
-  const detailed = cropContext();
-  const lowQuality = cropContext();
-  preview.draw(detailed, node, 320, 20, 360, false);
-  preview.draw(lowQuality, node, 320, 20, 360, true);
-  assert.equal(detailed.calls[0][0], "image");
-  assert.equal(detailed.calls.filter(([name]) => name === "dim").length, 4);
-  assert.equal(detailed.calls.filter(([name]) => name === "border").length, 1);
-  assert.equal(detailed.calls.filter(([name]) => name === "label").length, 1);
-  assert.equal(detailed.calls.filter(([name]) => name === "handle").length, 4);
-  assert.equal(detailed.calls.filter(([name]) => name === "dim").slice(-4).length, 4);
-  assert.equal(lowQuality.calls.filter(([name]) => name === "label").length, 0);
-  assert.equal(lowQuality.calls.filter(([name]) => name === "handle").length, 0);
-  assert.equal(lowQuality.calls.filter(([name]) => name === "border").length, 1);
-});
-
-test("draws the unresolved connected-ratio message at normal quality", () => {
-  const computed = { id: 1, type: "Math", widgets: [{ value: 2 }] };
-  const { node, preview } = installedCropNode({ graph: graphWith(computed) });
-  node.inputs.find((input) => input.name === "ratio_width").link = 1;
-  node.onConnectionsChange();
-
-  const context = cropContext();
-  preview.draw(context, node, 320, 20, 360, false);
-
-  assert.equal(context.calls[0][0], "image");
-  assert.deepEqual(
-    context.calls.find(([name]) => name === "label")?.slice(1),
-    ["Run to resolve connected ratio", 160, 200],
-  );
-});
-
-test("moves from the interior and resizes from every corner handle", () => {
-  const { node, preview } = installedCropNode();
-  node.widgets[0].callback("portrait.png");
-  preview.draw(cropContext(), node, 320, 20, 360, false);
-  const initial = cropValues(node);
-  const move = dragEvent();
-  assert.equal(preview.onPointerDown(move, { x: 160, y: 220 }), true);
-  move.move({ x: 180, y: 220 });
-  assert.notDeepEqual(cropValues(node), initial);
-  for (const point of [{ x: 84, y: 140 }, { x: 236, y: 140 }, { x: 84, y: 292 }, { x: 236, y: 292 }]) {
-    node.widgets[0].callback("portrait.png");
-    preview.draw(cropContext(), node, 320, 20, 360, false);
-    const drag = dragEvent();
-    assert.equal(preview.onPointerDown(drag, point), true);
-    drag.move({ x: 20, y: 120 });
+  const disclosure = node.widgets.find(widget => widget.type === "button");
+  for (const width of [300, 400, 600]) {
+    node.size[0] = width;
+    for (const expanded of [true, false]) {
+      if ((node.properties?.lfgg_editor_expanded === true) !== expanded) disclosure.callback();
+      node.widgets[0].callback("portrait.png");
+      const context = cropContext();
+      preview.draw(context, node, expanded ? 300 : 0, 20, 0, false);
+      const [, , x, y, w, h] = context.calls.find(([name]) => name === "image");
+      assert.equal(x + w / 2, width / 2);
+      const point = (sx, sy) => ({ x: x + sx * w / 400, y: y + sy * h / 200 });
+      const initial = cropValues(node);
+      const move = dragEvent();
+      assert.equal(pointerDown(preview, node, move, point(200, 100)), true);
+      move.move(point(210, 100));
+      assert.equal(cropValues(node)[0], initial[0] + 10);
+      for (const [sx, sy] of [[100, 0], [300, 0], [100, 200], [300, 200]]) {
+        node.widgets[0].callback("portrait.png");
+        const drag = dragEvent();
+        assert.equal(pointerDown(preview, node, drag, point(sx, sy)), true);
+        drag.move(point(200, 100));
+        assert.notDeepEqual(cropValues(node), initial);
+      }
+      assert.equal(pointerDown(preview, node, dragEvent(), { x: 1, y: 1 }), false);
+    }
   }
-  assert.equal(preview.onPointerDown(dragEvent(), { x: 1, y: 1 }), false);
 });
 
 test("keeps tiny-frame move and corner targets practical and deterministic", () => {
@@ -736,22 +734,20 @@ test("keeps tiny-frame move and corner targets practical and deterministic", () 
   setTinyFrame();
   const context = cropContext();
   preview.draw(context, node, 320, 20, 360, false);
-  assert.deepEqual(
-    context.calls.filter(([name]) => name === "rect").slice(-4).map((call) => call.slice(-2)),
-    [[12, 12], [12, 12], [12, 12], [12, 12]],
-  );
-
-  const sourcePoint = (x, y) => ({ x: 8 + x * 0.76, y: 124 + y * 0.76 });
+  const [, , imageX, imageY, imageWidth, imageHeight] = context.calls.find(([name]) => name === "image");
+  const scale = imageWidth / 400;
+  const sourcePoint = (x, y) => ({ x: imageX + x * scale, y: imageY + y * imageHeight / 200 });
+  const centerPoint = sourcePoint(200.5, 100.5);
   const cases = [
-    [{ x: 145, y: 185 }, sourcePoint(151, 51), [151, 51, 50, 50]],
-    [{ x: 176, y: 185 }, sourcePoint(250, 51), [200, 51, 50, 50]],
-    [{ x: 145, y: 216 }, sourcePoint(151, 150), [151, 100, 50, 50]],
-    [{ x: 176, y: 216 }, sourcePoint(250, 150), [200, 100, 50, 50]],
+    [{ x: centerPoint.x - 15, y: centerPoint.y - 15 }, sourcePoint(151, 51), [151, 51, 50, 50]],
+    [{ x: centerPoint.x + 15, y: centerPoint.y - 15 }, sourcePoint(250, 51), [200, 51, 50, 50]],
+    [{ x: centerPoint.x - 15, y: centerPoint.y + 15 }, sourcePoint(151, 150), [151, 100, 50, 50]],
+    [{ x: centerPoint.x + 15, y: centerPoint.y + 15 }, sourcePoint(250, 150), [200, 100, 50, 50]],
   ];
   for (const [down, moved, expected] of cases) {
     setTinyFrame();
     const drag = dragEvent();
-    assert.equal(preview.onPointerDown(drag, down), true);
+    assert.equal(pointerDown(preview, node, drag, down), true);
     drag.move(moved);
     assert.deepEqual(cropValues(node), expected);
   }
@@ -761,12 +757,12 @@ test("keeps tiny-frame move and corner targets practical and deterministic", () 
   const center = sourcePoint(200.5, 100.5);
   const expandedMovePoint = { x: center.x + 5, y: center.y + 4 };
   assert.equal(
-    preview.onPointerDown(move, expandedMovePoint),
+    pointerDown(preview, node, move, expandedMovePoint),
     true,
   );
   move.move({
-    x: expandedMovePoint.x + 20 * 0.76,
-    y: expandedMovePoint.y + 10 * 0.76,
+    x: expandedMovePoint.x + 20 * scale,
+    y: expandedMovePoint.y + 10 * scale,
   });
   assert.deepEqual(cropValues(node), [220, 110, 1, 1]);
 });
@@ -865,4 +861,26 @@ test("normalizes annotated input names into a confined view query", () => {
     buildInputViewUrl("photo.png [input] extra"),
     "/view?filename=photo.png+%5Binput%5D+extra&subfolder=&type=input",
   );
+});
+
+test("crop disclosure restores strict Boolean view state without changing execution values", () => {
+  const { node } = installedCropNode();
+  const disclosure = node.widgets.find(widget => widget.type === "button");
+  const original = cropValues(node);
+  node.size[1] = 1200;
+  for (const value of [undefined, "false", 1, false, true]) {
+    node.properties = { keep: "untouched", lfgg_editor_expanded: value };
+    node.onConfigure({});
+    assert.equal(node.widgets.find(widget => widget.name === "crop_x").hidden, value !== true);
+    assert.deepEqual(cropValues(node), original);
+    assert.equal(node.size[1], 1200);
+    assert.equal(node.properties.keep, "untouched");
+  }
+  disclosure.callback();
+  assert.equal(node.properties.lfgg_editor_expanded, false);
+  assert.deepEqual(cropValues(node), original);
+  const values = node.widgets.filter(widget => widget.serialize !== false).map(widget => widget.value);
+  const serialized = { widgets_values: [...values] };
+  node.onSerialize(serialized);
+  assert.deepEqual(serialized.widgets_values, values);
 });

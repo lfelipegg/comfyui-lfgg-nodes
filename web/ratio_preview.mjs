@@ -1,9 +1,11 @@
+import { UI, canvasTheme, drawIdentity, resolvedWidth, setWidgetHidden } from "./node_ui.mjs";
+
 const NODE_ID = "LFGG_DimensionsByAspectRatio";
-const PREVIEW_HEIGHT = 120;
+const COMPACT_HEIGHT = 96;
+const MESSAGE_HEIGHT = 80;
+const EXTREME_HEIGHT = 104;
 const installedPreview = Symbol("lfggRatioPreview");
-const PANEL_INSET = 8;
 const PANEL_PADDING = 12;
-const LABEL_HEIGHT = 32;
 const CORNER_RADIUS = 6;
 const ASPECT_RATIO_LABELS = {
   "1:1": "1:1 — Square",
@@ -78,25 +80,28 @@ function roundedRectangle(ctx, rectangle) {
   );
 }
 
+function previewHeight(preview) {
+  const state = preview.getState();
+  if (state.kind !== "ratio") return MESSAGE_HEIGHT;
+  const extent = Math.max(state.width / state.height, state.height / state.width);
+  return extent >= 2.2 ? EXTREME_HEIGHT : COMPACT_HEIGHT;
+}
+
 function drawPreview(ctx, preview, width, y, lowQuality) {
   const state = preview.getState();
-  const theme = globalThis.LiteGraph ?? {};
-  const colors = {
-    panel: theme.WIDGET_BGCOLOR ?? "#222222",
-    outline: theme.WIDGET_OUTLINE_COLOR ?? "#666666",
-    text: theme.WIDGET_TEXT_COLOR ?? "#dddddd",
-  };
+  const colors = canvasTheme();
+  const height = previewHeight(preview);
   const panel = {
-    x: PANEL_INSET,
+    x: UI.inset,
     y: y + 2,
-    width: Math.max(1, width - PANEL_INSET * 2),
-    height: PREVIEW_HEIGHT - 4,
+    width: Math.max(1, width - UI.inset * 2),
+    height: height - 4,
   };
 
   if (!lowQuality) {
     ctx.save();
     roundedRectangle(ctx, panel);
-    ctx.fillStyle = colors.panel;
+    ctx.fillStyle = colors.background;
     ctx.fill();
     ctx.strokeStyle = colors.outline;
     ctx.lineWidth = 1;
@@ -110,18 +115,37 @@ function drawPreview(ctx, preview, width, y, lowQuality) {
     width: Math.max(1, panel.width - PANEL_PADDING * 2),
     height: Math.max(1, panel.height - PANEL_PADDING * 2),
   };
+  drawIdentity(ctx, content.x, content.y + 1, colors.background);
+  if (!lowQuality) {
+    ctx.fillStyle = colors.secondary;
+    ctx.font = `${UI.secondarySize}px sans-serif`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(
+      "Requested ratio",
+      content.x + 3 + UI.gap,
+      content.y + 7,
+    );
+  }
+
+  const plot = {
+    x: content.x,
+    y: content.y + 20,
+    width: content.width,
+    height: Math.max(1, content.height - 20),
+  };
   if (!lowQuality) {
     ctx.save();
     ctx.beginPath();
-    for (let index = 1; index < 6; index += 1) {
-      const x = content.x + (content.width * index) / 6;
-      const gridY = content.y + (content.height * index) / 6;
-      ctx.moveTo(x, content.y);
-      ctx.lineTo(x, content.y + content.height);
-      ctx.moveTo(content.x, gridY);
-      ctx.lineTo(content.x + content.width, gridY);
+    for (let index = 1; index < 4; index += 1) {
+      const x = plot.x + (plot.width * index) / 4;
+      const gridY = plot.y + (plot.height * index) / 4;
+      ctx.moveTo(x, plot.y);
+      ctx.lineTo(x, plot.y + plot.height);
+      ctx.moveTo(plot.x, gridY);
+      ctx.lineTo(plot.x + plot.width, gridY);
     }
-    ctx.globalAlpha = 0.35;
+    ctx.globalAlpha = 0.18;
     ctx.strokeStyle = colors.outline;
     ctx.lineWidth = 1;
     ctx.stroke();
@@ -131,66 +155,66 @@ function drawPreview(ctx, preview, width, y, lowQuality) {
   if (state.kind !== "ratio") {
     if (!lowQuality) {
       ctx.fillStyle = colors.text;
-      ctx.font = "12px sans-serif";
+      ctx.font = `${UI.secondarySize}px sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(
         state.label,
         panel.x + panel.width / 2,
-        panel.y + panel.height / 2,
+        plot.y + plot.height / 2,
       );
     }
     return;
   }
 
-  let shape = fitRatio(state.width, state.height, content);
+  let shape = fitRatio(state.width, state.height, plot);
 
   ctx.font = "600 14px sans-serif";
   const ratioLabelWidth = ctx.measureText(state.label).width;
-  ctx.font = "12px sans-serif";
+  ctx.font = `${UI.secondarySize}px sans-serif`;
   const orientationWidth = ctx.measureText(state.orientation).width;
   const labelsFit =
     shape.width >= Math.max(ratioLabelWidth, orientationWidth) + 16 &&
     shape.height >= 40;
+  const labelSpace = Math.min(plot.width / 2, Math.max(ratioLabelWidth, orientationWidth) + UI.gap);
   if (!labelsFit) {
     shape = fitRatio(state.width, state.height, {
-      ...content,
-      height: Math.max(1, content.height - LABEL_HEIGHT),
+      ...plot,
+      width: Math.max(1, plot.width - labelSpace - UI.gap),
     });
   }
 
   if (lowQuality) {
     roundedRectangle(ctx, shape);
     ctx.strokeStyle = colors.outline;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 2;
     ctx.stroke();
     return;
   }
 
   roundedRectangle(ctx, shape);
-  ctx.fillStyle = colors.panel;
+  ctx.fillStyle = colors.background;
   ctx.fill();
 
   roundedRectangle(ctx, shape);
-  ctx.strokeStyle = colors.outline;
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = colors.text;
+  ctx.lineWidth = 2;
   ctx.stroke();
 
   const centerX = labelsFit
     ? shape.x + shape.width / 2
-    : panel.x + panel.width / 2;
+    : plot.x + plot.width - labelSpace / 2;
   const ratioY = labelsFit
     ? shape.y + shape.height / 2 - 8
-    : content.y + content.height - LABEL_HEIGHT / 2 - 6;
+    : plot.y + plot.height / 2 - 8;
   ctx.fillStyle = colors.text;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.font = "600 14px sans-serif";
   ctx.fillText(state.label, centerX, ratioY);
-  ctx.font = "12px sans-serif";
-  ctx.globalAlpha = 0.75;
+  ctx.font = `${UI.secondarySize}px sans-serif`;
+  ctx.fillStyle = colors.secondary;
   ctx.fillText(state.orientation, centerX, ratioY + 17);
-  ctx.globalAlpha = 1;
 }
 
 export function installRatioPreview(
@@ -216,15 +240,19 @@ export function installRatioPreview(
   aspectRatio.options ??= {};
   aspectRatio.options.getOptionLabel = (value) =>
     ASPECT_RATIO_LABELS[value] ?? value;
+  customWidth.options ??= {};
+  customHeight.options ??= {};
 
-  const preview = {
+  let preview = {
     type: "lfgg_ratio_preview",
     name: "lfgg_ratio_preview",
     serialize: false,
     options: { serialize: false },
-    computeSize: () => [0, PREVIEW_HEIGHT],
-    draw: (ctx, _node, width, y, _height, lowQuality) =>
-      drawPreview(ctx, preview, width, y, lowQuality),
+    computeSize: () => [0, previewHeight(preview)],
+    draw: (ctx, drawNode, width, y, _height, lowQuality) => {
+      preview.width = resolvedWidth(drawNode, width, preview.y === 0 && y === 1);
+      drawPreview(ctx, preview, preview.width, y, lowQuality);
+    },
     getState: () => {
       const aspectDynamic = linked(node, "aspect_ratio");
       const customDynamic =
@@ -239,8 +267,9 @@ export function installRatioPreview(
       );
     },
   };
-  node.addCustomWidget(preview);
-  node.widgets.splice(node.widgets.indexOf(preview), 1);
+  preview = node.addCustomWidget(preview) ?? preview;
+  const previewIndex = node.widgets.indexOf(preview);
+  if (previewIndex >= 0) node.widgets.splice(previewIndex, 1);
   node.widgets.splice(node.widgets.indexOf(aspectRatio) + 1, 0, preview);
 
   const controller = {
@@ -251,9 +280,10 @@ export function installRatioPreview(
   const update = (shrink) => {
     const showCustom =
       aspectRatio.value === "Custom" || linked(node, "aspect_ratio");
-    customWidth.hidden = !showCustom;
-    customHeight.hidden = !showCustom;
+    setWidgetHidden(node, customWidth, !showCustom);
+    setWidgetHidden(node, customHeight, !showCustom);
     resize(node, shrink && !controller.isConfiguring(), controller);
+    preview.triggerDraw?.();
     node.setDirtyCanvas?.(true, true);
   };
   controller.update = update;

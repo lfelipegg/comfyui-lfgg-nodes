@@ -132,15 +132,13 @@ test("installs idempotent nonserialized selectors with disabled catalog entries"
     "lfgg_prompt_composer",
     "seed",
   ]);
+  const wildcardOptions = byRole(widget, "wildcards").children;
   assert.deepEqual(
-    byRole(widget, "wildcards").children.map(({ textContent, disabled }) => ({
-      textContent,
-      disabled,
-    })),
+    wildcardOptions.map(({ value, disabled }) => ({ value, disabled })),
     [
-      { textContent: "Add wildcard…", disabled: true },
-      { textContent: "animals/pets", disabled: false },
-      { textContent: "empty", disabled: true },
+      { value: "", disabled: true },
+      { value: "animals/pets", disabled: false },
+      { value: "empty", disabled: true },
     ],
   );
   assert.equal(byRole(widget, "styles").children[1].disabled, true);
@@ -150,7 +148,7 @@ test("installs idempotent nonserialized selectors with disabled catalog entries"
   assert.deepEqual(serialized.widgets_values, ["front END", 0]);
 });
 
-test("constrains library controls to a compact node-width layout", async () => {
+test("uses content height and keeps insertion controls usable when they wrap", async () => {
   const node = graphNode();
   const widget = installPromptComposer(node, {
     document: documentStub,
@@ -162,28 +160,22 @@ test("constrains library controls to a compact node-width layout", async () => {
   });
   await widget.lfggReady;
 
-  assert.equal(widget.element.style.display, "grid");
-  assert.equal(widget.element.style.width, "100%");
-  assert.equal(widget.element.style.minWidth, "0");
-  assert.equal(widget.element.style.height, "104px");
-  assert.equal(widget.element.style.maxHeight, "104px");
-  assert.equal(widget.element.style.alignContent, "start");
-  assert.equal(widget.element.style.boxSizing, "border-box");
-  assert.equal(byRole(widget, "selectors").style.gridTemplateColumns, "repeat(2, minmax(0, 1fr))");
-  for (const role of ["wildcards", "styles"]) {
-    const select = byRole(widget, role);
-    assert.equal(select.style.width, "100%");
-    assert.equal(select.style.minWidth, "0");
-    assert.equal(select.style.maxWidth, "100%");
-  }
-  assert.equal(byRole(widget, "actions").style.display, "flex");
-  assert.equal(byRole(widget, "status").style.textOverflow, "ellipsis");
+  assert.equal(byRole(widget, "wildcards")["aria-label"], "Insert wildcard");
+  assert.equal(byRole(widget, "styles")["aria-label"], "Insert style");
+  assert.match(byRole(widget, "caret-hint").textContent, /caret/);
   assert.equal(byRole(widget, "status").textContent, "1 wildcard · 1 style");
-  assert.deepEqual(widget.computeSize(), [0, 104]);
-  assert.equal(widget.options.getMinHeight(), 104);
-  assert.equal(widget.options.getMaxHeight(), 104);
-  assert.equal(widget.options.getHeight(), 104);
-  assert.deepEqual(node.size, [360, 330]);
+  assert.equal(widget.options.getMaxHeight, undefined);
+  assert.equal(widget.element.style.maxHeight, undefined);
+  widget.element.scrollHeight = 176;
+  assert.equal(widget.options.getMinHeight(), 176);
+  widget.element.scrollHeight = 224;
+  assert.deepEqual(widget.computeSize(), [0, 224]);
+  assert.deepEqual(node.size, [300, 200]);
+  assert.equal(
+    descendants(widget.element).filter(({ className }) =>
+      className === "lfgg-identity").length,
+    1,
+  );
 });
 
 test("opens wildcard and style choices as searchable combo menus", async () => {
@@ -217,7 +209,6 @@ test("opens wildcard and style choices as searchable combo menus", async () => {
 
   try {
     byRole(widget, "wildcards").dispatch("pointerdown");
-    assert.equal(menus[0].options.className, "dark");
     assert.deepEqual(
       menus[0].items.map(({ content }) => content),
       ["animals/pets", "places/mountains"],
