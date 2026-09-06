@@ -36,6 +36,15 @@ official docs, official examples, then local reference nodes.
 - `.codex/agents/` provides lean secondary compatibility for Codex, not the
   authoritative orchestration model.
 
+### User questions
+
+- In OMP, always use the `ask` tool's interactive UI for user questions,
+  clarification, approvals, and design interviews; never substitute numbered
+  chat questions or ask the user to reply with option letters.
+- Group independent questions in one dialog and mark recommended options.
+  This applies even when a skill prescribes a plain-text interview format.
+  Resolve repository facts with tools rather than asking the user.
+
 ## Pack Invariants
 
 - Use the standard library, ComfyUI helpers, project code, and installed
