@@ -14,6 +14,11 @@ reloaded. Selecting another image or changing the ratio resets it. Without the
 frontend extension, the seven standard inputs still provide the numeric
 fallback.
 
+Editing is locked while the selected image loads. Failed previews preserve
+the saved numeric values and show a recovery message; reselect or upload the
+image to retry. A successful execution received during image loading is applied
+when that image becomes ready.
+
 The packaged example workflow requires `load_and_crop_image.png`. Copy
 `workflows/load_and_crop_image.png` from the node pack to
 `ComfyUI/input/load_and_crop_image.png` before running it.

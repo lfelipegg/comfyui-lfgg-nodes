@@ -67,6 +67,8 @@ selecting `Custom` or connecting a dynamic ratio reveals them without resetting
 their values. The preview adds no workflow state and does not affect backend
 sizing. If the frontend extension is unavailable, all inputs remain visible and
 the node still executes normally.
+Automatic height changes fit the visible controls without shrinking a node
+that the user has manually enlarged.
 
 The two image-derived nodes are downscale-only and inspect the shared
 `[B,H,W,C]` tensor shape. Batch count does not change the result. They do not
@@ -87,6 +89,8 @@ the ComfyUI input directory, accepts images up to `16384 × 16384` pixels and
 268,435,456 total pixels, and returns the selected exact-ratio source rectangle
 without resampling. Alpha produces an Alpha-derived mask using ComfyUI's
 transparent-is-white convention. Stable ID `LFGG_LoadAndCropImage`.
+Only the oriented crop is converted to float32 tensors; returned image and mask
+storage does not retain the full source image.
 
 Persisted inputs, in order, are:
 
@@ -114,6 +118,10 @@ preview. If the frontend extension is unavailable, the same seven standard
 inputs remain as the numeric fallback. The frontend uses ComfyUI's native input
 view endpoint and adds no route. The node does not access the network and writes
 no files.
+While the selected image loads, crop editing is locked and saved numeric values
+are preserved. A failed preview shows a recovery message; reselect or upload the
+image to retry. Execution results received during loading apply once that image
+is ready.
 
 `LFGG Power LoRA Loader (Folder)` is in `LFGG/loaders`. It provides recursive
 folder filtering for future selections, including every child folder, plus
@@ -170,6 +178,10 @@ catalog through bounded `GET /lfgg/v1/prompt-composer/libraries`; a failed
 refresh preserves the last valid choices and never returns configured paths or
 file contents. Prefix `__file__` or `[[style:Name]]` with `\` to emit it
 literally.
+New Prompt Composer instances reuse the session's last valid catalog and share
+in-flight requests. **Refresh libraries** fetches a fresh shared snapshot for
+the requesting selectors and subsequently created nodes; execution-time file
+fingerprints remain unchanged.
 
 `LFGG Video Cutter` is in `LFGG/video`. Stable ID `LFGG_VideoCutter`. It
 returns one contiguous `VIDEO` segment through native `VideoInput.as_trimmed`,
@@ -191,6 +203,11 @@ by default. Focus-scoped Space, Left/Right, and I/O control playback and marks.
 Connected active boundaries are read-only. There is no waveform. The editor
 adds no serialized value; all six backend inputs remain the executable
 fallback.
+Timecode and frame fields have visible labels, and all three sliders have
+accessible names. Unrelated connection changes update locks without reloading
+the video; disconnecting a boundary restores its saved local value. Source
+changes and execution refresh the preview. Thumbnail capture waits while the
+node is collapsed and resumes when it is drawn expanded.
 
 `LFGG Routing Organizer` is a virtual node in `LFGG/workflow` with a minimal
 backend definition for package discovery and frontend-only routing behavior.

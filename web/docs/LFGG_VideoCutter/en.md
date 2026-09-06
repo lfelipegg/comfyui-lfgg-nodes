@@ -9,6 +9,10 @@ thumbnails, editable timecodes and frame indexes, nominal previous/next-frame
 buttons, Set Start/End buttons, and selection looping enabled by default. With
 focus in the editor, use Space to play or pause, Left/Right to step, and I/O to
 set the active boundaries. A connected active boundary is read-only.
+Each timecode and frame field is labeled; the playhead and boundary sliders
+also have accessible names. Disconnecting a boundary restores its saved local
+value without reloading the source. Thumbnail capture pauses while collapsed
+and resumes when the node is drawn expanded.
 
 Changing modes preserves the same interval. Constant-frame-rate selections are
 exact; variable-frame-rate selections use the source's reported FPS as a

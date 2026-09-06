@@ -174,6 +174,107 @@ test("installs a non-serialized bounded editor and preloads direct input video",
   assert.equal(elements.some(({ tagName }) => tagName === "AUDIO"), false);
 });
 
+test("keeps same-source playback and metadata through unrelated connection changes", async () => {
+  const node = graphNode();
+  const graph = directGraph();
+  const metadata = deferred();
+  let requests = 0;
+  const domWidget = installVideoCutter(node, {
+    document: documentStub,
+    getGraph: () => graph,
+    fetchMetadata: () => { requests += 1; return metadata.promise; },
+  });
+  node.inputs.find(({ name }) => name === "start_time").link = 7;
+  node.onConnectionsChange();
+  assert.equal(requests, 1);
+  metadata.resolve({ duration: 10, reported_fps: 30, nominal_frame_count: 300 });
+  await domWidget.lfggReady;
+  const elements = descendants(domWidget.element);
+  const thumbnail = elements.find(({ tagName }) => tagName === "CANVAS");
+  const draws = thumbnail.drawCount;
+  const player = elements.find(({ tagName }) => tagName === "VIDEO");
+  player.currentTime = 4;
+  node.onConnectionsChange();
+  await domWidget.lfggReady;
+  assert.equal(requests, 1);
+  assert.equal(player.currentTime, 4);
+  assert.equal(thumbnail.drawCount, draws);
+  assert.equal(elements.find(({ dataset }) => dataset.boundary === "start").disabled, true);
+  node.inputs[0].link = null;
+  node.onConnectionsChange();
+  assert.equal(player.src, undefined);
+  node.inputs[0].link = 1;
+  node.onConnectionsChange();
+  await domWidget.lfggReady;
+  assert.equal(requests, 2);
+});
+
+test("restores disconnected boundaries from saved widgets without reloading video", async () => {
+  const node = graphNode();
+  const start = node.inputs.find(({ name }) => name === "start_time");
+  const end = node.inputs.find(({ name }) => name === "end_time");
+  start.link = 7;
+  end.link = 8;
+  let requests = 0;
+  const domWidget = installVideoCutter(node, {
+    document: documentStub,
+    getGraph: directGraph,
+    fetchMetadata: async () => {
+      requests += 1;
+      return { duration: 10, reported_fps: 30, nominal_frame_count: 300 };
+    },
+  });
+  await domWidget.lfggReady;
+  node.onExecuted({ video_cutter: [{
+    duration: 10, reported_fps: 30, nominal_frame_count: 300,
+    selection_start: 3, selection_end: 5,
+  }] });
+  const elements = descendants(domWidget.element);
+  const startHandle = elements.find(({ dataset }) => dataset.boundary === "start");
+  const endHandle = elements.find(({ dataset }) => dataset.boundary === "end");
+  start.link = null;
+  node.onConnectionsChange();
+  assert.equal(startHandle.value, "30");
+  assert.equal(endHandle.value, "150");
+  end.link = null;
+  node.onConnectionsChange();
+  assert.equal(endHandle.value, "60");
+  assert.equal(requests, 1);
+  assert.deepEqual(node.widgets.slice(1, 3).map(({ value }) => value), [1, 2]);
+});
+
+test("defers filmstrip decoding until an expanded node is drawn", async () => {
+  const node = graphNode();
+  node.flags = { collapsed: true };
+  const domWidget = installVideoCutter(node, {
+    document: documentStub,
+    getGraph: directGraph,
+    fetchMetadata: async () => ({ duration: 10, reported_fps: 30, nominal_frame_count: 300 }),
+  });
+  await domWidget.lfggReady;
+  const thumbnail = descendants(domWidget.element).find(({ tagName }) => tagName === "CANVAS");
+  assert.equal(thumbnail.drawCount, 0);
+  node.flags.collapsed = false;
+  domWidget.options.onDraw();
+  assert.equal(thumbnail.drawCount, 1);
+  domWidget.options.onDraw();
+  assert.equal(thumbnail.drawCount, 1);
+});
+
+test("gives video boundaries visible labels and sliders accessible names", () => {
+  const domWidget = installVideoCutter(graphNode(), { document: documentStub });
+  const elements = descendants(domWidget.element);
+  for (const role of ["start-timecode", "end-timecode", "first-frame", "last-frame"]) {
+    const input = elements.find(({ dataset }) => dataset.role === role);
+    const label = elements.find(({ tagName, children }) => tagName === "LABEL" && children.includes(input));
+    assert.ok(label);
+    assert.ok(label.children.some(({ tagName, textContent }) => tagName === "SPAN" && textContent));
+  }
+  for (const input of elements.filter(({ type }) => type === "range")) {
+    assert.ok(input["aria-label"]);
+  }
+});
+
 test("removes the DOM widget positional hole from workflow serialization", async () => {
   const node = graphNode();
   const domWidget = installVideoCutter(node, {

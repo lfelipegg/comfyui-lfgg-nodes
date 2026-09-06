@@ -1,6 +1,35 @@
 const NODE_ID = "LFGG_PromptComposer";
 const CONTROLS_HEIGHT = 104;
 const installed = Symbol("lfggPromptComposer");
+const catalogs = new WeakMap();
+
+function loadCatalog(fetchLibraries, refresh) {
+  let catalog = catalogs.get(fetchLibraries);
+  if (!catalog) {
+    catalog = { value: undefined, request: undefined };
+    catalogs.set(fetchLibraries, catalog);
+  }
+  if (catalog.request) return catalog.request;
+  if (!refresh && catalog.value) return Promise.resolve(catalog.value);
+  catalog.request = (async () => {
+    const result = await fetchLibraries();
+    if (!result || result.ok !== true ||
+        !Array.isArray(result.wildcards) || !Array.isArray(result.styles)) {
+      throw new Error(result?.error || "The prompt library response is invalid");
+    }
+    for (const entries of [result.wildcards, result.styles]) {
+      for (const entry of entries) {
+        if (!entry || typeof entry.name !== "string" || !entry.name ||
+            typeof entry.disabled !== "boolean") {
+          throw new Error("The prompt library response is invalid");
+        }
+      }
+    }
+    catalog.value = result;
+    return result;
+  })().finally(() => { catalog.request = undefined; });
+  return catalog.request;
+}
 
 function option(document, name, disabled = false) {
   const item = document.createElement("option");
@@ -14,14 +43,6 @@ function buildOptions(placeholder, entries, document) {
   const choices = [option(document, "", true)];
   choices[0].textContent = placeholder;
   for (const entry of entries) {
-    if (
-      !entry ||
-      typeof entry.name !== "string" ||
-      !entry.name ||
-      typeof entry.disabled !== "boolean"
-    ) {
-      throw new Error("The prompt library response is invalid");
-    }
     choices.push(option(document, entry.name, entry.disabled));
   }
   return choices;
@@ -192,21 +213,13 @@ export function installPromptComposer(
   let domWidget;
   let wildcardOptions;
   let styleOptions;
-  const load = () => {
+  const load = (refreshCatalog = false) => {
     if (request) return request;
     request = (async () => {
       refresh.disabled = true;
       setStatus("Refreshing…");
       try {
-        const result = await fetchLibraries();
-        if (
-          !result ||
-          result.ok !== true ||
-          !Array.isArray(result.wildcards) ||
-          !Array.isArray(result.styles)
-        ) {
-          throw new Error(result?.error || "The prompt library response is invalid");
-        }
+        const result = await loadCatalog(fetchLibraries, refreshCatalog);
         const nextWildcardOptions = buildOptions(
           "Add wildcard…",
           result.wildcards,
@@ -266,7 +279,7 @@ export function installPromptComposer(
     insertStyle(style.select.value);
   });
   refresh.addEventListener("click", () => {
-    domWidget.lfggReady = load();
+    domWidget.lfggReady = load(true);
   });
 
   domWidget = node.addDOMWidget(

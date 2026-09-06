@@ -74,6 +74,35 @@ def test_rgb_image_has_a_zero_mask(monkeypatch, tmp_path):
     assert torch.equal(mask, torch.zeros((1, 3, 3), dtype=torch.float32))
 
 
+@pytest.mark.parametrize("mode", ["RGB", "RGBA"])
+def test_small_offset_crop_owns_only_selected_pixel_storage(
+    monkeypatch, tmp_path, mode
+):
+    pixels = Image.new(mode, (64, 48))
+    pixels.putpixel((17, 11), (10, 20, 30, 64) if mode == "RGBA" else (10, 20, 30))
+    pixels.save(tmp_path / "source.png")
+    install_folder_paths(monkeypatch, tmp_path)
+
+    image, mask = LoadAndCropImage().load_and_crop(
+        image="source.png",
+        ratio_width=1,
+        ratio_height=1,
+        crop_x=17,
+        crop_y=11,
+        crop_width=4,
+        crop_height=4,
+    )["result"]
+
+    assert torch.equal(image[0, 0, 0], torch.tensor([10, 20, 30]) / 255)
+    expected_alpha = 1 - 64 / 255 if mode == "RGBA" else 0
+    assert mask[0, 0, 0].item() == pytest.approx(expected_alpha)
+    for tensor in (image, mask):
+        assert tensor.is_contiguous()
+        assert (
+            tensor.untyped_storage().nbytes() == tensor.numel() * tensor.element_size()
+        )
+
+
 def test_applies_exif_orientation_before_interpreting_crop_coordinates(
     monkeypatch, tmp_path
 ):
@@ -264,9 +293,7 @@ def install_fake_windows_boundary(
 
     kernel32 = SimpleNamespace(
         CreateFileW=FakeNativeCall(lambda *_args: create_result),
-        GetFileInformationByHandleEx=FakeNativeCall(
-            lambda *_args: attributes_ok
-        ),
+        GetFileInformationByHandleEx=FakeNativeCall(lambda *_args: attributes_ok),
         GetFileType=FakeNativeCall(lambda _handle: 1),
         GetFinalPathNameByHandleW=FakeNativeCall(get_final_path),
         CloseHandle=FakeNativeCall(

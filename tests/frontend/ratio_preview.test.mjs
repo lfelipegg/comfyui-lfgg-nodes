@@ -388,8 +388,27 @@ test("does not shrink saved node height while a workflow is configuring", () => 
   configuring = false;
   node.inputs = [];
   node.onConnectionsChange();
-  assert.ok(node.size[1] < 400);
+  assert.equal(node.size[1], 400);
   assert.equal(node.size[0], 320);
+});
+
+test("preserves manual height while automatically fitting untouched nodes", () => {
+  const node = fakeNode();
+  installRatioPreview(node);
+  const ratio = node.widgets.find(({ name }) => name === "aspect_ratio");
+  const compactHeight = node.size[1];
+  ratio.value = "Custom";
+  ratio.callback();
+  assert.ok(node.size[1] > compactHeight);
+  ratio.value = "16:9";
+  ratio.callback();
+  assert.equal(node.size[1], compactHeight);
+  node.size[1] = 800;
+  ratio.value = "Custom";
+  ratio.callback();
+  node.inputs = [{ name: "aspect_ratio", link: 7 }];
+  node.onConnectionsChange();
+  assert.deepEqual(node.size, [320, 800]);
 });
 
 test("reuses one preview and ignores incomplete or unrelated nodes", () => {

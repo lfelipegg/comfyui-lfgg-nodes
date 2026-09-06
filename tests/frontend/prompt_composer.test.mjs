@@ -350,3 +350,60 @@ test("initial refresh failure shows disabled explanatory entries", async () => {
   assert.equal(wildcard.children[0].disabled, true);
   assert.equal(byRole(widget, "status").textContent, "Missing configuration");
 });
+
+test("shares catalog loads across nodes and refreshes the shared snapshot", async () => {
+  let calls = 0;
+  const next = deferred();
+  const catalog = (name) => ({
+    ok: true,
+    wildcards: [{ name, disabled: false }],
+    styles: [],
+  });
+  const fetchLibraries = async () => {
+    calls += 1;
+    return calls === 1 ? catalog("original") : next.promise;
+  };
+  const install = () => installPromptComposer(graphNode(), {
+    document: documentStub, fetchLibraries,
+  });
+  const first = install();
+  await first.lfggReady;
+  const second = install();
+  assert.equal(calls, 1);
+  await second.lfggReady;
+  assert.equal(byRole(second, "wildcards").children[1].value, "original");
+  byRole(first, "refresh").dispatch("click");
+  byRole(second, "refresh").dispatch("click");
+  assert.equal(calls, 2);
+  const duringRefresh = install();
+  next.resolve(catalog("updated"));
+  await Promise.all([first.lfggReady, second.lfggReady, duringRefresh.lfggReady]);
+  const afterRefresh = install();
+  await afterRefresh.lfggReady;
+  assert.equal(calls, 2);
+  for (const widget of [first, second, duringRefresh, afterRefresh]) {
+    assert.equal(byRole(widget, "wildcards").children[1].value, "updated");
+  }
+});
+
+test("a failed shared refresh retains the valid catalog for later nodes", async () => {
+  let calls = 0;
+  const fetchLibraries = async () => {
+    calls += 1;
+    return calls === 1
+      ? { ok: true, wildcards: [{ name: "saved", disabled: false }], styles: [] }
+      : { ok: true, wildcards: [], styles: [{ name: "", disabled: false }] };
+  };
+  const install = () => installPromptComposer(graphNode(), {
+    document: documentStub, fetchLibraries,
+  });
+  const first = install();
+  await first.lfggReady;
+  byRole(first, "refresh").dispatch("click");
+  await first.lfggReady;
+  const second = install();
+  await second.lfggReady;
+  assert.equal(calls, 2);
+  assert.equal(byRole(first, "wildcards").children[1].value, "saved");
+  assert.equal(byRole(second, "wildcards").children[1].value, "saved");
+});

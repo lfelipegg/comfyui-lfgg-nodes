@@ -48,12 +48,14 @@ function linked(node, name) {
   return node.inputs?.some((input) => input.name === name && input.link != null);
 }
 
-function resize(node, allowShrink) {
+function resize(node, allowShrink, controller) {
   const [, minimumHeight] = node.computeSize();
+  const autoFit = node.size[1] <= minimumHeight || node.size[1] === controller.fittedHeight;
   node.setSize([
     node.size[0],
-    allowShrink ? minimumHeight : Math.max(node.size[1], minimumHeight),
+    allowShrink && autoFit ? minimumHeight : Math.max(node.size[1], minimumHeight),
   ]);
+  controller.fittedHeight = autoFit ? node.size[1] : undefined;
 }
 
 function composeCallback(widget, update) {
@@ -251,7 +253,7 @@ export function installRatioPreview(
       aspectRatio.value === "Custom" || linked(node, "aspect_ratio");
     customWidth.hidden = !showCustom;
     customHeight.hidden = !showCustom;
-    resize(node, shrink && !controller.isConfiguring());
+    resize(node, shrink && !controller.isConfiguring(), controller);
     node.setDirtyCanvas?.(true, true);
   };
   controller.update = update;

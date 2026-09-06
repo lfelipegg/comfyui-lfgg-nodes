@@ -165,11 +165,12 @@ way.
 ## Execution Flow
 
 1. Resolve and safely open the selected still image.
-2. Apply orientation and convert it to standard ComfyUI image and mask tensors.
+2. Apply EXIF orientation and inspect the source dimensions.
 3. Validate and reduce the resolved ratio.
 4. Select the persisted frame or intentionally initialize/reset it.
 5. Validate exact ratio, positive dimensions, and image containment.
-6. Slice image and mask directly while preserving batch dimensions and dtype.
+6. Crop the oriented image before converting only the selected pixels to compact
+   standard ComfyUI image and mask tensors, preserving batch dimensions and dtype.
 7. Return `(IMAGE, MASK)` plus standard UI data containing the resolved ratio
    and actual crop rectangle.
 

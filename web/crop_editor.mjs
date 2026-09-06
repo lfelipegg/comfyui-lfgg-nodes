@@ -375,6 +375,7 @@ export function installCropEditor(
     source: undefined,
     frame: undefined,
     image: undefined,
+    imageState: { kind: "loading", label: "Loading selected image…" },
     executionRatio: undefined,
     loadRequest: 0,
     observedStaticRatio: undefined,
@@ -403,7 +404,9 @@ export function installCropEditor(
     return { kind: "value", width: width.value, height: height.value };
   };
   const setEditing = (enabled) => {
-    for (const widget of [cropX, cropY, cropWidth]) widget.disabled = !enabled;
+    for (const widget of [cropX, cropY, cropWidth]) {
+      widget.disabled = !enabled || controller.imageState.kind !== "ready";
+    }
     cropHeight.disabled = true;
   };
   const sync = (frame) => {
@@ -415,6 +418,7 @@ export function installCropEditor(
     node.setDirtyCanvas?.(true, true);
   };
   const reset = () => {
+    controller.pendingCrop = undefined;
     const resolved = currentRatio();
     setEditing(resolved.kind === "value");
     if (!controller.source || resolved.kind !== "value") {
@@ -458,15 +462,37 @@ export function installCropEditor(
   const loadSelectedImage = (restorePersisted) => {
     const request = ++controller.loadRequest;
     controller.executionRatio = undefined;
+    controller.pendingCrop = undefined;
+    controller.source = undefined;
+    controller.frame = undefined;
+    controller.image = undefined;
+    controller.imageState = { kind: "loading", label: "Loading selected image…" };
+    setEditing(false);
+    node.setDirtyCanvas?.(true, true);
     node.imgs = [];
     const loaded = createImage();
-    controller.image = loaded;
+    loaded.onerror = () => {
+      if (request !== controller.loadRequest || controller.imageState.kind !== "loading") return;
+      controller.imageState = {
+        kind: "error",
+        label: "Image unavailable\nReselect or upload the image.",
+      };
+      node.setDirtyCanvas?.(true, true);
+    };
     loaded.onload = () => {
-      if (request !== controller.loadRequest) return;
+      if (request !== controller.loadRequest || controller.imageState.kind !== "loading") return;
       const width = loaded.naturalWidth ?? loaded.width;
       const height = loaded.naturalHeight ?? loaded.height;
-      if (!positiveInteger(width) || !positiveInteger(height)) return;
+      if (!positiveInteger(width) || !positiveInteger(height)) {
+        loaded.onerror();
+        return;
+      }
+      controller.image = loaded;
+      controller.imageState = { kind: "ready" };
       controller.source = { width, height };
+      const pendingCrop = controller.pendingCrop;
+      controller.pendingCrop = undefined;
+      if (applyExecutionCrop(pendingCrop)) return;
       const resolved = currentRatio();
       const frame = {
         x: Number(cropX.value),
@@ -488,7 +514,11 @@ export function installCropEditor(
         reset();
       }
     };
-    loaded.src = buildViewUrl(image.value);
+    try {
+      loaded.src = buildViewUrl(image.value);
+    } catch {
+      loaded.onerror();
+    }
   };
   const preview = {
     type: "lfgg_crop_editor",
@@ -497,12 +527,24 @@ export function installCropEditor(
     options: { serialize: false },
     computeSize: () => [0, CROP_PREVIEW_HEIGHT],
     getState: () => {
+      if (controller.imageState.kind !== "ready") return controller.imageState;
       const resolved = currentRatio();
       if (resolved.kind === "dynamic") return { kind: "dynamic", label: "Run to resolve connected ratio" };
       return resolved.kind === "value" ? { kind: "ready" } : invalid;
     },
     draw(ctx, _node, width, y, _height, lowQuality) {
       observeStaticRatio();
+      if (controller.imageState.kind !== "ready") {
+        const bounds = cropBounds(width, y);
+        ctx.fillStyle = (globalThis.LiteGraph ?? {}).WIDGET_TEXT_COLOR ?? "#eeeeee";
+        ctx.font = "12px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        controller.imageState.label.split("\n").forEach((line, index) => {
+          ctx.fillText(line, bounds.x + bounds.width / 2, bounds.y + bounds.height / 2 + index * 18);
+        });
+        return;
+      }
       if (!controller.image || !controller.source) return;
       controller.drawY = y;
       controller.drawWidth = width;
@@ -604,12 +646,9 @@ export function installCropEditor(
     if (cropInputNames.has(input?.name)) return false;
     return result;
   };
-  const originalExecuted = node.onExecuted;
-  node.onExecuted = function (message) {
-    const result = originalExecuted?.apply(this, arguments);
-    const crop = message?.crop?.[0];
-    if (!controller.source || !crop || ![crop.ratio_width, crop.ratio_height, crop.x, crop.y, crop.width, crop.height].every(Number.isInteger)) return result;
-    if (crop.ratio_width < 1 || crop.ratio_height < 1 || crop.width < 1 || crop.height < 1 || crop.x < 0 || crop.y < 0 || crop.width > controller.source.width || crop.height > controller.source.height || crop.x + crop.width > controller.source.width || crop.y + crop.height > controller.source.height) return result;
+  const applyExecutionCrop = (crop) => {
+    if (!controller.source || !crop || ![crop.ratio_width, crop.ratio_height, crop.x, crop.y, crop.width, crop.height].every(Number.isInteger)) return false;
+    if (crop.ratio_width < 1 || crop.ratio_height < 1 || crop.width < 1 || crop.height < 1 || crop.x < 0 || crop.y < 0 || crop.width > controller.source.width || crop.height > controller.source.height || crop.x + crop.width > controller.source.width || crop.y + crop.height > controller.source.height) return false;
     ratioWidth.value = crop.ratio_width;
     ratioHeight.value = crop.ratio_height;
     controller.executionRatio = { width: crop.ratio_width, height: crop.ratio_height };
@@ -617,6 +656,14 @@ export function installCropEditor(
     setEditing(true);
     const frame = normalizeTypedFrame(controller.frame, crop.width, crop.x, crop.y, controller.source.width, controller.source.height, crop.ratio_width, crop.ratio_height);
     if (!frame.kind) sync(frame);
+    return !frame.kind;
+  };
+  const originalExecuted = node.onExecuted;
+  node.onExecuted = function (message) {
+    const result = originalExecuted?.apply(this, arguments);
+    const crop = message?.crop?.[0];
+    if (controller.imageState.kind === "loading") controller.pendingCrop = crop;
+    else applyExecutionCrop(crop);
     return result;
   };
   const originalSerialize = node.onSerialize;

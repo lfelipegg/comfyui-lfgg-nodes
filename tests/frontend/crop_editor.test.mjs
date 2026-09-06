@@ -393,6 +393,79 @@ test("loads the selected image on install and restores only a matching persisted
   assert.deepEqual(cropValues(restored.node), [100, 0, 200, 200]);
 });
 
+test("locks pending and failed image loads without changing saved crop values", () => {
+  const node = cropNode();
+  const requests = [];
+  const preview = installCropEditor(node, {
+    createImage() {
+      const image = deferredImage();
+      requests.push(image);
+      return image;
+    },
+  });
+  assert.equal(preview.getState().kind, "loading");
+  requests[0].resolve(400, 200);
+  const saved = cropValues(node);
+  node.widgets[0].value = "missing.png";
+  node.widgets[0].callback();
+  assert.equal(preview.getState().kind, "loading");
+  assert.equal(node.widgets.find(({ name }) => name === "crop_width").disabled, true);
+  assert.equal(preview.onPointerDown(dragEvent(), { x: 100, y: 100 }), false);
+  assert.deepEqual(cropValues(node), saved);
+  requests[1].onerror?.();
+  assert.equal(preview.getState().kind, "error");
+  const context = cropContext();
+  preview.draw(context, node, 320, 20, 360, false);
+  assert.equal(context.calls.some(([kind]) => kind === "image"), false);
+  assert.equal(context.calls.some(([kind]) => kind === "label"), true);
+  assert.deepEqual(cropValues(node), saved);
+  node.widgets[0].value = "valid.png";
+  node.widgets[0].callback();
+  requests[2].resolve(100, 100);
+  assert.equal(preview.getState().kind, "ready");
+  assert.deepEqual(cropValues(node), [0, 0, 100, 100]);
+  requests[1].onerror?.();
+  requests[1].resolve(800, 800);
+  assert.equal(preview.getState().kind, "ready");
+  assert.deepEqual(cropValues(node), [0, 0, 100, 100]);
+});
+
+test("rejects loaded images with invalid dimensions", () => {
+  const node = cropNode();
+  const image = deferredImage();
+  const preview = installCropEditor(node, { createImage: () => image });
+  image.resolve(0, 200);
+  assert.equal(preview.getState().kind, "error");
+  assert.deepEqual(cropValues(node), [0, 0, 0, 0]);
+});
+
+test("applies execution received during the current image load but not a superseded load", () => {
+  const node = cropNode();
+  node.inputs.find(({ name }) => name === "ratio_width").link = 1;
+  const requests = [];
+  const preview = installCropEditor(node, {
+    getGraph: () => graphWith({ id: 1, type: "Math" }),
+    createImage() {
+      const image = deferredImage();
+      requests.push(image);
+      return image;
+    },
+  });
+  const result = { crop: [{ ratio_width: 2, ratio_height: 1, x: 20, y: 0, width: 200, height: 100 }] };
+  node.onExecuted(result);
+  assert.deepEqual(cropValues(node), [0, 0, 0, 0]);
+  requests[0].resolve(400, 200);
+  assert.equal(preview.getState().kind, "ready");
+  assert.deepEqual(cropValues(node), [20, 0, 200, 100]);
+  node.widgets[0].value = "second.png";
+  node.widgets[0].callback();
+  node.onExecuted(result);
+  node.widgets[0].value = "third.png";
+  node.widgets[0].callback();
+  requests[2].resolve(400, 200);
+  assert.equal(preview.getState().kind, "dynamic");
+});
+
 test("ignores an older image request that resolves after graph reload", () => {
   const node = cropNode();
   node.widgets[0].value = "old.png";

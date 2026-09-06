@@ -24,6 +24,9 @@ Both paths must be absolute. The CSV header must be
 configured root and omit `.txt`. Click **Refresh libraries** after changing the
 configuration or source files; a failed refresh preserves the last valid
 selector contents.
+New nodes share the session's last valid catalog and in-flight requests.
+Refresh fetches a new shared snapshot for the requesting selectors and later
+nodes; existing templates and execution-time file change detection are unaffected.
 
 Each file-wildcard occurrence draws independently from its file, while the
 same template, files, and seed reproduce the same sequence. Blank wildcard

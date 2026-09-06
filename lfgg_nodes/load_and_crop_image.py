@@ -161,9 +161,7 @@ def _open_input_file(image, *, label="image"):
     import stat
 
     root, path = (
-        _input_path(image)
-        if label == "image"
-        else _input_path(image, label=label)
+        _input_path(image) if label == "image" else _input_path(image, label=label)
     )
     if os.name == "nt":
         return (
@@ -419,6 +417,20 @@ class LoadAndCropImage:
                     raise ValueError(
                         f"selected image exceeds the {MAX_IMAGE_PIXELS}-pixel limit"
                     )
+                (x, y, crop_width, crop_height, reduced_width, reduced_height) = (
+                    resolve_crop(
+                        source_width=width,
+                        source_height=height,
+                        ratio_width=ratio_width,
+                        ratio_height=ratio_height,
+                        crop_x=crop_x,
+                        crop_y=crop_y,
+                        crop_width=crop_width,
+                        crop_height=crop_height,
+                        max_resolution=MAX_RESOLUTION,
+                    )
+                )
+                oriented = oriented.crop((x, y, x + crop_width, y + crop_height))
                 rgb = torch.from_numpy(
                     np.array(oriented.convert("RGB"), dtype=np.float32, copy=True)
                     / 255.0
@@ -434,7 +446,9 @@ class LoadAndCropImage:
                     )
                     mask = (1.0 - alpha).unsqueeze(0)
                 else:
-                    mask = torch.zeros((1, height, width), dtype=torch.float32)
+                    mask = torch.zeros(
+                        (1, crop_height, crop_width), dtype=torch.float32
+                    )
         except (
             Image.DecompressionBombError,
             Image.DecompressionBombWarning,
@@ -446,17 +460,6 @@ class LoadAndCropImage:
                 "selected image could not be opened as a valid image"
             ) from None
 
-        x, y, crop_width, crop_height, reduced_width, reduced_height = resolve_crop(
-            source_width=width,
-            source_height=height,
-            ratio_width=ratio_width,
-            ratio_height=ratio_height,
-            crop_x=crop_x,
-            crop_y=crop_y,
-            crop_width=crop_width,
-            crop_height=crop_height,
-            max_resolution=MAX_RESOLUTION,
-        )
         return {
             "ui": {
                 "crop": [
@@ -470,10 +473,7 @@ class LoadAndCropImage:
                     }
                 ]
             },
-            "result": (
-                rgb[:, y : y + crop_height, x : x + crop_width, :],
-                mask[:, y : y + crop_height, x : x + crop_width],
-            ),
+            "result": (rgb, mask),
         }
 
     @classmethod
