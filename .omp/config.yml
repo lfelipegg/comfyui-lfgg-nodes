@@ -1,0 +1,9 @@
+task:
+  maxConcurrency: 3
+  maxRecursionDepth: 1
+  agentModelOverrides:
+    sonic: "@smol"
+    scout: "@smol"
+    task: "@task"
+    reviewer: "@plan"
+    security-reviewer: "@plan"

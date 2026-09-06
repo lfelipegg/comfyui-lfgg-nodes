@@ -24,13 +24,17 @@ The research snapshot is dated 2026-07-26. Recheck moving API and Registry facts
 before implementation or release. Prefer current/pinned ComfyUI source, current
 official docs, official examples, then local reference nodes.
 
-## Subagent Routing
+## Agent Orchestration
 
-- Do not delegate small, sequential tasks; the primary agent completes them
-  directly.
-- For standard or critical work, follow `agents/orchestrator.md`.
-- Use one writer by default.
-- Treat `.codex/agents/` as the source of truth for project agent profiles.
+- OMP is the primary agent runtime; `.omp/config.yml` controls its project task
+  policy and model-role routing.
+- Complete small or sequential work in the primary agent. Before delegating,
+  read `docs/agents/orchestration.md`.
+- Use OMP's bundled agents rather than duplicating their roles in project
+  profiles. Use at most three concurrent subagents and one writer by default.
+- The primary agent owns decomposition, integration, and final verification.
+- `.codex/agents/` provides lean secondary compatibility for Codex, not the
+  authoritative orchestration model.
 
 ## Pack Invariants
 

@@ -63,7 +63,6 @@ Index these by default:
 - `README.md`
 - `docs/**/*.md`
 - `docs/**/*.mdx`
-- `agents/**/*.md`
 - `.codex-context/notes/**/*.md`
 
 `AGENTS.md` is already supplied to agents, so indexing it duplicates results.

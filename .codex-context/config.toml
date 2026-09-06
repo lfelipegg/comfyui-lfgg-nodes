@@ -7,7 +7,6 @@ include = [
   "README.md",
   "docs/**/*.md",
   "docs/**/*.mdx",
-  "agents/**/*.md",
   ".codex-context/notes/**/*.md"
 ]
 exclude = [
