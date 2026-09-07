@@ -52,12 +52,14 @@ function buildOptions(placeholder, entries, document) {
 function replaceOptions(select, choices) {
   select.replaceChildren(...choices);
   select.value = "";
+  select.disabled = !choices.some((choice) => !choice.disabled);
 }
 
 function unavailable(select, placeholder, document) {
   const item = option(document, "", true);
   item.textContent = placeholder;
   select.replaceChildren(item);
+  select.disabled = true;
 }
 
 function menu(choices, event, select) {
@@ -107,6 +109,8 @@ function labeledSelect(document, text, role) {
   caption.textContent = text;
   select.dataset.role = role;
   select.setAttribute("aria-label", text);
+  select.title = `${text} at the prompt caret; replaces selected text.`;
+  select.setAttribute("aria-description", select.title);
   Object.assign(label.style, {
     display: "grid",
     gap: `${UI.tightGap}px`,
@@ -151,7 +155,6 @@ export function installPromptComposer(
   const root = document.createElement("div");
   const selectors = document.createElement("div");
   const actions = document.createElement("div");
-  const caretHint = document.createElement("span");
   const wildcard = labeledSelect(document, "Insert wildcard", "wildcards");
   const style = labeledSelect(document, "Insert style", "styles");
   const refresh = document.createElement("button");
@@ -173,18 +176,12 @@ export function installPromptComposer(
     gap: `${UI.gap}px`,
     minWidth: "0",
   });
-  caretHint.dataset.role = "caret-hint";
-  caretHint.textContent = "Inserts at the prompt caret and replaces selected text.";
-  Object.assign(caretHint.style, {
-    color: "var(--lfgg-secondary)",
-    fontSize: `${UI.secondarySize}px`,
-    lineHeight: "1.4",
-    overflowWrap: "anywhere",
-  });
   actions.dataset.role = "actions";
   Object.assign(actions.style, {
     display: "flex",
     alignItems: "center",
+    flexWrap: "wrap",
+    gap: `${UI.tightGap}px ${UI.gap}px`,
     minWidth: "0",
   });
   refresh.type = "button";
@@ -193,6 +190,7 @@ export function installPromptComposer(
   Object.assign(refresh.style, {
     minHeight: `${UI.controlHeight}px`,
     padding: `0 ${UI.gap}px`,
+    flexShrink: "0",
   });
   status.dataset.role = "status";
   status.setAttribute("role", "status");
@@ -200,12 +198,15 @@ export function installPromptComposer(
   Object.assign(status.style, {
     display: "block",
     minWidth: "0",
+    flex: "1 1 120px",
+    color: "var(--lfgg-secondary)",
+    fontSize: `${UI.secondarySize}px`,
     whiteSpace: "normal",
     overflowWrap: "anywhere",
   });
   selectors.append(wildcard.label, style.label);
-  actions.append(refresh);
-  root.append(selectors, caretHint, actions, status);
+  actions.append(refresh, status);
+  root.append(selectors, actions);
   initializeRoot(node, root, document, wildcard.label.children[0]);
 
   const setStatus = (message) => {
@@ -217,6 +218,8 @@ export function installPromptComposer(
   let domWidget;
   let wildcardOptions;
   let styleOptions;
+  unavailable(wildcard.select, "Loading wildcards…", document);
+  unavailable(style.select, "Loading styles…", document);
   const load = (refreshCatalog = false) => {
     if (request) return request;
     request = (async () => {
@@ -225,12 +228,14 @@ export function installPromptComposer(
       try {
         const result = await loadCatalog(fetchLibraries, refreshCatalog);
         const nextWildcardOptions = buildOptions(
-          "Choose wildcard…",
+          result.wildcards.some((entry) => !entry.disabled)
+            ? "Choose wildcard…" : "No usable wildcards",
           result.wildcards,
           document,
         );
         const nextStyleOptions = buildOptions(
-          "Choose style…",
+          result.styles.some((entry) => !entry.disabled)
+            ? "Choose style…" : "No usable styles",
           result.styles,
           document,
         );
@@ -239,9 +244,11 @@ export function installPromptComposer(
         replaceOptions(wildcard.select, wildcardOptions);
         replaceOptions(style.select, styleOptions);
         loaded = true;
-        const wildcardLabel = result.wildcards.length === 1 ? "wildcard" : "wildcards";
-        const styleLabel = result.styles.length === 1 ? "style" : "styles";
-        setStatus(`${result.wildcards.length} ${wildcardLabel} · ${result.styles.length} ${styleLabel}`);
+        const wildcardCount = result.wildcards.filter((entry) => !entry.disabled).length;
+        const styleCount = result.styles.filter((entry) => !entry.disabled).length;
+        const wildcardLabel = wildcardCount === 1 ? "wildcard" : "wildcards";
+        const styleLabel = styleCount === 1 ? "style" : "styles";
+        setStatus(`${wildcardCount} ${wildcardLabel} · ${styleCount} ${styleLabel}`);
       } catch (error) {
         if (!loaded) {
           unavailable(wildcard.select, "Wildcards unavailable", document);
@@ -267,7 +274,7 @@ export function installPromptComposer(
     style.select.value = "";
   };
   wildcard.select.addEventListener("pointerdown", (event) => {
-    if (wildcardOptions && menu(wildcardOptions, event, insertWildcard)) {
+    if (!wildcard.select.disabled && wildcardOptions && menu(wildcardOptions, event, insertWildcard)) {
       event.preventDefault?.();
     }
   });
@@ -275,7 +282,7 @@ export function installPromptComposer(
     insertWildcard(wildcard.select.value);
   });
   style.select.addEventListener("pointerdown", (event) => {
-    if (styleOptions && menu(styleOptions, event, insertStyle)) {
+    if (!style.select.disabled && styleOptions && menu(styleOptions, event, insertStyle)) {
       event.preventDefault?.();
     }
   });
@@ -295,8 +302,8 @@ export function installPromptComposer(
     return measured || (
       UI.inset * 2
       + UI.controlHeight * 2
-      + UI.secondarySize * 3
-      + UI.gap * 3
+      + UI.secondarySize * 2
+      + UI.gap * 2
     );
   };
   domWidget = node.addDOMWidget(

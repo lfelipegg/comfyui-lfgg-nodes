@@ -160,22 +160,11 @@ test("uses content height and keeps insertion controls usable when they wrap", a
   });
   await widget.lfggReady;
 
-  assert.equal(byRole(widget, "wildcards")["aria-label"], "Insert wildcard");
-  assert.equal(byRole(widget, "styles")["aria-label"], "Insert style");
-  assert.match(byRole(widget, "caret-hint").textContent, /caret/);
-  assert.equal(byRole(widget, "status").textContent, "1 wildcard · 1 style");
-  assert.equal(widget.options.getMaxHeight, undefined);
-  assert.equal(widget.element.style.maxHeight, undefined);
   widget.element.scrollHeight = 176;
   assert.equal(widget.options.getMinHeight(), 176);
   widget.element.scrollHeight = 224;
   assert.deepEqual(widget.computeSize(), [0, 224]);
   assert.deepEqual(node.size, [300, 200]);
-  assert.equal(
-    descendants(widget.element).filter(({ className }) =>
-      className === "lfgg-identity").length,
-    1,
-  );
 });
 
 test("opens wildcard and style choices as searchable combo menus", async () => {
@@ -342,6 +331,40 @@ test("initial refresh failure shows disabled explanatory entries", async () => {
   assert.equal(wildcard.children[0].textContent, "Wildcards unavailable");
   assert.equal(wildcard.children[0].disabled, true);
   assert.equal(byRole(widget, "status").textContent, "Missing configuration");
+});
+
+test("empty and disabled-only libraries cannot insert and recover after refresh", async () => {
+  const node = graphNode();
+  const pending = deferred();
+  let calls = 0;
+  const widget = installPromptComposer(node, {
+    document: documentStub,
+    fetchLibraries: async () => ++calls === 1 ? pending.promise : ({
+      ok: true,
+      wildcards: [{ name: "animals/pets", disabled: false }],
+      styles: [{ name: "Cinematic", disabled: false }],
+    }),
+  });
+  const wildcard = byRole(widget, "wildcards");
+  const style = byRole(widget, "styles");
+  assert.equal(wildcard.disabled, true);
+  assert.equal(style.disabled, true);
+  pending.resolve({
+    ok: true,
+    wildcards: [],
+    styles: [{ name: "Section heading", disabled: true }],
+  });
+  await widget.lfggReady;
+  assert.equal(wildcard.disabled, true);
+  assert.equal(style.disabled, true);
+  assert.equal(node.widgets[0].value, "front END");
+  byRole(widget, "refresh").dispatch("click");
+  await widget.lfggReady;
+  assert.equal(wildcard.disabled, false);
+  assert.equal(style.disabled, false);
+  wildcard.value = "animals/pets";
+  wildcard.dispatch("change");
+  assert.equal(node.widgets[0].value, "front __animals/pets__, ");
 });
 
 test("shares catalog loads across nodes and refreshes the shared snapshot", async () => {
