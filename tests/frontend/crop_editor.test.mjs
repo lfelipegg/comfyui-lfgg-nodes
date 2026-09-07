@@ -688,6 +688,23 @@ test("applies execution crop data, composes connection rules, and serializes onl
   assert.deepEqual(trailingSkipped.widgets_values, ["portrait.png", 2, 1, 20, 0, 200, 100]);
 });
 
+test("a narrower widget allocation contains the rendered crop without stale-height whitespace", () => {
+  const { node, preview } = installedCropNode();
+  node.size[0] = 600;
+  node.widgets.find(widget => widget.type === "button").callback();
+  const width = 260;
+  const allocatedHeight = preview.computeSize(width)[1];
+  preview.y = 0;
+  const context = cropContext();
+  preview.draw(context, node, width, 1, allocatedHeight, false);
+  const [, , x, y, imageWidth, imageHeight] = context.calls.find(([name]) => name === "image");
+  assert.equal(x + imageWidth / 2, width / 2);
+  assert.equal(imageWidth / imageHeight, 2);
+  assert.ok(y + imageHeight < allocatedHeight);
+  assert.ok(allocatedHeight - (y + imageHeight) < 52);
+  assert.equal(node.size[0], 600);
+});
+
 
 test("drag targets follow the visible crop after resize and disclosure", () => {
   const { node, preview } = installedCropNode();

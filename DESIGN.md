@@ -253,10 +253,16 @@ content rather than shrinking text or overlapping hit areas.
   Share responsive viewport geometry between drawing and dragging. Use a
   two-tone frame and a source-pixel caption, with 200px/360px compact/expanded
   content caps rather than forced heights.
+  Size the widget from its allocated width, not a larger retained node width,
+  so the reserved height matches the rendered preview in Nodes 2.0.
 - Video keeps the active boundary pair visible while compact. Expansion shows
   one grouped timeline with distinct native range rows, selected interval,
   bounded thumbnails, and transport. Defer thumbnail work while closed or
   collapsed, and reuse completed captures.
+  Cap the player at 180px compact and 360px expanded without stretching media.
+  Stack boundary fields and range labels when narrow; keep frame stepping and
+  boundary marking in separate paired action rows. Thumbnail columns may shrink
+  below their intrinsic canvas width while preserving their aspect ratio.
 - Use public graph-change and graph-configured events for linked-source
   updates across renderers. Do not wrap upstream widgets or introduce polling.
 

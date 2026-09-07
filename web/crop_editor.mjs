@@ -565,7 +565,7 @@ export function installCropEditor(
     name: "lfgg_crop_editor",
     serialize: false,
     options: { serialize: false },
-    computeSize: (width) => [0, height(Math.max(width || 0, node.size[0]))],
+    computeSize: (width) => [0, height(width > 0 ? width : node.size[0])],
     getState: () => {
       if (controller.imageState.kind !== "ready") return controller.imageState;
       const resolved = currentRatio();

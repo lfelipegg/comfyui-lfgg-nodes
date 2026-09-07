@@ -135,7 +135,7 @@ export function installVideoCutter(
     preload: "metadata",
     playsInline: true,
   });
-  Object.assign(player.style, { width: "100%", maxHeight: "180px", objectFit: "contain", background: "#111" });
+  Object.assign(player.style, { display: "block", width: "100%", minHeight: "0", objectFit: "contain", background: "#111" });
   const thumbnailPlayer = element(document, "video", {
     muted: true,
     preload: "metadata",
@@ -143,10 +143,12 @@ export function installVideoCutter(
   });
   thumbnailPlayer.style.display = "none";
   const filmstrip = element(document, "div");
-  Object.assign(filmstrip.style, { display: "grid", gridTemplateColumns: `repeat(${THUMBNAIL_COUNT}, 1fr)`, gap: "2px" });
+  Object.assign(filmstrip.style, { display: "grid", gridTemplateColumns: `repeat(${THUMBNAIL_COUNT}, minmax(0, 1fr))`, gap: "2px" });
   const thumbnails = Array.from({ length: THUMBNAIL_COUNT }, () => {
     const canvas = element(document, "canvas", { width: 120, height: 68 });
     canvas.style.width = "100%";
+    canvas.style.minWidth = "0";
+    canvas.style.height = "auto";
     filmstrip.appendChild(canvas);
     return canvas;
   });
@@ -178,7 +180,10 @@ export function installVideoCutter(
     const caption = element(document, "span", { textContent: label });
     caption.style.fontSize = `${UI.secondarySize}px`;
     const row = element(document, "label", {}, caption, handle);
-    Object.assign(row.style, { display: "grid", gridTemplateColumns: "100px minmax(0, 1fr)", alignItems: "center" });
+    Object.assign(row.style, { display: "flex", flexWrap: "wrap", columnGap: `${UI.gap}px`, alignItems: "center" });
+    caption.style.flex = "0 0 100px";
+    handle.style.flex = "1 1 140px";
+    handle.style.minWidth = "0";
     handles.append(row);
   }
 
@@ -206,7 +211,7 @@ export function installVideoCutter(
     labeledField(firstFrameInput, "First frame", "Included first frame, counted from zero."),
     labeledField(lastFrameInput, "Last frame (inclusive)", "Included last frame, counted from zero."));
   Object.assign(fields.style, {
-    display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px",
+    display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 140px), 1fr))", gap: `${UI.gap}px`,
   });
 
   const setStart = element(document, "button", { type: "button", textContent: "Set Start" });
@@ -215,8 +220,14 @@ export function installVideoCutter(
   const next = element(document, "button", { type: "button", textContent: "Next frame" });
   const loop = element(document, "input", { type: "checkbox", checked: true });
   const loopLabel = element(document, "label", { textContent: "Loop selection " }, loop);
-  const controls = element(document, "div", {}, previous, next, setStart, setEnd, loopLabel);
-  Object.assign(controls.style, { display: "flex", flexWrap: "wrap", gap: "4px" });
+  const stepping = element(document, "div", {}, previous, next);
+  const marking = element(document, "div", {}, setStart, setEnd);
+  for (const group of [stepping, marking]) {
+    Object.assign(group.style, { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "4px" });
+  }
+  Object.assign(loopLabel.style, { display: "flex", alignItems: "center", gap: "4px" });
+  const controls = element(document, "div", {}, stepping, marking, loopLabel);
+  Object.assign(controls.style, { display: "grid", gap: `${UI.gap}px` });
   const status = element(document, "div", { textContent: "Connect a direct Load Video source or run the node." });
   status.dataset.role = "status";
   status.setAttribute("role", "status");
@@ -235,7 +246,7 @@ export function installVideoCutter(
   timeline.dataset.role = "timeline";
   Object.assign(timeline.style, { display: "grid", gap: `${UI.gap}px` });
   const strip = element(document, "div", {}, filmstrip);
-  Object.assign(strip.style, { position: "relative", minHeight: "48px" });
+  Object.assign(strip.style, { position: "relative", minWidth: "0" });
   const interval = element(document, "div");
   interval.setAttribute("aria-hidden", "true");
   Object.assign(interval.style, { position: "absolute", top: "0", bottom: "0", pointerEvents: "none", background: "var(--lfgg-text)", opacity: "0.18" });
@@ -455,7 +466,7 @@ export function installVideoCutter(
     if (!expanded && timeline.contains?.(document.activeElement)) disclosure.focus();
     timeline.hidden = !expanded;
     timeline.style.display = expanded ? "grid" : "none";
-    player.style.maxHeight = expanded ? "260px" : "180px";
+    player.style.maxHeight = expanded ? "360px" : "180px";
     disclosure.textContent = expanded ? "Hide selection controls" : "Edit selection";
     disclosure.setAttribute("aria-expanded", String(expanded));
     if (!expanded) {
