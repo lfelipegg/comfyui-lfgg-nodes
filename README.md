@@ -192,6 +192,9 @@ New Prompt Composer instances reuse the session's last valid catalog and share
 in-flight requests. **Refresh libraries** fetches a fresh shared snapshot for
 the requesting selectors and subsequently created nodes; execution-time file
 fingerprints remain unchanged.
+Workflow reload preserves manual node sizing and waits for a real container
+width before measuring the selector panel. If an earlier version already saved
+an inflated size, resize the node once and save the workflow again.
 
 `LFGG Video Cutter` is in `LFGG/video`. Stable ID `LFGG_VideoCutter`. It
 returns one contiguous `VIDEO` segment through native `VideoInput.as_trimmed`,

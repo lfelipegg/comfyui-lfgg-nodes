@@ -294,17 +294,17 @@ export function installPromptComposer(
   });
 
   const contentHeight = () => {
-    const measured = Math.ceil(
-      root.scrollHeight
-      || root.getBoundingClientRect?.().height
-      || 0,
-    );
-    return measured || (
+    // Restore mounts the panel before its host container has a width.
+    // Measuring then mistakes padding-only text wrapping for required height.
+    const measured = root.parentElement?.clientWidth
+      ? Math.ceil(root.scrollHeight)
+      : 0;
+    return 2 * (domWidget?.margin ?? 10) + (measured || (
       UI.inset * 2
       + UI.controlHeight * 2
       + UI.secondarySize * 2
       + UI.gap * 2
-    );
+    ));
   };
   domWidget = node.addDOMWidget(
     "lfgg_prompt_composer",
@@ -335,6 +335,24 @@ export function installPromptComposer(
       serialized.widgets_values.splice(node.widgets.indexOf(domWidget), 1);
     }
     return result;
+  };
+  let fittedHeight;
+  const observer = typeof ResizeObserver === "function" ? new ResizeObserver(() => {
+    if (!root.parentElement?.clientWidth) return;
+    const height = contentHeight();
+    if (height === fittedHeight) return;
+    fittedHeight = height;
+    node.setSize([
+      node.size[0],
+      Math.max(node.size[1], node.computeSize()[1]),
+    ]);
+    node.setDirtyCanvas?.(true, true);
+  }) : undefined;
+  observer?.observe(root);
+  const removed = node.onRemoved;
+  node.onRemoved = function (...args) {
+    observer?.disconnect();
+    return removed?.apply(this, args);
   };
   node[installed] = domWidget;
   domWidget.lfggReady = load();

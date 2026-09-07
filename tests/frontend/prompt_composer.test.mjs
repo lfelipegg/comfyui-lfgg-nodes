@@ -148,7 +148,7 @@ test("installs idempotent nonserialized selectors with disabled catalog entries"
   assert.deepEqual(serialized.widgets_values, ["front END", 0]);
 });
 
-test("uses content height and keeps insertion controls usable when they wrap", async () => {
+test("restoring before DOM layout does not inflate the saved node height", async () => {
   const node = graphNode();
   const widget = installPromptComposer(node, {
     document: documentStub,
@@ -160,11 +160,75 @@ test("uses content height and keeps insertion controls usable when they wrap", a
   });
   await widget.lfggReady;
 
-  widget.element.scrollHeight = 176;
-  assert.equal(widget.options.getMinHeight(), 176);
+  const saved = { size: [420, 400], widgets_values: ["front END", 0] };
+  for (let reload = 0; reload < 3; reload += 1) {
+    node.setSize([...saved.size]);
+    // ComfyUI mounts the DOM before assigning its container width. The
+    // padding-only panel wraps every label into a tall temporary column.
+    widget.element.parentElement = { clientWidth: 0 };
+    widget.element.scrollHeight = 582;
+    const [, height] = widget.computeSize(420);
+    node.setSize([420, Math.max(node.size[1], height + 160)]);
+    assert.deepEqual(node.size, saved.size);
+
+    widget.element.parentElement.clientWidth = 400;
+    widget.element.scrollHeight = 116;
+    assert.equal(widget.options.getMinHeight(), 136);
+    assert.deepEqual(node.size, saved.size);
+    const serialized = { widgets_values: ["front END", null, 0] };
+    node.onSerialize(serialized);
+    assert.deepEqual(serialized.widgets_values, saved.widgets_values);
+  }
+
+  // Once a real narrow width exists, wrapped content must still fit.
+  widget.element.parentElement.clientWidth = 200;
   widget.element.scrollHeight = 224;
-  assert.deepEqual(widget.computeSize(), [0, 224]);
-  assert.deepEqual(node.size, [300, 200]);
+  assert.deepEqual(widget.computeSize(220), [0, 244]);
+  assert.deepEqual(node.size, saved.size);
+});
+
+test("settled and resized panels fit their controls without shrinking manual sizing", async (t) => {
+  const originalObserver = globalThis.ResizeObserver;
+  t.after(() => {
+    if (originalObserver === undefined) delete globalThis.ResizeObserver;
+    else globalThis.ResizeObserver = originalObserver;
+  });
+  let resized;
+  let observing = false;
+  globalThis.ResizeObserver = class {
+    constructor(callback) { resized = callback; }
+    observe() { observing = true; }
+    disconnect() { observing = false; }
+  };
+  const node = graphNode();
+  const widget = installPromptComposer(node, {
+    document: documentStub,
+    fetchLibraries: async () => ({ ok: true, wildcards: [], styles: [] }),
+  });
+  await widget.lfggReady;
+  node.computeSize = () => [node.size[0], widget.computeSize()[1] + 160];
+  node.setSize([260, 400]);
+  widget.element.parentElement = { clientWidth: 0 };
+  widget.element.scrollHeight = 582;
+  resized();
+  assert.deepEqual(node.size, [260, 400]);
+
+  widget.element.parentElement.clientWidth = 240;
+  widget.element.scrollHeight = 224;
+  resized();
+  assert.deepEqual(node.size, [260, 404]);
+  assert.equal(node.dirty, true);
+  node.setSize([600, 650]);
+  widget.element.parentElement.clientWidth = 580;
+  widget.element.scrollHeight = 116;
+  resized();
+  assert.deepEqual(node.size, [600, 650]);
+
+  node.dirty = false;
+  resized();
+  assert.equal(node.dirty, false);
+  node.onRemoved();
+  assert.equal(observing, false);
 });
 
 test("opens wildcard and style choices as searchable combo menus", async () => {
