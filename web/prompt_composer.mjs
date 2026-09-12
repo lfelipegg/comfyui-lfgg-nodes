@@ -80,6 +80,111 @@ function menu(choices, event, select) {
   return true;
 }
 
+function wildcardPicker(document, select, insert) {
+  const panel = document.createElement("div");
+  panel.dataset.role = "wildcard-picker";
+  panel.setAttribute("role", "group");
+  panel.setAttribute("aria-label", "Select wildcards");
+  Object.assign(panel.style, { display: "none", minWidth: "0", gap: `${UI.gap}px` });
+  const search = document.createElement("input");
+  search.type = "search";
+  search.placeholder = "Search wildcards…";
+  search.setAttribute("aria-label", "Search wildcards");
+  const list = document.createElement("div");
+  Object.assign(list.style, { maxHeight: "240px", overflowY: "auto", minWidth: "0" });
+  const empty = document.createElement("span");
+  empty.textContent = "No matching wildcards";
+  empty.setAttribute("role", "status");
+  const actions = document.createElement("div");
+  Object.assign(actions.style, { display: "flex", flexWrap: "wrap", gap: `${UI.gap}px` });
+  const commit = document.createElement("button");
+  commit.type = "button";
+  commit.dataset.role = "insert-wildcards";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = "Cancel";
+  for (const control of [search, commit, cancel]) {
+    control.style.minHeight = `${UI.controlHeight}px`;
+    control.style.minWidth = "0";
+  }
+  actions.append(commit, cancel);
+  panel.append(search, list, empty, actions);
+  let rows = [];
+  const selected = new Set();
+  const update = () => {
+    commit.disabled = selected.size === 0;
+    commit.textContent = `Insert selected (${selected.size})`;
+  };
+  const close = (focus = true) => {
+    panel.style.display = "none";
+    select.setAttribute("aria-expanded", "false");
+    selected.clear();
+    rows = [];
+    list.replaceChildren();
+    if (focus) select.focus();
+  };
+  cancel.addEventListener("click", () => close());
+  panel.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+    }
+  });
+  search.addEventListener("input", () => {
+    const query = search.value.toLowerCase();
+    let matches = 0;
+    for (const { label, name } of rows) {
+      const visible = name.toLowerCase().includes(query);
+      label.style.display = visible ? "flex" : "none";
+      if (visible) matches++;
+    }
+    empty.style.display = matches ? "none" : "block";
+  });
+  commit.addEventListener("click", () => {
+    if (!selected.size) return;
+    const tokens = [...selected].map((name) => `__${name}__`);
+    insert(tokens.length === 1 ? tokens[0] : `{${tokens.join("|")}}`);
+    close(false);
+  });
+  select.setAttribute("aria-expanded", "false");
+  return {
+    panel,
+    close,
+    open(choices) {
+      close(false);
+      search.value = "";
+      for (const choice of choices.slice(1)) {
+        const label = document.createElement("label");
+        Object.assign(label.style, {
+          display: "flex", alignItems: "center", gap: `${UI.gap}px`,
+          minHeight: `${UI.controlHeight}px`, overflowWrap: "anywhere",
+        });
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = choice.value;
+        checkbox.disabled = choice.disabled;
+        checkbox.addEventListener("change", () => {
+          if (checkbox.disabled) return;
+          if (checkbox.checked) selected.add(choice.value);
+          else selected.delete(choice.value);
+          update();
+        });
+        const caption = document.createElement("span");
+        caption.textContent = choice.textContent;
+        label.append(checkbox, caption);
+        list.append(label);
+        rows.push({ label, name: choice.value });
+      }
+      update();
+      empty.style.display = rows.length ? "none" : "block";
+      panel.style.display = "grid";
+      select.setAttribute("aria-expanded", "true");
+      search.focus();
+    },
+  };
+}
+
 function insertToken(node, input, token) {
   const widget = node.widgets?.find(({ name }) => name === "prompt_template");
   if (!widget) return;
@@ -206,7 +311,10 @@ export function installPromptComposer(
   });
   selectors.append(wildcard.label, style.label);
   actions.append(refresh, status);
-  root.append(selectors, actions);
+  const picker = wildcardPicker(document, wildcard.select, (token) => {
+    insertToken(node, input, `${token}, `);
+  });
+  root.append(selectors, picker.panel, actions);
   initializeRoot(node, root, document, wildcard.label.children[0]);
 
   const setStatus = (message) => {
@@ -241,6 +349,7 @@ export function installPromptComposer(
         );
         wildcardOptions = nextWildcardOptions;
         styleOptions = nextStyleOptions;
+        picker.close(false);
         replaceOptions(wildcard.select, wildcardOptions);
         replaceOptions(style.select, styleOptions);
         loaded = true;
@@ -273,9 +382,15 @@ export function installPromptComposer(
     if (value) insertToken(node, input, `[[style:${value}]], `);
     style.select.value = "";
   };
-  wildcard.select.addEventListener("pointerdown", (event) => {
-    if (!wildcard.select.disabled && wildcardOptions && menu(wildcardOptions, event, insertWildcard)) {
-      event.preventDefault?.();
+  const openWildcards = (event) => {
+    if (wildcard.select.disabled || !wildcardOptions) return;
+    event.preventDefault?.();
+    picker.open(wildcardOptions);
+  };
+  wildcard.select.addEventListener("pointerdown", openWildcards);
+  wildcard.select.addEventListener("keydown", (event) => {
+    if (["Enter", " ", "ArrowDown", "ArrowUp"].includes(event.key)) {
+      openWildcards(event);
     }
   });
   wildcard.select.addEventListener("change", () => {

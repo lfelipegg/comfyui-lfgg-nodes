@@ -1,11 +1,14 @@
 # LFGG Prompt Composer
 
 Write the prompt in the multiline `prompt_template` box. Use **Insert wildcard**
-to insert `__folder/name__` at the caret, or **Insert style** to insert
-`[[style:Exact Name]]`. The selectors are editing controls only; the template
-and seed are the persisted inputs. Empty wildcard files and CSV rows with no
-positive or negative value are shown disabled. Search filters either selector
-inside the dropdown after it opens.
+to check entries in a searchable list, then choose **Insert selected**.
+One checked entry inserts `__folder/name__`; multiple checked entries insert
+`{__folder/first__|__folder/second__}` in selection order. Search preserves
+checked entries even when hidden by the filter. **Cancel** or Escape discards
+the pending selection. **Insert style** inserts `[[style:Exact Name]]` using
+ComfyUI's searchable combo menu. These controls are editing controls only;
+the template and seed are the persisted inputs. Empty wildcard files and CSV
+rows with no positive or negative value are shown disabled.
 Insertion replaces selected text when a selection exists; each selector exposes
 this guidance in its tooltip and accessible description. Refresh and usable
 entry counts share a compact row that wraps at narrow node widths. Loading,

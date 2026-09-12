@@ -181,9 +181,13 @@ Copy [`config.example.json`](config.example.json) to
 Both configured values must be absolute. The UTF-8 CSV requires the exact
 `name,prompt,negative_prompt` header. Rows with no positive or negative value
 are disabled headings; `.txt` files with no non-empty lines are also disabled.
-Clicking either selector opens ComfyUI's searchable combo menu. The transient
-selectors insert relative wildcard or exact style tokens at the
-text caret and do not add workflow state. **Refresh libraries** revalidates the
+The wildcard selector opens a searchable checkbox list. Check one or more
+entries, then choose **Insert selected**: one inserts `__folder/name__`;
+multiple insert `{__folder/first__|__folder/second__}` in selection order.
+Filtering preserves checked entries. **Cancel** or Escape discards the pending
+selection. The style selector uses ComfyUI's searchable combo menu.
+These transient editing controls insert at the text caret, replace selected
+text, and do not add workflow state. **Refresh libraries** revalidates the
 catalog through bounded `GET /lfgg/v1/prompt-composer/libraries`; a failed
 refresh preserves the last valid choices and never returns configured paths or
 file contents. Prefix `__file__` or `[[style:Name]]` with `\` to emit it

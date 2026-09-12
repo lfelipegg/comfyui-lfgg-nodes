@@ -231,7 +231,7 @@ test("settled and resized panels fit their controls without shrinking manual siz
   assert.equal(observing, false);
 });
 
-test("opens wildcard and style choices as searchable combo menus", async () => {
+test("selects a wildcard and keeps the native style menu", async () => {
   const node = graphNode();
   const widget = installPromptComposer(node, {
     document: documentStub,
@@ -262,20 +262,18 @@ test("opens wildcard and style choices as searchable combo menus", async () => {
 
   try {
     byRole(widget, "wildcards").dispatch("pointerdown");
-    assert.equal(menus[0].options.className, "dark", "enable ComfyUI's native list filter");
-    assert.deepEqual(
-      menus[0].items.map(({ content }) => content),
-      ["animals/pets", "places/mountains"],
-    );
-    menus[0].options.callback(menus[0].items[0]);
+    const checkbox = descendants(byRole(widget, "wildcard-picker"))
+      .find((element) => element.type === "checkbox");
+    checkbox.checked = true;
+    checkbox.dispatch("change");
+    byRole(widget, "insert-wildcards").dispatch("click");
     assert.equal(node.widgets[0].value, "front __animals/pets__, ");
 
     byRole(widget, "styles").dispatch("pointerdown");
-    assert.equal(menus[1].options.className, "dark", "enable ComfyUI's native list filter");
-    assert.equal(menus[1].items[0].disabled, true);
-    menus[1].options.callback(menus[1].items[0]);
+    assert.equal(menus[0].items[0].disabled, true);
+    menus[0].options.callback(menus[0].items[0]);
     assert.equal(node.widgets[0].value, "front __animals/pets__, ");
-    menus[1].options.callback(menus[1].items[1]);
+    menus[0].options.callback(menus[0].items[1]);
     assert.equal(
       node.widgets[0].value,
       "front __animals/pets__, [[style:Cinematic]], ",
@@ -283,6 +281,57 @@ test("opens wildcard and style choices as searchable combo menus", async () => {
   } finally {
     globalThis.LiteGraph = previousLiteGraph;
   }
+});
+
+test("groups checked wildcards across searches and discards cancelled selections", async () => {
+  const node = graphNode();
+  const widget = installPromptComposer(node, {
+    document: documentStub,
+    fetchLibraries: async () => ({
+      ok: true,
+      wildcards: [
+        { name: "outfits/dancer", disabled: false },
+        { name: "outfits/royal", disabled: false },
+        { name: "empty", disabled: true },
+      ],
+      styles: [],
+    }),
+  });
+  await widget.lfggReady;
+  const select = byRole(widget, "wildcards");
+  select.dispatch("pointerdown");
+  const panel = byRole(widget, "wildcard-picker");
+  const controls = descendants(panel);
+  const boxes = controls.filter((element) => element.type === "checkbox");
+  const commit = byRole(widget, "insert-wildcards");
+  assert.equal(commit.disabled, true);
+  boxes[0].checked = true;
+  boxes[0].dispatch("change");
+  const search = controls.find((element) => element.type === "search");
+  search.value = "royal";
+  search.dispatch("input");
+  boxes[1].checked = true;
+  boxes[1].dispatch("change");
+  boxes[2].checked = true;
+  boxes[2].dispatch("change");
+  assert.equal(node.widgets[0].value, "front END");
+  commit.dispatch("click");
+  assert.equal(node.widgets[0].value, "front {__outfits/dancer__|__outfits/royal__}, ");
+  assert.equal(node.widgets[0].callbackValue, node.widgets[0].value);
+  assert.equal(node.widgets[0].inputEl.selectionStart, node.widgets[0].value.length);
+  select.dispatch("pointerdown");
+  const fresh = descendants(panel).filter((element) => element.type === "checkbox");
+  fresh[0].checked = true;
+  fresh[0].dispatch("change");
+  fresh[0].checked = false;
+  fresh[0].dispatch("change");
+  assert.equal(commit.disabled, true);
+  fresh[1].checked = true;
+  fresh[1].dispatch("change");
+  descendants(panel).find((element) => element.textContent === "Cancel").dispatch("click");
+  select.dispatch("pointerdown");
+  assert.equal(commit.disabled, true);
+  assert.equal(node.widgets[0].value, "front {__outfits/dancer__|__outfits/royal__}, ");
 });
 
 test("inserts wildcard and style tokens at the caret and replaces selected text", async () => {
