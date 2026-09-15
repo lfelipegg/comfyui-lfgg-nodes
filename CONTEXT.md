@@ -20,6 +20,12 @@ A successor node that computes pixel width and height under a sizing policy
 without resizing an image or creating a latent.
 _Avoid_: Latent sizing node
 
+**Megapixel budget**:
+A hard ceiling on image area expressed in units of 1,048,576 pixels, so a
+budget of one accommodates a 1024 × 1024 square. This pack-specific convention
+is distinct from decimal megapixels and does not imply resizing an image.
+_Avoid_: Target resolution, decimal megapixels
+
 **Resize successor**:
 A successor node that resamples an image to dimensions selected by a sizing
 policy without enlarging either source axis.

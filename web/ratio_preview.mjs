@@ -1,6 +1,9 @@
 import { UI, canvasTheme, drawIdentity, resolvedWidth, setWidgetHidden } from "./node_ui.mjs";
 
-const NODE_ID = "LFGG_DimensionsByAspectRatio";
+const NODE_IDS = new Set([
+  "LFGG_DimensionsByAspectRatio",
+  "LFGG_DimensionsByRatioAndMegapixels",
+]);
 const COMPACT_HEIGHT = 96;
 const MESSAGE_HEIGHT = 80;
 const EXTREME_HEIGHT = 104;
@@ -221,7 +224,7 @@ export function installRatioPreview(
   node,
   { isConfiguring = () => false } = {},
 ) {
-  if (node.comfyClass !== NODE_ID) {
+  if (!NODE_IDS.has(node.comfyClass)) {
     return undefined;
   }
   if (node[installedPreview]) {

@@ -64,6 +64,23 @@ function fakeNode() {
   };
 }
 
+test("megapixel ratio node reveals custom controls without changing its budget", () => {
+  const node = fakeNode();
+  node.comfyClass = "LFGG_DimensionsByRatioAndMegapixels";
+  node.widgets[1] = { name: "megapixels", value: 1.5 };
+  const preview = installRatioPreview(node);
+  const byName = (name) => node.widgets.find((widget) => widget.name === name);
+  assert.equal(byName("custom_ratio_width").hidden, true);
+  node.widgets[0].value = "Custom";
+  node.widgets[0].callback("Custom");
+  assert.equal(byName("custom_ratio_width").hidden, false);
+  assert.equal(byName("custom_ratio_height").hidden, false);
+  assert.equal(byName("megapixels").value, 1.5);
+  const ctx = recordingContext();
+  preview.draw(ctx, node, 320, 0, 96);
+  assert.ok(ctx.calls.some((call) => call[0] === "fillText" && call[1] === "3:4"));
+});
+
 function recordingContext() {
   const calls = [];
   return {

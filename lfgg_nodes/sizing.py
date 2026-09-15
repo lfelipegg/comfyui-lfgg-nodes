@@ -1,3 +1,8 @@
+import math
+
+PIXELS_PER_MEGAPIXEL = 1_048_576
+
+
 PRESET_RATIOS = {
     "1:1": (1, 1),
     "4:5": (4, 5),
@@ -153,5 +158,33 @@ def fit_aspect_ratio_dimensions(
         max_width=long_side,
         max_height=long_side,
         max_pixels=None,
+        divisible_by=divisible_by,
+    )
+
+
+def fit_megapixel_dimensions(
+    *, ratio_width, ratio_height, megapixels, divisible_by, max_resolution
+):
+    """Fit a ratio under a binary-megapixel budget without a source-size cap."""
+    maximum = max_resolution**2 / PIXELS_PER_MEGAPIXEL
+    if (
+        type(megapixels) not in (int, float)
+        or not 0 < megapixels <= maximum
+        or not math.isfinite(megapixels)
+    ):
+        raise ValueError(
+            f"megapixels must be finite and greater than 0, up to {maximum}"
+        )
+    for name, value in (("ratio_width", ratio_width), ("ratio_height", ratio_height)):
+        if type(value) is not int or value < 1:
+            raise ValueError(f"{name} must be a positive integer")
+    _bounded_int("divisible_by", divisible_by, 1, max_resolution)
+    max_pixels = math.floor(megapixels * PIXELS_PER_MEGAPIXEL)
+    return _fit_aligned_dimensions(
+        ratio_width=ratio_width,
+        ratio_height=ratio_height,
+        max_width=max_resolution,
+        max_height=max_resolution,
+        max_pixels=max_pixels,
         divisible_by=divisible_by,
     )

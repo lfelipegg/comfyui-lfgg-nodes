@@ -6,6 +6,10 @@ if __package__:
         ResizeImageByLongSide,
     )
     from .lfgg_nodes.load_and_crop_image import LoadAndCropImage
+    from .lfgg_nodes.megapixel_dimensions import (
+        DimensionsByRatioAndMegapixels,
+        ImageDimensionsByMegapixels,
+    )
     from .lfgg_nodes.power_lora_loader_folder import PowerLoraLoaderFolder
     from .lfgg_nodes.prompt_composer import PromptComposer
     from .lfgg_nodes.routing_organizer import RoutingOrganizer
@@ -23,6 +27,10 @@ else:
         ResizeImageByLongSide,
     )
     from lfgg_nodes.load_and_crop_image import LoadAndCropImage
+    from lfgg_nodes.megapixel_dimensions import (
+        DimensionsByRatioAndMegapixels,
+        ImageDimensionsByMegapixels,
+    )
     from lfgg_nodes.power_lora_loader_folder import PowerLoraLoaderFolder
     from lfgg_nodes.prompt_composer import PromptComposer
     from lfgg_nodes.routing_organizer import RoutingOrganizer
@@ -48,6 +56,8 @@ NODE_CLASS_MAPPINGS = _merge_class_mappings(
     {"LFGG_DimensionsByAspectRatio": DimensionsByAspectRatio},
     {"LFGG_ImageDimensionsByLongSide": ImageDimensionsByLongSide},
     {"LFGG_ImageDimensionsByPixelBudget": ImageDimensionsByPixelBudget},
+    {"LFGG_DimensionsByRatioAndMegapixels": DimensionsByRatioAndMegapixels},
+    {"LFGG_ImageDimensionsByMegapixels": ImageDimensionsByMegapixels},
     {"LFGG_ResizeImageByLongSide": ResizeImageByLongSide},
     {"LFGG_LoadAndCropImage": LoadAndCropImage},
     {"LFGG_PowerLoraLoaderFolder": PowerLoraLoaderFolder},
@@ -66,6 +76,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LFGG_DimensionsByAspectRatio": "LFGG Dimensions by Aspect Ratio",
     "LFGG_ImageDimensionsByLongSide": "LFGG Image Dimensions by Long Side",
     "LFGG_ImageDimensionsByPixelBudget": "LFGG Image Dimensions by Pixel Budget",
+    "LFGG_DimensionsByRatioAndMegapixels": "LFGG Dimensions by Ratio and Megapixels",
+    "LFGG_ImageDimensionsByMegapixels": "LFGG Image Dimensions by Megapixels",
     "LFGG_ResizeImageByLongSide": "LFGG Resize Image by Long Side",
     "LFGG_LoadAndCropImage": "LFGG Load and Crop Image",
     "LFGG_PowerLoraLoaderFolder": "LFGG Power LoRA Loader (Folder)",

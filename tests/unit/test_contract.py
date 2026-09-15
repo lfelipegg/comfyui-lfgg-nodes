@@ -65,6 +65,10 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_ImageDimensionsByPixelBudget": (
             "LFGG Image Dimensions by Pixel Budget"
         ),
+        "LFGG_DimensionsByRatioAndMegapixels": (
+            "LFGG Dimensions by Ratio and Megapixels"
+        ),
+        "LFGG_ImageDimensionsByMegapixels": "LFGG Image Dimensions by Megapixels",
         "LFGG_ResizeImageByLongSide": "LFGG Resize Image by Long Side",
         "LFGG_LoadAndCropImage": "LFGG Load and Crop Image",
         "LFGG_PowerLoraLoaderFolder": "LFGG Power LoRA Loader (Folder)",
@@ -83,6 +87,8 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_DimensionsByAspectRatio",
         "LFGG_ImageDimensionsByLongSide",
         "LFGG_ImageDimensionsByPixelBudget",
+        "LFGG_DimensionsByRatioAndMegapixels",
+        "LFGG_ImageDimensionsByMegapixels",
         "LFGG_ResizeImageByLongSide",
         "LFGG_LoadAndCropImage",
         "LFGG_PowerLoraLoaderFolder",
@@ -1043,6 +1049,8 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
     expected_nodes = {}
     for node_id, node in package.NODE_CLASS_MAPPINGS.items():
         if node_id in {
+            "LFGG_DimensionsByRatioAndMegapixels",
+            "LFGG_ImageDimensionsByMegapixels",
             "LFGG_PromptComposer",
             "LFGG_RoutingOrganizer",
             "LFGG_BooleanSwitch",

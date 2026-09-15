@@ -40,6 +40,8 @@ accelerators are not claimed.
 | LFGG Dimensions by Aspect Ratio | preset/custom ratio, long-side cap, alignment | width, height |
 | LFGG Image Dimensions by Long Side | IMAGE, long-side cap, alignment | width, height |
 | LFGG Image Dimensions by Pixel Budget | IMAGE, exact pixel cap, alignment | width, height |
+| LFGG Dimensions by Ratio and Megapixels | preset/custom ratio, megapixel budget, alignment | width, height |
+| LFGG Image Dimensions by Megapixels | IMAGE ratio, megapixel budget, alignment | width, height |
 | LFGG Resize Image by Long Side | IMAGE, interpolation method, long-side cap, alignment | resized image, width, height |
 | LFGG Load and Crop Image | one still image, ratio, exact source-pixel crop | cropped image, alpha-derived mask |
 | LFGG Power LoRA Loader (Folder) | MODEL, CLIP, folder, ordered LoRA rows | MODEL, CLIP |
@@ -54,7 +56,7 @@ accelerators are not claimed.
 | LFGG Index Switch | zero-based INT selector, 2–32 ANY branches | selected value |
 | LFGG Value Inspector | any connected value | inline diagnostic report |
 
-All three nodes are in `LFGG/sizing`. They return positive dimensions aligned
+All five sizing nodes are in `LFGG/sizing`. They return positive dimensions aligned
 to the exact `divisible_by` value. Aspect fidelity wins before pixel area, with
 a deterministic side-size tie-break. Limits are hard ceilings and impossible
 alignments raise actionable errors.
@@ -70,9 +72,36 @@ the node still executes normally.
 Automatic height changes fit the visible controls without shrinking a node
 that the user has manually enlarged.
 
-The two image-derived nodes are downscale-only and inspect the shared
+`LFGG Image Dimensions by Long Side` and `LFGG Image Dimensions by Pixel Budget`
+are downscale-only. All image-derived sizing nodes inspect the shared
 `[B,H,W,C]` tensor shape. Batch count does not change the result. They do not
 allocate, copy, cast, mutate, or move the image.
+
+### Megapixel sizing
+
+`LFGG Dimensions by Ratio and Megapixels` uses the existing preset/custom ratio
+selector and ratio preview. `LFGG Image Dimensions by Megapixels` instead uses
+an input image only for its aspect ratio: its output dimensions **may exceed
+the source dimensions**. Neither node resizes an image or creates a latent.
+Existing sizing nodes and saved workflows are unchanged.
+
+Both accept a connectable numeric `megapixels` input, default `1.0`, with
+`0.05` increments, and `divisible_by`, default `8`. The pack convention is
+**1 megapixel = 1,048,576 pixels (1024 × 1024)**, not decimal megapixels.
+The hard area ceiling is `floor(megapixels × 1,048,576)`; ComfyUI's per-axis
+resolution limit also applies. Values must be finite and positive, at least
+one pixel in the UI, and no greater than the squared per-axis limit divided
+by 1,048,576. Invalid ratios, invalid alignment, and budgets too small for any
+positive aligned dimensions raise errors.
+
+Aspect fidelity takes precedence over filling the budget. At `1.0` megapixels
+and alignment `8`, square dimensions are `1024 × 1024`; `16:9` produces
+`1280 × 720`, not a larger, less faithful approximation. A `512 × 512` source
+image produces `1024 × 1024` dimensions at the same settings without changing
+the input image.
+
+Stable IDs: `LFGG_DimensionsByRatioAndMegapixels` and
+`LFGG_ImageDimensionsByMegapixels`.
 
 `LFGG Resize Image by Long Side` is in `LFGG/image`. It uses the same
 downscale-only dimensions as `LFGG Image Dimensions by Long Side`, then

@@ -20,6 +20,7 @@ EXPECTED_PATHS = {
     "lfgg_nodes/dimensions_by_aspect_ratio.py",
     "lfgg_nodes/image_dimensions.py",
     "lfgg_nodes/load_and_crop_image.py",
+    "lfgg_nodes/megapixel_dimensions.py",
     "lfgg_nodes/power_lora_loader_folder.py",
     "lfgg_nodes/prompt_composer.py",
     "lfgg_nodes/routing_organizer.py",
