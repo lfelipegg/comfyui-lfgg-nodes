@@ -144,6 +144,16 @@ A ComfyUI node that creates an empty latent in the format required by a model
 family. Sizing successors leave this job to native ComfyUI nodes.
 _Avoid_: Generic latent output
 
+**Composition seed image**:
+An abstract image of geometric forms or tonal regions intended to influence
+the spatial structure or color of a generated image.
+_Avoid_: Noise image, empty latent
+
+**Composition family**:
+A class of abstract arrangements that shares a spatial organizing principle
+while allowing variation in individual forms.
+_Avoid_: Shape type, fixed template
+
 **Successor pack**:
 The MIT-licensed public Comfy Registry package `lfgg-nodes`, published by
 `lfelipegg` and displayed as `LFGG Nodes`, that contains accepted successor

@@ -64,6 +64,44 @@ function fakeNode() {
   };
 }
 
+test("composition preview preserves generation controls through sizing restore", () => {
+  const node = fakeNode();
+  node.comfyClass = "LFGG_CompositionImageByAspectRatio";
+  const generation = [
+    { name: "family", value: "Random" },
+    { name: "palette", value: "Monochrome" },
+    { name: "complexity", value: 0.8 },
+    { name: "seed", value: 123 },
+    { name: "batch_size", value: 4 },
+  ];
+  node.widgets.push(...generation);
+  const preview = installRatioPreview(node);
+  assert.equal(node.widgets.find((w) => w.name === "custom_ratio_width").hidden, true);
+  node.widgets.find((w) => w.name === "aspect_ratio").value = "Custom";
+  installRatioPreview(node);
+  assert.equal(node.widgets.find((w) => w.name === "custom_ratio_width").hidden, false);
+  assert.equal(preview.getState().label, "3:4");
+  assert.deepEqual(generation.map((w) => w.value), ["Random", "Monochrome", 0.8, 123, 4]);
+  assert.equal(installRatioPreview(node), preview);
+  const serialized = {
+    widgets_values: node.widgets.map((widget) => widget.serialize === false ? null : widget.value),
+  };
+  node.onSerialize(serialized);
+  assert.deepEqual(serialized.widgets_values,
+    ["Custom", 1024, 8, 3, 4, "Random", "Monochrome", 0.8, 123, 4]);
+  const restored = fakeNode();
+  restored.comfyClass = node.comfyClass;
+  restored.widgets.push(...generation.map((widget) => ({ ...widget, value: undefined })));
+  restored.widgets.forEach((widget, index) => {
+    widget.value = serialized.widgets_values[index];
+  });
+  const restoredPreview = installRatioPreview(restored);
+  assert.equal(restoredPreview.getState().label, "3:4");
+  assert.equal(restored.widgets.find((widget) => widget.name === "custom_ratio_width").hidden, false);
+  assert.deepEqual(restored.widgets.filter((widget) => widget.serialize !== false)
+    .map((widget) => widget.value), serialized.widgets_values);
+});
+
 test("megapixel ratio node reveals custom controls without changing its budget", () => {
   const node = fakeNode();
   node.comfyClass = "LFGG_DimensionsByRatioAndMegapixels";

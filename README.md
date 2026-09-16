@@ -38,6 +38,7 @@ accelerators are not claimed.
 | Node | Inputs | Outputs |
 |---|---|---|
 | LFGG Dimensions by Aspect Ratio | preset/custom ratio, long-side cap, alignment | width, height |
+| LFGG Composition Image by Aspect Ratio | preset/custom ratio, long-side cap, alignment, family, palette, complexity, seed, batch size | IMAGE, width, height |
 | LFGG Image Dimensions by Long Side | IMAGE, long-side cap, alignment | width, height |
 | LFGG Image Dimensions by Pixel Budget | IMAGE, exact pixel cap, alignment | width, height |
 | LFGG Dimensions by Ratio and Megapixels | preset/custom ratio, megapixel budget, alignment | width, height |
@@ -78,6 +79,52 @@ that the user has manually enlarged.
 are downscale-only. All image-derived sizing nodes inspect the shared
 `[B,H,W,C]` tensor shape. Batch count does not change the result. They do not
 allocate, copy, cast, mutate, or move the image.
+
+### Composition seed images
+
+`LFGG Composition Image by Aspect Ratio` (`LFGG_CompositionImageByAspectRatio`,
+category `LFGG/image`) generates abstract RGB compositions, not noise or latents.
+It reuses the sizing node's exact preset/custom ratio controls, aspect-fidelity
+and alignment policy, defaults (`1:1`, long side `1024`, alignment `8`, custom
+ratio `1:1`), and requested-ratio preview. Existing sizing workflows are unchanged.
+
+Choose scattered clusters, regular/jittered grids, directional bands/diagonal
+arrangements, concentric/radial arrangements, large area partitions, or gradient
+fields with optional shapes. **Family defaults to Random.** Complexity ranges
+from `0` to `1`, default `0.5`; each family coordinates count, size, spacing and
+overlap differently. Shapes use pixel-space proportions on the requested
+rectangular canvas, with intentional overlap/clipping and antialiased boundaries.
+
+**Palette defaults to Monochrome:** black and white except at smoothed boundaries.
+Grayscale includes intermediate tones; Muted color and Vivid color use curated,
+coordinated palettes. Random selects a palette independently for each image.
+The gradient family uses thresholded regions in monochrome, never a continuous
+gray gradient. Random family choices are also per image, independent of palette.
+
+The composition `seed` defaults to `0`; `batch_size` defaults to `1`. Fixed inputs
+reproduce the ordered pixel batch in the same rendering environment. Increasing
+batch size preserves earlier items. Explicit family/palette choices remain fixed
+while details vary. Finite output spaces can produce collisions; seed uniqueness
+is not promised. Native seed controls can randomize between executions.
+
+Output is contiguous CPU float32 RGB `IMAGE` data in `[B,H,W,3]`, normalized to
+`[0,1]`, followed by the actual aligned width and height. Before allocating,
+the node rejects aligned `width × height × batch_size > 16,777,216` pixels.
+The inclusive limit allows sixteen `1024 × 1024` or four `2048 × 2048` images
+and occupies 192 MiB for the output alone. Images render sequentially using
+512-pixel tiles at 3× supersampling with three-pixel filter gutters; intermediate
+buffers are tile-bounded, not full-canvas supersampled images. Invalid requests
+raise actionable errors; the node never reduces the batch or resizes to fit.
+This guard does not guarantee downstream VAE/sampler memory availability.
+
+Connect `IMAGE` to native **Preview Image** to inspect pixels, or to native
+**VAE Encode** and then your sampling workflow. The ratio preview is only the
+requested proportion. The generator performs no sampling, VAE operation, network
+request, image file write, or generator-owned pixel preview. The composition seed
+is independent of the sampler seed. `workflows/composition_image.json` is an
+API-format example connected to native Preview Image, which owns its normal
+temporary preview files. Generator variation is not evidence of improved
+Krea 2 output diversity.
 
 ### Megapixel sizing
 

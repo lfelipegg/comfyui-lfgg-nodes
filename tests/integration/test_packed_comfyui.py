@@ -998,6 +998,100 @@ def _assert_video_result(result):
 
 def development_manifest():
     manifest = json.loads((ROOT / "release" / "1.5.0-schema.json").read_text())
+    manifest["nodes"]["LFGG_CompositionImageByAspectRatio"] = {
+        "display_name": "LFGG Composition Image by Aspect Ratio",
+        "description": (
+            "Generates seeded abstract RGB compositions at an aligned aspect ratio. "
+            "Connect IMAGE to native Preview Image or VAE Encode. The composition "
+            "seed is independent of the sampler seed; total batch limit is "
+            "16,777,216 pixels."
+        ),
+        "category": "LFGG/image",
+        "input": {
+            "required": {
+                **manifest["nodes"]["LFGG_DimensionsByAspectRatio"]["input"][
+                    "required"
+                ],
+                "family": [
+                    "COMBO",
+                    {
+                        "options": [
+                            "Random",
+                            "Scattered clusters",
+                            "Regular or jittered grids",
+                            "Directional bands or diagonal arrangements",
+                            "Concentric or radial arrangements",
+                            "Large area partitions",
+                            "Gradient fields with optional shapes",
+                        ],
+                        "default": "Random",
+                        "tooltip": (
+                            "Spatial organizing principle; Random chooses per image."
+                        ),
+                    },
+                ],
+                "palette": [
+                    "COMBO",
+                    {
+                        "options": [
+                            "Monochrome",
+                            "Grayscale",
+                            "Muted color",
+                            "Vivid color",
+                            "Random",
+                        ],
+                        "default": "Monochrome",
+                        "tooltip": (
+                            "Coordinated colors; Random chooses per image. Monochrome "
+                            "uses black and white except at smoothed boundaries."
+                        ),
+                    },
+                ],
+                "complexity": [
+                    "FLOAT",
+                    {
+                        "default": 0.5,
+                        "min": 0.0,
+                        "max": 1.0,
+                        "step": 0.01,
+                        "tooltip": (
+                            "Low to high detail within the selected family: changes "
+                            "count, size, spacing and overlap, not an exact "
+                            "shape count."
+                        ),
+                    },
+                ],
+                "seed": [
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": 18446744073709551615,
+                        "control_after_generate": True,
+                        "tooltip": "Composition seed, independent of the sampler seed. "
+                        "Increasing batch size preserves earlier images.",
+                    },
+                ],
+                "batch_size": [
+                    "INT",
+                    {
+                        "default": 1,
+                        "min": 1,
+                        "max": 16777216,
+                        "tooltip": "Independent compositions. Aligned width × height × "
+                        "batch size must not exceed 16,777,216 pixels.",
+                    },
+                ],
+            }
+        },
+        "output": ["IMAGE", "INT", "INT"],
+        "output_name": ["image", "width", "height"],
+        "output_tooltips": [
+            "Seeded RGB image batch; inspect using native Preview Image.",
+            "Aligned output width in pixels.",
+            "Aligned output height in pixels.",
+        ],
+    }
     crop_input = manifest["nodes"]["LFGG_LoadAndCropImage"]["input"]["required"]
     crop_input["image"][1]["options"] = [
         "load_and_crop_image.png",
@@ -1306,6 +1400,7 @@ def release_workflows():
         name: json.loads((ROOT / "workflows" / f"{name}.json").read_text())
         for name in (
             "sizing",
+            "composition_image",
             "save_image_dynamic",
             "load_and_crop_image",
             "video_cutter",

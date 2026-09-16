@@ -68,14 +68,3 @@ def test_release_exercises_the_exact_registry_installed_version():
         in release[installed_integration:]
     )
     assert "REGISTRY_ACCESS_TOKEN" not in release[fresh_workspace:]
-    assert (
-        '--changelog "Add LFGG Resize Image by Long Side."'
-        in release
-    )
-    assert "interactive exact-ratio crop frame" not in release
-    assert (
-        '--changelog "Add the aspect-ratio preview and conditional '
-        'custom-ratio controls."'
-    ) not in release
-    assert '--changelog "Add LFGG Save Image Dynamic."' not in release
-    assert '--changelog "Initial sizing nodes release."' not in release

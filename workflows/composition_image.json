@@ -1,0 +1,21 @@
+{
+  "1": {
+    "class_type": "LFGG_CompositionImageByAspectRatio",
+    "inputs": {
+      "aspect_ratio": "16:9",
+      "long_side": 512,
+      "divisible_by": 8,
+      "custom_ratio_width": 1,
+      "custom_ratio_height": 1,
+      "family": "Random",
+      "palette": "Monochrome",
+      "complexity": 0.5,
+      "seed": 0,
+      "batch_size": 2
+    }
+  },
+  "2": {
+    "class_type": "PreviewImage",
+    "inputs": { "images": ["1", 0] }
+  }
+}

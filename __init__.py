@@ -1,4 +1,7 @@
 if __package__:
+    from .lfgg_nodes.composition_image_by_aspect_ratio import (
+        CompositionImageByAspectRatio,
+    )
     from .lfgg_nodes.dimensions_by_aspect_ratio import DimensionsByAspectRatio
     from .lfgg_nodes.image_dimensions import (
         ImageDimensionsByLongSide,
@@ -20,6 +23,9 @@ if __package__:
     from .lfgg_nodes.value_inspector import ValueInspector
     from .lfgg_nodes.video_cutter import VideoCutter
 else:
+    from lfgg_nodes.composition_image_by_aspect_ratio import (
+        CompositionImageByAspectRatio,
+    )
     from lfgg_nodes.dimensions_by_aspect_ratio import DimensionsByAspectRatio
     from lfgg_nodes.image_dimensions import (
         ImageDimensionsByLongSide,
@@ -54,6 +60,7 @@ def _merge_class_mappings(*mappings):
 
 NODE_CLASS_MAPPINGS = _merge_class_mappings(
     {"LFGG_DimensionsByAspectRatio": DimensionsByAspectRatio},
+    {"LFGG_CompositionImageByAspectRatio": CompositionImageByAspectRatio},
     {"LFGG_ImageDimensionsByLongSide": ImageDimensionsByLongSide},
     {"LFGG_ImageDimensionsByPixelBudget": ImageDimensionsByPixelBudget},
     {"LFGG_DimensionsByRatioAndMegapixels": DimensionsByRatioAndMegapixels},
@@ -74,6 +81,7 @@ NODE_CLASS_MAPPINGS = _merge_class_mappings(
 )
 NODE_DISPLAY_NAME_MAPPINGS = {
     "LFGG_DimensionsByAspectRatio": "LFGG Dimensions by Aspect Ratio",
+    "LFGG_CompositionImageByAspectRatio": "LFGG Composition Image by Aspect Ratio",
     "LFGG_ImageDimensionsByLongSide": "LFGG Image Dimensions by Long Side",
     "LFGG_ImageDimensionsByPixelBudget": "LFGG Image Dimensions by Pixel Budget",
     "LFGG_DimensionsByRatioAndMegapixels": "LFGG Dimensions by Ratio and Megapixels",

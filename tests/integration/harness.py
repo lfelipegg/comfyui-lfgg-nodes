@@ -104,9 +104,7 @@ def _confined_files(output, pattern, label):
     files = []
     for entry in output.rglob(pattern):
         path = entry.resolve()
-        assert path.is_relative_to(output), (
-            f"discovered {label} escaped output root"
-        )
+        assert path.is_relative_to(output), f"discovered {label} escaped output root"
         files.append(path)
     return sorted(files)
 
@@ -378,10 +376,7 @@ def _failure_log(log_path, paths, *, metadata=()):
     if not log_path.exists():
         return ""
     text = log_path.read_text(errors="replace")[-16_000:]
-    secrets = [
-        os.environ.get(name)
-        for name in SENSITIVE_ENVIRONMENT_VARIABLES
-    ]
+    secrets = [os.environ.get(name) for name in SENSITIVE_ENVIRONMENT_VARIABLES]
     return redact(text, secrets=secrets, metadata=metadata, paths=paths)
 
 
@@ -477,9 +472,7 @@ def _validate_installed_comfyui(installed_comfyui):
         custom_nodes = (checkout / "custom_nodes").resolve(strict=True)
         custom_node = (custom_nodes / "lfgg-nodes").resolve(strict=True)
     except OSError as error:
-        raise ValueError(
-            "installed node beneath custom_nodes is required"
-        ) from error
+        raise ValueError("installed node beneath custom_nodes is required") from error
     if (
         not custom_nodes.is_relative_to(checkout)
         or not custom_node.is_dir()
@@ -622,10 +615,7 @@ def _exercise_comfyui(
         server_environment.pop(name, None)
 
     process = None
-    credentials = [
-        os.environ.get(name)
-        for name in SENSITIVE_ENVIRONMENT_VARIABLES
-    ]
+    credentials = [os.environ.get(name) for name in SENSITIVE_ENVIRONMENT_VARIABLES]
     serialized_workflows = [
         json.dumps(workflow, sort_keys=True) for workflow in workflows.values()
     ]
@@ -677,6 +667,27 @@ def _exercise_comfyui(
                     f"{workflow_name} workflow failed: {serialized_history}"
                 )
             histories.append(history)
+            if workflow_name == "composition_image":
+                _descriptor_files([history], "images", output, "composition preview")
+                previews = history["outputs"]["2"]["images"]
+                assert len(previews) == 2, "composition preview batch count changed"
+                preview_pixels = []
+                for descriptor in previews:
+                    assert descriptor["type"] == "temp"
+                    preview_path = (temp_directory / descriptor["filename"]).resolve(
+                        strict=True
+                    )
+                    assert preview_path.is_relative_to(temp_directory.resolve()), (
+                        "composition preview escaped temp root"
+                    )
+                    with Image.open(preview_path) as image:
+                        assert image.mode == "RGB"
+                        assert image.size == (512, 288)
+                        image.load()
+                        preview_pixels.append(image.tobytes())
+                assert preview_pixels[0] != preview_pixels[1], (
+                    "composition batch repeated an image"
+                )
 
         output_root = output.resolve()
         files = _confined_files(output_root, "*.latent", "latent")
@@ -773,11 +784,20 @@ for filename in sys.argv[1:]:
         }
 print(json.dumps(details))
 """
-        probed_videos = json.loads(
-            _run(
-                [str(python), "-c", video_probe, *(str(path) for path in video_files)]
-            ).stdout
-        ) if video_files else {}
+        probed_videos = (
+            json.loads(
+                _run(
+                    [
+                        str(python),
+                        "-c",
+                        video_probe,
+                        *(str(path) for path in video_files),
+                    ]
+                ).stdout
+            )
+            if video_files
+            else {}
+        )
         video_details = {
             Path(path).relative_to(output_root).as_posix(): details
             for path, details in probed_videos.items()

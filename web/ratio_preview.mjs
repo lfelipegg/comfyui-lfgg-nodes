@@ -2,6 +2,7 @@ import { UI, canvasTheme, drawIdentity, resolvedWidth, setWidgetHidden } from ".
 
 const NODE_IDS = new Set([
   "LFGG_DimensionsByAspectRatio",
+  "LFGG_CompositionImageByAspectRatio",
   "LFGG_DimensionsByRatioAndMegapixels",
 ]);
 const COMPACT_HEIGHT = 96;

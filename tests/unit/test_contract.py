@@ -49,6 +49,39 @@ def load_root_package(monkeypatch, max_resolution=MAX_RESOLUTION):
     return module
 
 
+@pytest.mark.parametrize("ratio", RATIOS)
+def test_composition_reuses_sizing_contract_and_returns_image(monkeypatch, ratio):
+    package = load_root_package(monkeypatch)
+    node = package.NODE_CLASS_MAPPINGS["LFGG_CompositionImageByAspectRatio"]
+    sizing = package.NODE_CLASS_MAPPINGS["LFGG_DimensionsByAspectRatio"]
+    schema = node.INPUT_TYPES()["required"]
+    for key, value in sizing.INPUT_TYPES()["required"].items():
+        assert schema[key] == value
+    arguments = dict(aspect_ratio=ratio, long_side=99, divisible_by=7,
+                     custom_ratio_width=7, custom_ratio_height=3)
+    width, height = sizing().calculate(**arguments)
+    image, actual_width, actual_height = node().generate(**arguments)
+    assert (actual_width, actual_height) == (width, height)
+    assert image.shape == (1, height, width, 3)
+    assert width % 7 == height % 7 == 0
+    assert node.RETURN_TYPES == ("IMAGE", "INT", "INT")
+    assert node.RETURN_NAMES == ("image", "width", "height")
+    assert node.CATEGORY == "LFGG/image"
+
+
+def test_composition_budget_uses_aligned_dimensions(monkeypatch):
+    package = load_root_package(monkeypatch)
+    node = package.NODE_CLASS_MAPPINGS["LFGG_CompositionImageByAspectRatio"]()
+    # The requested cap exceeds 4096, but alignment makes the output exactly
+    # the accepted 16,777,216-pixel boundary.
+    image, width, height = node.generate("1:1", 4103, 8, 1, 1,
+                                        family="Large area partitions", complexity=0)
+    assert (width, height) == (4096, 4096)
+    assert image.shape == (1, 4096, 4096, 3)
+    with pytest.raises(ValueError, match="pixel"):
+        node.generate("1:1", 4104, 8, 1, 1)
+
+
 def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
     package = load_root_package(monkeypatch)
 
@@ -61,6 +94,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
     ]
     assert package.NODE_DISPLAY_NAME_MAPPINGS == {
         "LFGG_DimensionsByAspectRatio": "LFGG Dimensions by Aspect Ratio",
+        "LFGG_CompositionImageByAspectRatio": "LFGG Composition Image by Aspect Ratio",
         "LFGG_ImageDimensionsByLongSide": "LFGG Image Dimensions by Long Side",
         "LFGG_ImageDimensionsByPixelBudget": (
             "LFGG Image Dimensions by Pixel Budget"
@@ -85,6 +119,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
     }
     assert list(package.NODE_CLASS_MAPPINGS) == [
         "LFGG_DimensionsByAspectRatio",
+        "LFGG_CompositionImageByAspectRatio",
         "LFGG_ImageDimensionsByLongSide",
         "LFGG_ImageDimensionsByPixelBudget",
         "LFGG_DimensionsByRatioAndMegapixels",
@@ -1049,6 +1084,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
     expected_nodes = {}
     for node_id, node in package.NODE_CLASS_MAPPINGS.items():
         if node_id in {
+            "LFGG_CompositionImageByAspectRatio",
             "LFGG_DimensionsByRatioAndMegapixels",
             "LFGG_ImageDimensionsByMegapixels",
             "LFGG_PromptComposer",

@@ -70,7 +70,7 @@ jobs:
         run: >-
           comfy node publish
           --token "$REGISTRY_ACCESS_TOKEN"
-          --changelog "Add LFGG Resize Image by Long Side."
+          --changelog "Add LFGG Composition Image by Aspect Ratio with six seeded composition families, curated palettes, stable batches, and bounded rendering."
       - name: Verify public Registry page
         run: >-
           python -c
