@@ -19,7 +19,8 @@ def _megapixels_input(max_resolution):
             "step": 0.05,
             "tooltip": (
                 "Hard area ceiling: 1 megapixel = 1,048,576 pixels (1024×1024), "
-                "not decimal megapixels. Alignment may produce a smaller area."
+                "not decimal megapixels. Scales proportionally to the budget, "
+                "then rounds each axis down to divisible_by."
             ),
         },
     )

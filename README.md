@@ -57,9 +57,11 @@ accelerators are not claimed.
 | LFGG Value Inspector | any connected value | inline diagnostic report |
 
 All five sizing nodes are in `LFGG/sizing`. They return positive dimensions aligned
-to the exact `divisible_by` value. Aspect fidelity wins before pixel area, with
-a deterministic side-size tie-break. Limits are hard ceilings and impossible
-alignments raise actionable errors.
+to the exact `divisible_by` value. Limits are hard ceilings and impossible
+alignments raise actionable errors. The long-side and raw pixel-budget nodes
+prefer aspect fidelity before pixel area, with a deterministic side-size
+tie-break. The megapixel nodes scale proportionally to their budget, then
+round both dimensions down to the requested alignment.
 
 `LFGG Dimensions by Aspect Ratio` shows a theme-aware preview of the requested
 aspect ratio directly below its selector, with the ratio shape above a fixed
@@ -83,7 +85,7 @@ allocate, copy, cast, mutate, or move the image.
 selector and ratio preview. `LFGG Image Dimensions by Megapixels` instead uses
 an input image only for its aspect ratio: its output dimensions **may exceed
 the source dimensions**. Neither node resizes an image or creates a latent.
-Existing sizing nodes and saved workflows are unchanged.
+Existing non-megapixel sizing nodes and their saved workflows are unchanged.
 
 Both accept a connectable numeric `megapixels` input, default `1.0`, with
 `0.05` increments, and `divisible_by`, default `8`. The pack convention is
@@ -91,14 +93,21 @@ Both accept a connectable numeric `megapixels` input, default `1.0`, with
 The hard area ceiling is `floor(megapixels × 1,048,576)`; ComfyUI's per-axis
 resolution limit also applies. Values must be finite and positive, at least
 one pixel in the UI, and no greater than the squared per-axis limit divided
-by 1,048,576. Invalid ratios, invalid alignment, and budgets too small for any
-positive aligned dimensions raise errors.
+by 1,048,576. Invalid ratios and alignment raise errors. If either proportional
+dimension is smaller than `divisible_by`, execution raises an error rather than
+distorting the ratio to force a positive aligned result.
 
-Aspect fidelity takes precedence over filling the budget. At `1.0` megapixels
-and alignment `8`, square dimensions are `1024 × 1024`; `16:9` produces
-`1280 × 720`, not a larger, less faithful approximation. A `512 × 512` source
-image produces `1024 × 1024` dimensions at the same settings without changing
-the input image.
+Both megapixel nodes first compute the proportional dimensions that fill the
+budget, reducing the scale if needed to respect the per-axis limit. Each axis
+is then rounded down to `divisible_by`. This keeps the hard ceiling and avoids
+drastically smaller outputs chosen only for a marginally closer aspect ratio.
+Alignment may slightly change the output ratio; coarse alignment or a binding
+per-axis limit can leave more of the budget unused.
+
+At `1.0` megapixels and alignment `8`, square dimensions are `1024 × 1024`;
+`16:9` produces `1360 × 768`. An image ratio of `912:1905` produces
+`704 × 1472`, using about 98.8% of the budget. A `512 × 512` source image
+produces `1024 × 1024` dimensions without changing the input image.
 
 Stable IDs: `LFGG_DimensionsByRatioAndMegapixels` and
 `LFGG_ImageDimensionsByMegapixels`.

@@ -165,7 +165,7 @@ def fit_aspect_ratio_dimensions(
 def fit_megapixel_dimensions(
     *, ratio_width, ratio_height, megapixels, divisible_by, max_resolution
 ):
-    """Fit a ratio under a binary-megapixel budget without a source-size cap."""
+    """Scale proportionally to the budget and axis cap, then align downward."""
     maximum = max_resolution**2 / PIXELS_PER_MEGAPIXEL
     if (
         type(megapixels) not in (int, float)
@@ -180,11 +180,23 @@ def fit_megapixel_dimensions(
             raise ValueError(f"{name} must be a positive integer")
     _bounded_int("divisible_by", divisible_by, 1, max_resolution)
     max_pixels = math.floor(megapixels * PIXELS_PER_MEGAPIXEL)
-    return _fit_aligned_dimensions(
-        ratio_width=ratio_width,
-        ratio_height=ratio_height,
-        max_width=max_resolution,
-        max_height=max_resolution,
-        max_pixels=max_pixels,
-        divisible_by=divisible_by,
+    # Integer square roots avoid crossing the hard budget through float rounding.
+    # Apply each axis ceiling proportionally before rounding either dimension.
+    width = min(
+        math.isqrt(max_pixels * ratio_width // ratio_height),
+        max_resolution,
+        max_resolution * ratio_width // ratio_height,
     )
+    height = min(
+        math.isqrt(max_pixels * ratio_height // ratio_width),
+        max_resolution,
+        max_resolution * ratio_height // ratio_width,
+    )
+    width = width // divisible_by * divisible_by
+    height = height // divisible_by * divisible_by
+    if width < 1 or height < 1:
+        raise ValueError(
+            "No positive aligned dimensions preserve the scaled ratio; "
+            "reduce divisible_by, increase megapixels, or use a less extreme ratio"
+        )
+    return width, height

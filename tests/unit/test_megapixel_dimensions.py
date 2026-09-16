@@ -30,12 +30,37 @@ def test_square_budget_uses_1024_squared_and_image_can_exceed_source():
     )
 
 
-def test_preset_and_custom_ratio_choose_largest_exact_aligned_fit():
+def test_preset_and_custom_ratio_fill_budget_before_alignment():
     node = DimensionsByRatioAndMegapixels()
-    assert node.calculate("16:9", 1.0, 8, 1, 1) == (1280, 720)
-    assert node.calculate("Custom", 1.0, 8, 9, 16) == (720, 1280)
+    assert node.calculate("16:9", 1.0, 8, 1, 1) == (1360, 768)
+    assert node.calculate("Custom", 1.0, 8, 9, 16) == (768, 1360)
     image = torch.empty((3, 90, 160, 4))
-    assert ImageDimensionsByMegapixels().calculate(image, 1.0, 8) == (1280, 720)
+    assert ImageDimensionsByMegapixels().calculate(image, 1.0, 8) == (1360, 768)
+
+
+def test_irregular_portrait_uses_budget_and_transposes_consistently():
+    image = torch.empty((1, 1905, 912, 3))
+    image_node = ImageDimensionsByMegapixels()
+    ratio_node = DimensionsByRatioAndMegapixels()
+    for source, width, height, expected in (
+        (image, 912, 1905, (704, 1472)),
+        (image.transpose(1, 2), 1905, 912, (1472, 704)),
+    ):
+        assert image_node.calculate(source, 1.0, 8) == expected
+        assert ratio_node.calculate("Custom", 1.0, 8, width, height) == expected
+
+
+def test_small_ratio_changes_do_not_collapse_output_area():
+    node = DimensionsByRatioAndMegapixels()
+    for source_width in range(900, 925):
+        width, height = node.calculate("Custom", 1.0, 8, source_width, 1905)
+        assert 0.97 * PIXELS_PER_MEGAPIXEL <= width * height <= PIXELS_PER_MEGAPIXEL
+        assert width % 8 == height % 8 == 0
+
+
+def test_extreme_ratio_rejects_unrepresentable_aligned_short_axis():
+    with pytest.raises(ValueError, match="reduce divisible_by"):
+        DimensionsByRatioAndMegapixels().calculate("Custom", 1.0, 8, 1, 16384)
 
 
 def test_fractional_budget_is_floored_and_exact_alignment_is_respected():
