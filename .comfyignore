@@ -1,6 +1,7 @@
 # Development and repository metadata
 .*
 AGENTS.md
+CLAUDE.md
 CONTEXT.md
 /agents/
 /docs/

@@ -119,3 +119,9 @@ def test_shared_guidance_points_to_omp_orchestration():
     assert "docs/agents/orchestration.md" in root_guidance
     assert "agents/orchestrator.md" not in root_guidance
     assert orchestration_path.is_file()
+
+
+def test_claude_guidance_imports_shared_agents_guidance():
+    lines = (ROOT / "CLAUDE.md").read_text().splitlines()
+    assert "@AGENTS.md" in lines
+    assert not (ROOT / ".claude" / "agents").exists()
