@@ -14,6 +14,7 @@ if __package__:
         ImageDimensionsByMegapixels,
     )
     from .lfgg_nodes.power_lora_loader_folder import PowerLoraLoaderFolder
+    from .lfgg_nodes.prompt_assistant import PromptAssistant
     from .lfgg_nodes.prompt_composer import PromptComposer
     from .lfgg_nodes.routing_organizer import RoutingOrganizer
     from .lfgg_nodes.save_image_dynamic import SaveImageDynamic
@@ -38,6 +39,7 @@ else:
         ImageDimensionsByMegapixels,
     )
     from lfgg_nodes.power_lora_loader_folder import PowerLoraLoaderFolder
+    from lfgg_nodes.prompt_assistant import PromptAssistant
     from lfgg_nodes.prompt_composer import PromptComposer
     from lfgg_nodes.routing_organizer import RoutingOrganizer
     from lfgg_nodes.save_image_dynamic import SaveImageDynamic
@@ -69,6 +71,7 @@ NODE_CLASS_MAPPINGS = _merge_class_mappings(
     {"LFGG_LoadAndCropImage": LoadAndCropImage},
     {"LFGG_PowerLoraLoaderFolder": PowerLoraLoaderFolder},
     {"LFGG_PromptComposer": PromptComposer},
+    {"LFGG_PromptAssistant": PromptAssistant},
     {"LFGG_RoutingOrganizer": RoutingOrganizer},
     {"LFGG_SaveImageDynamic": SaveImageDynamic},
     {"LFGG_StringJoin": StringJoin},
@@ -90,6 +93,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LFGG_LoadAndCropImage": "LFGG Load and Crop Image",
     "LFGG_PowerLoraLoaderFolder": "LFGG Power LoRA Loader (Folder)",
     "LFGG_PromptComposer": "LFGG Prompt Composer",
+    "LFGG_PromptAssistant": "LFGG Prompt Assistant",
     "LFGG_RoutingOrganizer": "LFGG Routing Organizer",
     "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
     "LFGG_StringJoin": "LFGG String Join",

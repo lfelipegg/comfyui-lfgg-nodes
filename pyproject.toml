@@ -29,6 +29,7 @@ Issues = "https://github.com/lfelipegg/comfyui-lfgg-nodes/issues"
 
 [project.optional-dependencies]
 dev = [
+    "aiohttp",
     "comfy-cli",
     "pytest",
     "ruff",

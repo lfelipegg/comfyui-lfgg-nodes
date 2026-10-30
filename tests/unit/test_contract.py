@@ -107,6 +107,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_LoadAndCropImage": "LFGG Load and Crop Image",
         "LFGG_PowerLoraLoaderFolder": "LFGG Power LoRA Loader (Folder)",
         "LFGG_PromptComposer": "LFGG Prompt Composer",
+        "LFGG_PromptAssistant": "LFGG Prompt Assistant",
         "LFGG_RoutingOrganizer": "LFGG Routing Organizer",
         "LFGG_SaveImageDynamic": "LFGG Save Image Dynamic",
         "LFGG_StringJoin": "LFGG String Join",
@@ -128,6 +129,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_LoadAndCropImage",
         "LFGG_PowerLoraLoaderFolder",
         "LFGG_PromptComposer",
+        "LFGG_PromptAssistant",
         "LFGG_RoutingOrganizer",
         "LFGG_SaveImageDynamic",
         "LFGG_StringJoin",
@@ -1063,6 +1065,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
     assert help_ids == {
         "LFGG_LoadAndCropImage",
         "LFGG_PowerLoraLoaderFolder",
+        "LFGG_PromptAssistant",
         "LFGG_PromptComposer",
         "LFGG_VideoCutter",
     }
@@ -1088,6 +1091,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
             "LFGG_DimensionsByRatioAndMegapixels",
             "LFGG_ImageDimensionsByMegapixels",
             "LFGG_PromptComposer",
+            "LFGG_PromptAssistant",
             "LFGG_RoutingOrganizer",
             "LFGG_BooleanSwitch",
             "LFGG_IndexSwitch",

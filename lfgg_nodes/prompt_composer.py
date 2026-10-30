@@ -8,6 +8,7 @@ import re
 from pathlib import Path, PurePosixPath
 
 CONFIG_LIMIT = 64 * 1024
+CONFIG_SECTIONS = ("prompt_composer", "prompt_assistant")
 STYLES_LIMIT = 4 * 1024 * 1024
 CSV_FIELD_LIMIT = 128 * 1024
 WILDCARD_LIMIT = 1024 * 1024
@@ -44,15 +45,6 @@ def _decode(content, label):
         raise PromptComposerError(f"{label} must be UTF-8") from None
 
 
-def _reject_duplicate_json_keys(pairs):
-    value = {}
-    for key, item in pairs:
-        if key in value:
-            raise PromptComposerError("configuration contains a repeated key")
-        value[key] = item
-    return value
-
-
 def _resolve_configured_path(value, *, directory, label):
     if not isinstance(value, str) or not value or not Path(value).is_absolute():
         raise PromptComposerError(f"{label} must be an absolute path")
@@ -65,31 +57,61 @@ def _resolve_configured_path(value, *, directory, label):
     return path
 
 
-def _load_config():
-    import folder_paths
+def load_config_document(label, error_type):
+    """Read the shared ``<user>/lfgg_nodes/config.json`` document.
 
+    Returns the parsed top-level mapping and its raw bytes. The document may
+    hold any subset of ``CONFIG_SECTIONS``; callers validate their own section.
+    """
     try:
+        import folder_paths
+
         user_root = Path(folder_paths.get_user_directory()).resolve(strict=True)
         config_path = (user_root / "lfgg_nodes" / "config.json").resolve(strict=True)
         config_path.relative_to(user_root)
-    except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
-        raise PromptComposerError(
-            "prompt composer configuration is unavailable in the ComfyUI user directory"
+    except (
+        AttributeError,
+        ImportError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ):
+        raise error_type(
+            f"{label} is unavailable in the ComfyUI user directory"
         ) from None
-    content = _read_bytes(config_path, CONFIG_LIMIT, "prompt composer configuration")
     try:
-        config = json.loads(
-            _decode(content, "prompt composer configuration"),
-            object_pairs_hook=_reject_duplicate_json_keys,
-        )
+        content = _read_bytes(config_path, CONFIG_LIMIT, label)
+        decoded = _decode(content, label)
+    except PromptComposerError as error:
+        raise error_type(str(error)) from None
+
+    def reject_duplicates(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise error_type("configuration contains a repeated key")
+            value[key] = item
+        return value
+
+    try:
+        config = json.loads(decoded, object_pairs_hook=reject_duplicates)
     except json.JSONDecodeError:
-        raise PromptComposerError(
-            "prompt composer configuration is not valid JSON"
-        ) from None
-    if not isinstance(config, dict) or set(config) != {"prompt_composer"}:
-        raise PromptComposerError(
-            "configuration must contain only the prompt_composer section"
+        raise error_type(f"{label} is not valid JSON") from None
+    if not isinstance(config, dict) or not set(config) <= set(CONFIG_SECTIONS):
+        raise error_type(
+            "configuration must contain only the prompt_composer and "
+            "prompt_assistant sections"
         )
+    return config, content
+
+
+def _load_config():
+    config, content = load_config_document(
+        "prompt composer configuration", PromptComposerError
+    )
+    if "prompt_composer" not in config:
+        raise PromptComposerError("configuration has no prompt_composer section")
     section = config["prompt_composer"]
     if not isinstance(section, dict) or set(section) != {"styles_csv", "wildcards"}:
         raise PromptComposerError(
@@ -471,4 +493,9 @@ else:
     )
 
 
-__all__ = ["PromptComposer", "PromptComposerError", "library_catalog"]
+__all__ = [
+    "PromptComposer",
+    "PromptComposerError",
+    "library_catalog",
+    "load_config_document",
+]

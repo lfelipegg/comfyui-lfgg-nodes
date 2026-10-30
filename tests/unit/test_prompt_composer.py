@@ -185,6 +185,31 @@ def test_rejects_strict_config_and_symlink_escape_without_disclosing_paths(
         library_catalog()
 
 
+def test_shared_config_accepts_an_optional_prompt_assistant_section(
+    monkeypatch, tmp_path
+):
+    user, _, _ = configured_library(monkeypatch, tmp_path)
+    config_path = user / "lfgg_nodes" / "config.json"
+    config = json.loads(config_path.read_text())
+    config["prompt_assistant"] = {"skills_roots": []}
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    catalog = library_catalog()
+    assert {style["name"] for style in catalog["styles"]} >= {"Cinematic"}
+
+    config_path.write_text(
+        json.dumps({"prompt_assistant": {"skills_roots": []}}), encoding="utf-8"
+    )
+    with pytest.raises(PromptComposerError, match="no prompt_composer section"):
+        library_catalog()
+
+    config_path.write_text(
+        '{"prompt_composer": {}, "prompt_composer": {}}', encoding="utf-8"
+    )
+    with pytest.raises(PromptComposerError, match="repeated key"):
+        library_catalog()
+
+
 def test_enforces_wildcard_size_and_csv_uniqueness(monkeypatch, tmp_path):
     _, styles, wildcards = configured_library(monkeypatch, tmp_path)
     (wildcards / "large.txt").write_text("1234", encoding="utf-8")
@@ -287,7 +312,7 @@ def test_refresh_route_returns_bounded_safe_validation_error(monkeypatch, tmp_pa
         (
             {
                 "ok": False,
-                "error": "configuration must contain only the prompt_composer section",
+                "error": "configuration has no prompt_composer section",
             },
             400,
         )

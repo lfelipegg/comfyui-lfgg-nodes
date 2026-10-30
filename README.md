@@ -47,6 +47,7 @@ accelerators are not claimed.
 | LFGG Load and Crop Image | one still image, ratio, exact source-pixel crop | cropped image, alpha-derived mask |
 | LFGG Power LoRA Loader (Folder) | MODEL, CLIP, folder, ordered LoRA rows | MODEL, CLIP |
 | LFGG Prompt Composer | multiline template, local style/wildcard libraries, seed | prompt, negative prompt |
+| LFGG Prompt Assistant | master prompt, request, skills, model, VRAM policy, seed, temperature, max tokens, up to four optional IMAGE inputs | prompt |
 | LFGG String Join | literal separator, 2–32 ordered string inputs | joined text |
 | LFGG String Replace | multiline text, literal search/replacement, casing | replaced text |
 | LFGG String Replace (Regex) | multiline text, literal/regex search/replacement, casing | replaced text |
@@ -252,7 +253,11 @@ independently and reproducibly. Duplicate non-empty file lines act as weights,
 and native inline dynamic prompts such as `{red|blue}` remain available.
 
 Copy [`config.example.json`](config.example.json) to
-`<ComfyUI user directory>/lfgg_nodes/config.json`, then replace both paths:
+`<ComfyUI user directory>/lfgg_nodes/config.json`. The file holds one
+optional section per node that needs configuration: `prompt_composer` for this
+node and `prompt_assistant` for `LFGG Prompt Assistant`. Keep only the sections
+you use; any other top-level key or a repeated key is rejected. For the
+composer, replace both paths:
 
 ```json
 {
@@ -284,6 +289,68 @@ fingerprints remain unchanged.
 Workflow reload preserves manual node sizing and waits for a real container
 width before measuring the selector panel. If an earlier version already saved
 an inflated size, resize the node once and save the workflow again.
+
+`LFGG Prompt Assistant` is in `LFGG/text`. Stable ID `LFGG_PromptAssistant`.
+It asks a `llama-server` that you run yourself to write one generation prompt
+and returns the reply as `prompt`. The node talks HTTP only: it never
+installs, starts, or stops the server, and it does not use `llama-cpp-python`.
+Persisted inputs, in order, are the multiline `master_prompt` (sent as the
+system message, default shown in the node), `request`, `skills`, `model`
+(`server default` or a server model id), `vram_policy` (`share`,
+`keep_llm_loaded`, `off`), a 64-bit `seed` (its low 32 bits are sent),
+`temperature` (0 to 2), and `max_tokens` (1 to 32768). `image_1` to `image_4`
+are optional; every batch frame counts and eight images at most are sent, in
+slot then batch order, downscaled to a 1024 px long side as JPEG quality 92 or
+PNG when the tensor has alpha. `request` may be empty only when an image is
+connected. Unchanged inputs return the cached prompt without contacting the
+server.
+
+Configure the `prompt_assistant` section of the shared `config.json` described
+under the Prompt Composer. `server.base_url` must be `http` or `https` with a
+host and optional port only; `server.api_key` is optional and sent as a bearer
+token; `server.read_timeout_seconds` is bounded to 10–3600 (default 300).
+`skills_roots` lists absolute or `~` paths in either OS style, so one file can
+serve Linux and Windows machines; roots that do not exist on the current
+machine are skipped with a logged warning. `skills` is the allowlist of skill
+folder names the picker may show and the node may attach; omit it to allow
+every discovered skill. The shipped example allowlists the seven split
+`scenario-maker-*` skills.
+
+A skill is a directory one level below a root that contains `SKILL.md`. The
+`skills` text holds one entry per line: `scenario-maker-sdxl` attaches that
+skill's `SKILL.md`; `scenario-maker-sdxl/references/models/sdxl.md` also
+attaches one reference and implies the skill. Attachable references are `.md`
+files beneath the skill outside `evals`, `docs`, `tests`, `scripts`,
+`wildcards`, and hidden directories; symlinks must resolve inside the skill.
+Each file is limited to 512 KiB and all attachments together to 256 KiB; the
+node fails naming the largest attachments rather than truncating. Unknown,
+non-allowlisted, missing, excluded, or non-`.md` entries fail with the entry
+and the roots searched. The frontend picker below the text edits it, shows
+missing allowlisted skills with the roots searched, lists each skill's
+references with an **All references** shortcut, and shows the attached-size
+estimate. **Refresh models** fills the `model` list from the server and keeps
+a saved id that is no longer listed, marked as missing. The reply streams into
+ComfyUI's progress text; the final prompt also appears in a read-only,
+selectable **Generated prompt** report that is restored on workflow reload.
+
+Under `share`, the node calls `comfy.model_management.unload_all_models()` and
+`soft_empty_cache()` before the request so ComfyUI's models move to RAM, then
+after the reply calls `POST /models/unload` and polls `GET /models` for up to
+30 s when the server runs in router mode (`--models-dir` or
+`--models-preset`). In single-model mode the language model cannot be released
+and the node logs one warning recommending router mode or
+`--sleep-idle-seconds`. Those model-management calls are guarded: a changed
+internal API degrades to a logged warning. `keep_llm_loaded` performs only the
+pre-request step; `off` performs neither. Only the reply's `content` is used;
+`reasoning_content` is discarded, and an empty reply fails with an error that
+points at `max_tokens`.
+
+Tested against llama.cpp build b10970 (commit `bfdc32183`, Windows CUDA
+build) in router mode with a Qwen 3.8 27B GGUF plus its `--mmproj`
+projector: a streamed text-only run, a two-image run, and a `share` run whose
+`POST /models/unload` returned the model's VRAM to the OS within two seconds.
+Before a release, repeat those runs from a ComfyUI workflow in router mode and
+in single-model mode and confirm the following sampler reloads its model.
 
 `LFGG Video Cutter` is in `LFGG/video`. Stable ID `LFGG_VideoCutter`. It
 returns one contiguous `VIDEO` segment through native `VideoInput.as_trimmed`,
@@ -428,6 +495,23 @@ each wildcard, and combined resolved outputs are capped at 64 KiB, 4 MiB,
 128 KiB, 1 MiB, and 1 MiB respectively. Wildcard symlinks must resolve inside
 the configured root.
 
+The prompt assistant reads the shared configuration beneath the ComfyUI user
+directory and `.md` files proven to resolve inside a configured skills root. It
+writes no files. Its only outbound network calls go to the configured
+`server.base_url`: `GET /health` at the start of every uncached execution,
+`GET /props` when images are attached, `POST /v1/chat/completions` streamed,
+and under the `share` policy `GET /models`, `POST /models/unload`, and
+`GET /models` polling. The two read-only routes
+`GET /lfgg/v1/prompt-assistant/models` and
+`GET /lfgg/v1/prompt-assistant/skills` proxy the model list and the
+allowlisted skill tree for the picker; they expose model ids, skill names,
+file sizes, and configured root paths, never the API key or file contents.
+Bounds: 5 s connect timeout, the configured read timeout, one attempt without
+retries or redirects, 256 KiB plain responses, 1 MiB streamed replies, 64 KiB
+configuration, 512 KiB per attachment, 256 KiB attached total, eight images,
+and 268,435,456 source pixels per frame. Interrupting the queue closes the
+connection, which makes `llama-server` cancel the slot.
+
 The video cutter makes no outbound network calls. Before queueing, only a
 direct native `LoadVideo` source (through simple reroutes) may call the local,
 bounded `POST /lfgg/v1/video-metadata` route. That route accepts one short input
@@ -495,6 +579,7 @@ node --test tests/frontend/crop_editor.test.mjs
 node --test tests/frontend/power_lora_loader.test.mjs
 node --test tests/frontend/video_cutter.test.mjs
 node --test tests/frontend/prompt_composer.test.mjs
+node --test tests/frontend/prompt_assistant.test.mjs
 node --test tests/frontend/routing_organizer.test.mjs
 node --test tests/frontend/switches.test.mjs
 node --test tests/frontend/string_join.test.mjs

@@ -2,5 +2,26 @@
   "prompt_composer": {
     "styles_csv": "/absolute/path/to/styles.csv",
     "wildcards": "/absolute/path/to/wildcards"
+  },
+  "prompt_assistant": {
+    "server": {
+      "base_url": "http://127.0.0.1:8080",
+      "api_key": "",
+      "read_timeout_seconds": 300
+    },
+    "skills_roots": [
+      "~/.agents/skills",
+      "~/.agents/skills/lfgg-skills/skills",
+      "C:/Users/<name>/.agents/skills"
+    ],
+    "skills": [
+      "scenario-maker-sdxl",
+      "scenario-maker-krea-2",
+      "scenario-maker-illustrious",
+      "scenario-maker-noobai",
+      "scenario-maker-pony",
+      "scenario-maker-wan",
+      "scenario-maker-minimax-h3"
+    ]
   }
 }
