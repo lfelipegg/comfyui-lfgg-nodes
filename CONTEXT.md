@@ -229,6 +229,52 @@ A visible, non-selectable style-catalog label whose positive and negative
 prompt fragments are both empty.
 _Avoid_: Empty style, separator style
 
+### Prompt assistance
+
+**Prompt assistant**:
+A successor node that asks a user-run local language model server to write one
+generated prompt from a master prompt, attached skills, a request, and optional
+images. Stable ID: `LFGG_PromptAssistant`.
+_Avoid_: LLM node, llama node, chat node
+
+**Master prompt**:
+Reusable standing instructions that shape every generated prompt and are sent
+as the model's system instructions.
+_Avoid_: System prompt, instructions box
+
+**Request**:
+The per-run text describing what the prompt assistant should write now.
+_Avoid_: User prompt, second box, task prompt
+
+**Generated prompt**:
+The model's reply, returned by the prompt assistant as its prompt output.
+_Avoid_: Response, completion, answer
+
+**Skill**:
+A directory containing a `SKILL.md` whose body teaches a prompt-writing method
+and that the prompt assistant can attach to the master prompt.
+_Avoid_: Plugin, preset, template
+
+**Skill reference**:
+A Markdown file inside a skill, other than `SKILL.md`, that can be attached
+individually alongside the skill.
+_Avoid_: Reference doc, attachment file
+
+**Skill allowlist**:
+The configured set of skill names the prompt assistant may show and attach.
+_Avoid_: Enabled skills, skill filter
+
+**Attached context**:
+The ordered set of `SKILL.md` bodies and skill references included in one
+request to the model.
+_Avoid_: Context files, injected docs
+
+**VRAM policy**:
+The prompt assistant's choice of whether ComfyUI's loaded models are moved to
+RAM before the model runs and whether the language model is released from the
+GPU afterwards.
+_Avoid_: Offload mode, memory mode, VRAM optimization
+
 ### Text replacement
 
 **String join**:
