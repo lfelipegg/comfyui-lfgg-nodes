@@ -12,6 +12,7 @@ const KIND_EXTENSIONS = {
 };
 const COMPACT_PREVIEW_HEIGHT = 180;
 const EXPANDED_PREVIEW_HEIGHT = 360;
+const DOM_WIDGET_MARGIN = 10;
 const installed = Symbol("lfggOutputGallery");
 
 // ---------------------------------------------------------------------------
@@ -496,7 +497,7 @@ export function installOutputGallery(
     if (changed || !controller.previewMedia) renderPreview();
     count.textContent = countText();
     announce(countText());
-    view.fit(true);
+    fitToContent();
     node.setDirtyCanvas?.(true, true);
   };
 
@@ -574,9 +575,38 @@ export function installOutputGallery(
   });
   controller.observer?.observe?.(root);
 
-  const widget = node.addDOMWidget("lfgg_output_gallery", "lfgg_output_gallery", root, {
+  // ComfyUI stretches the DOM widget root to the allocated row height, so the
+  // root's own scrollHeight would report that allocation back as the minimum
+  // and every refit would grow the node. Measure the content children instead.
+  const measureContent = () => {
+    if (!root.parentElement?.clientWidth) return 0;
+    let height = 0;
+    let count = 0;
+    for (const child of root.children) {
+      const childHeight = child.hidden ? 0 : Number(child.offsetHeight) || 0;
+      if (!childHeight) continue;
+      count += 1;
+      height += childHeight;
+    }
+    if (!count) return 0;
+    height += UI.gap * (count - 1) + UI.inset * 2;
+    return Math.round(height / 4) * 4;
+  };
+  let widget;
+  const contentHeight = () => {
+    const measured = measureContent();
+    return 2 * (widget?.margin ?? DOM_WIDGET_MARGIN) + (measured || (view.expanded ? 480 : 300));
+  };
+  let fittedHeight;
+  const fitToContent = () => {
+    const height = contentHeight();
+    if (height === fittedHeight) return;
+    fittedHeight = height;
+    view.fit(true);
+  };
+  widget = node.addDOMWidget("lfgg_output_gallery", "lfgg_output_gallery", root, {
     serialize: false,
-    getMinHeight: () => root.scrollHeight || (view.expanded ? 480 : 300),
+    getMinHeight: contentHeight,
     onDraw: () => {
       if (!controller.observer) loadVisibleTiles();
     },
@@ -598,7 +628,7 @@ export function installOutputGallery(
     requestRefresh();
     return result;
   };
-  const resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(() => view.fit(true)) : undefined;
+  const resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(() => fitToContent()) : undefined;
   resizeObserver?.observe(root);
   const originalRemoved = node.onRemoved;
   node.onRemoved = function (...args) {

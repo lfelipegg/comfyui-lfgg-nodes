@@ -220,6 +220,12 @@ content rather than shrinking text or overlapping hit areas.
 - Resolve Canvas width from the current node in the legacy renderer and from
   the actual widget canvas in Nodes 2.0. Keep native widget hit bounds aligned
   with that drawing width; stale retained widths must not block visible targets.
+- Measure a DOM widget's minimum height from its content children, never from
+  the root's own scroll height: the host stretches the root to the allocated
+  row, so a root measurement feeds the allocation back as the minimum and the
+  node grows on every refit. Round the measurement to a 4px grid, refit only
+  when the measured content changes, and never write a content-derived size
+  on the load path.
 - Use the shared native prompt adapter for editable/selectable text: the host
   dialog service when available, otherwise the native canvas prompt.
 

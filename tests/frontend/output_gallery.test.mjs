@@ -615,3 +615,53 @@ test("ignores nodes of other types and nodes missing the standard widgets", () =
   node.widgets.splice(0, 1);
   assert.equal(installOutputGallery(node, { document: documentStub }), undefined);
 });
+
+test("measures the minimum height from content children, not the stretched root, and refits only when content changes", async () => {
+  const node = graphNode();
+  const sizes = [];
+  node.setSize = (size) => { sizes.push([...size]); node.size = size; };
+  let domWidget;
+  node.computeSize = () => [420, 100 + (domWidget?.options.getMinHeight() ?? 220)];
+  let observe;
+  const original = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    constructor(callback) { observe = callback; }
+    observe() {}
+    disconnect() {}
+  };
+  try {
+    ({ domWidget } = install(node));
+    const root = domWidget.element;
+    root.parentElement = { clientWidth: 400 };
+    root.scrollHeight = 900;
+    for (const child of root.children) child.offsetHeight = 20;
+    node.size = [420, 200];
+    await domWidget.lfggReady;
+
+    // Six visible children: the grid is hidden while compact and is not counted.
+    assert.equal(domWidget.options.getMinHeight(), 2 * 10 + 6 * 20 + 5 * 8 + 2 * 12);
+    assert.deepEqual(sizes, [[420, 100 + 204]]);
+    observe();
+    observe();
+    observe();
+    root.scrollHeight = 2000;
+    observe();
+    assert.equal(sizes.length, 1);
+
+    root.children[0].offsetHeight = 40;
+    observe();
+    assert.equal(sizes.length, 2);
+    assert.deepEqual(sizes[1], [420, 100 + 224]);
+    observe();
+    assert.equal(sizes.length, 2);
+  } finally {
+    globalThis.ResizeObserver = original;
+  }
+});
+
+test("falls back to a constant minimum height before the widget has a measurable width", async () => {
+  const { domWidget } = install(graphNode());
+  await domWidget.lfggReady;
+  domWidget.element.scrollHeight = 900;
+  assert.equal(domWidget.options.getMinHeight(), 320);
+});
