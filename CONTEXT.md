@@ -275,6 +275,39 @@ RAM before the model runs and whether the language model is released from the
 GPU afterwards.
 _Avoid_: Offload mode, memory mode, VRAM optimization
 
+### Output review
+
+**Output gallery**:
+A successor node that lists the latest generated images, videos, and audio
+under one subfolder of the ComfyUI output root and shows them in the graph
+without running the workflow. Stable ID: `LFGG_OutputGallery`.
+_Avoid_: Output browser, file explorer node, media viewer, recent outputs
+
+**Gallery item**:
+One file the output gallery lists, identified by its subfolder and filename
+relative to the output root and served only through ComfyUI's `/view` route.
+_Avoid_: Asset, entry, thumbnail
+
+**Media filter**:
+The single output gallery choice that limits items to all media, one kind
+(images, videos, audio), or one file extension.
+_Avoid_: Kind filter, type filter, extension filter
+
+**Selected preview**:
+The one gallery item shown large with native media controls above the tile
+grid. Session state only; never serialized.
+_Avoid_: Active item, focused item, player
+
+**Gallery refresh**:
+A new listing request triggered by the refresh button, a widget change, or a
+finished queue run. Never an interval.
+_Avoid_: Poll, auto-update, sync
+
+**Scan cap**:
+The fixed maximum number of directory entries one gallery refresh visits
+before it stops and reports the list as truncated.
+_Avoid_: File limit, page size, max results
+
 ### Text replacement
 
 **String join**:

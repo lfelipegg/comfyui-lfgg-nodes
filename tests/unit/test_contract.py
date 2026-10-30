@@ -117,6 +117,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_IndexSwitch": "LFGG Index Switch",
         "LFGG_ValueInspector": "LFGG Value Inspector",
         "LFGG_VideoCutter": "LFGG Video Cutter",
+        "LFGG_OutputGallery": "LFGG Output Gallery",
     }
     assert list(package.NODE_CLASS_MAPPINGS) == [
         "LFGG_DimensionsByAspectRatio",
@@ -139,6 +140,7 @@ def test_v1_registration_and_aspect_ratio_schema_are_exact(monkeypatch):
         "LFGG_IndexSwitch",
         "LFGG_ValueInspector",
         "LFGG_VideoCutter",
+        "LFGG_OutputGallery",
     ]
 
     routing_organizer = package.NODE_CLASS_MAPPINGS["LFGG_RoutingOrganizer"]
@@ -643,6 +645,106 @@ def test_video_cutter_v1_schema_is_exact(monkeypatch):
     }
 
 
+def test_output_gallery_v1_schema_is_exact(monkeypatch):
+    package = load_root_package(monkeypatch)
+    node = package.NODE_CLASS_MAPPINGS["LFGG_OutputGallery"]
+
+    assert package.NODE_DISPLAY_NAME_MAPPINGS["LFGG_OutputGallery"] == (
+        "LFGG Output Gallery"
+    )
+    assert node.CATEGORY == "LFGG/workflow"
+    assert node.DESCRIPTION == (
+        "Shows the latest images, videos, and audio saved under one output "
+        "subfolder without running the workflow."
+    )
+    assert node.FUNCTION == "show"
+    assert node.OUTPUT_NODE is False
+    assert node.RETURN_TYPES == ()
+    assert node.RETURN_NAMES == ()
+    assert node.OUTPUT_TOOLTIPS == ()
+    schema = node.INPUT_TYPES()
+    assert list(schema) == ["required"]
+    assert list(schema["required"]) == [
+        "path",
+        "include_subfolders",
+        "media_filter",
+        "name_filter",
+        "sort",
+        "limit",
+    ]
+    assert schema["required"]["path"] == (
+        "STRING",
+        {
+            "default": "",
+            "tooltip": (
+                "Subfolder relative to the ComfyUI output root. Empty means "
+                "the output root itself."
+            ),
+        },
+    )
+    assert schema["required"]["include_subfolders"] == (
+        "BOOLEAN",
+        {
+            "default": True,
+            "tooltip": (
+                "Include files from nested subfolders, bounded by the scan cap."
+            ),
+        },
+    )
+    assert schema["required"]["media_filter"] == (
+        "COMBO",
+        {
+            "options": [
+                "all",
+                "images",
+                "videos",
+                "audio",
+                "png",
+                "jpg",
+                "webp",
+                "gif",
+                "mp4",
+                "webm",
+                "mov",
+                "mp3",
+                "wav",
+                "flac",
+                "ogg",
+            ],
+            "default": "all",
+            "tooltip": "Limit items to all media, one kind, or one file extension.",
+        },
+    )
+    assert schema["required"]["name_filter"] == (
+        "STRING",
+        {
+            "default": "",
+            "tooltip": (
+                "Case-insensitive text matched against the path relative to "
+                "the chosen subfolder."
+            ),
+        },
+    )
+    assert schema["required"]["sort"] == (
+        "COMBO",
+        {
+            "options": ["newest first", "oldest first", "name A to Z", "name Z to A"],
+            "default": "newest first",
+            "tooltip": "Order by file modification time or by name.",
+        },
+    )
+    assert schema["required"]["limit"] == (
+        "INT",
+        {
+            "default": 24,
+            "min": 1,
+            "max": 200,
+            "step": 1,
+            "tooltip": "Number of items shown; one page only.",
+        },
+    )
+
+
 def test_image_derived_v1_schemas_are_exact(monkeypatch):
     package = load_root_package(monkeypatch)
     long_side = package.NODE_CLASS_MAPPINGS["LFGG_ImageDimensionsByLongSide"]
@@ -894,7 +996,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
     monkeypatch, tmp_path
 ):
     pyproject_path = ROOT / "pyproject.toml"
-    manifest_path = ROOT / "release" / "1.5.0-schema.json"
+    manifest_path = ROOT / "release" / "1.6.0-schema.json"
     workflow_path = ROOT / "workflows" / "sizing.json"
     save_workflow_path = ROOT / "workflows" / "save_image_dynamic.json"
     crop_workflow_path = ROOT / "workflows" / "load_and_crop_image.json"
@@ -929,7 +1031,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
     project = metadata["project"]
     comfy = metadata["tool"]["comfy"]
     assert project["name"] == "lfgg-nodes"
-    assert project["version"] == "1.5.0"
+    assert project["version"] == "1.6.0"
     assert project["requires-python"] == ">=3.10,<3.14"
     assert project["dependencies"] == [
         "Pillow",
@@ -961,6 +1063,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         "node --test tests/frontend/switches.test.mjs",
         "node --test tests/frontend/string_join.test.mjs",
         "node --test tests/frontend/value_inspector.test.mjs",
+        "node --test tests/frontend/output_gallery.test.mjs",
         "do not read or write files",
         "exclusive creation of final PNG files",
         "cleanup of PNG files created by a failed execution",
@@ -1042,6 +1145,14 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
         "`[[style:Exact Name]]`",
         "`GET /lfgg/v1/prompt-composer/libraries`",
         "disabled headings",
+        "LFGG Output Gallery",
+        "Stable ID `LFGG_OutputGallery`",
+        "`GET /lfgg/v1/output-gallery/list`",
+        "20,000 directory entries",
+        "never lists paths outside the output root",
+        "never follows symlinked directories",
+        "adds no file-serving route",
+        "no interval timer",
         ]:
         assert claim in readme
 
@@ -1112,7 +1223,7 @@ def test_metadata_manifest_and_workflow_match_the_release_contract(
             "output_tooltips": list(getattr(node, "OUTPUT_TOOLTIPS", ())),
         }
     assert json.loads(manifest_path.read_text()) == {
-        "version": "1.5.0",
+        "version": "1.6.0",
         "nodes": expected_nodes,
     }
 

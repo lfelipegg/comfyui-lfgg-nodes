@@ -57,6 +57,7 @@ accelerators are not claimed.
 | LFGG Boolean Switch | BOOLEAN selector, false/true ANY branches | selected value |
 | LFGG Index Switch | zero-based INT selector, 2–32 ANY branches | selected value |
 | LFGG Value Inspector | any connected value | inline diagnostic report |
+| LFGG Output Gallery | output subfolder, subfolder recursion, media filter, name filter, sort, limit | none; read-only viewer |
 
 All five sizing nodes are in `LFGG/sizing`. They return positive dimensions aligned
 to the exact `divisible_by` value. Limits are hard ceilings and impossible
@@ -253,11 +254,13 @@ independently and reproducibly. Duplicate non-empty file lines act as weights,
 and native inline dynamic prompts such as `{red|blue}` remain available.
 
 Copy [`config.example.json`](config.example.json) to
-`<ComfyUI user directory>/lfgg_nodes/config.json`. The file holds one
-optional section per node that needs configuration: `prompt_composer` for this
-node and `prompt_assistant` for `LFGG Prompt Assistant`. Keep only the sections
-you use; any other top-level key or a repeated key is rejected. For the
-composer, replace both paths:
+`<ComfyUI user directory>/lfgg_nodes/config.json`. The user directory is the
+`user` folder ComfyUI reports at startup (`ComfyUI/user` by default, or the
+`--user-directory` value). The file holds one optional section per node that
+needs configuration: `prompt_composer` for this node and `prompt_assistant`
+for `LFGG Prompt Assistant`. Keep only the sections you use; any other
+top-level key or a repeated key is rejected, and the file is limited to 64 KiB
+of UTF-8 JSON. For the composer, replace both paths:
 
 ```json
 {
@@ -305,16 +308,66 @@ PNG when the tensor has alpha. `request` may be empty only when an image is
 connected. Unchanged inputs return the cached prompt without contacting the
 server.
 
-Configure the `prompt_assistant` section of the shared `config.json` described
-under the Prompt Composer. `server.base_url` must be `http` or `https` with a
-host and optional port only; `server.api_key` is optional and sent as a bearer
-token; `server.read_timeout_seconds` is bounded to 10–3600 (default 300).
-`skills_roots` lists absolute or `~` paths in either OS style, so one file can
-serve Linux and Windows machines; roots that do not exist on the current
-machine are skipped with a logged warning. `skills` is the allowlist of skill
-folder names the picker may show and the node may attach; omit it to allow
-every discovered skill. The shipped example allowlists the seven split
-`scenario-maker-*` skills.
+The node reads the `prompt_assistant` section of the shared
+`<ComfyUI user directory>/lfgg_nodes/config.json` described under the Prompt
+Composer (`ComfyUI/user/lfgg_nodes/config.json` on a standard install; create
+the `lfgg_nodes` folder if it is missing). Without that section the node fails
+with an error naming the file. A complete section for a local `llama-server`
+on its default port looks like this:
+
+```json
+{
+  "prompt_assistant": {
+    "server": {
+      "base_url": "http://127.0.0.1:8080",
+      "api_key": "",
+      "read_timeout_seconds": 300
+    },
+    "skills_roots": [
+      "~/.agents/skills",
+      "C:/Users/<name>/.agents/skills"
+    ],
+    "skills": [
+      "scenario-maker-sdxl",
+      "scenario-maker-krea-2",
+      "scenario-maker-illustrious",
+      "scenario-maker-noobai",
+      "scenario-maker-pony",
+      "scenario-maker-wan",
+      "scenario-maker-minimax-h3"
+    ]
+  }
+}
+```
+
+The section accepts only these keys; any other key is rejected:
+
+- `server.base_url` (optional, default `http://127.0.0.1:8080`): the
+  `llama-server` origin. It must be `http` or `https` with a host and optional
+  port only, no path, query, or credentials. Use the `--host` and `--port`
+  values you start the server with.
+- `server.api_key` (optional, default empty): sent as a bearer token when the
+  server runs with `--api-key`. Keep it a single line and never commit the
+  file.
+- `server.read_timeout_seconds` (optional, default 300): how long one
+  streamed reply may stay silent before the node fails. Bounded to 10–3600.
+  Connecting always times out after 5 s.
+- `skills_roots` (required, may be empty): directories whose immediate
+  children are skills. Entries must be absolute paths or start with `~`, in
+  either OS style, so one file can serve Linux and Windows machines. Roots
+  that do not exist on the current machine are skipped with a logged warning;
+  a skill name found under two roots uses the first root listed.
+- `skills` (optional): the allowlist of skill folder names the picker may show
+  and the node may attach. Names must be plain folder names without
+  separators and must not repeat. Omit the key to allow every discovered
+  skill. The shipped example allowlists the seven split `scenario-maker-*`
+  skills.
+
+No restart is needed after editing the file: the node re-reads it on every
+execution that is not served from ComfyUI's cache, and the picker's refresh
+buttons re-read it too. Errors name the offending key. The picker shows the
+configured root specs as written (for example `~/.agents/skills`) so you can
+see which roots were searched, but never file contents or resolved paths.
 
 A skill is a directory one level below a root that contains `SKILL.md`. The
 `skills` text holds one entry per line: `scenario-maker-sdxl` attaches that
@@ -460,6 +513,57 @@ Enlarging the node gives the selectable report more room. Overflow scrolls
 inside the report; a separate status line identifies waiting, current, or
 stale content without replacing the last successful report.
 
+`LFGG Output Gallery` is a read-only viewer in `LFGG/workflow`. Stable ID
+`LFGG_OutputGallery`. It lists the latest gallery items (images, videos, and
+audio) saved under one subfolder of the ComfyUI output root and shows them in
+the graph without running the workflow. It has no outputs, is never queued,
+and does not change execution; without the frontend extension the node still
+loads and persists its widgets.
+
+Persisted inputs, in order, are `path` (subfolder relative to the output root;
+empty means the root itself), `include_subfolders` (default `true`; recursion
+is bounded by the scan cap), `media_filter` (`all`, `images`, `videos`,
+`audio`, or one extension among `png`, `jpg`, `webp`, `gif`, `mp4`, `webm`,
+`mov`, `mp3`, `wav`, `flac`, `ogg`; `jpeg` files match and are reported as
+`jpg`), `name_filter` (case-insensitive substring matched against the path
+relative to `path`, so it matches subfolder names as well as filenames),
+`sort` (`newest first`, `oldest first`, `name A to Z`, `name Z to A`; time is
+file modification time), and `limit` (1 to 200, default 24; one page, no
+pagination).
+
+The compact view shows the selected preview with native media controls, a
+caption, the item count, and **Refresh**. **Show gallery** adds a lazy tile
+grid; **Hide gallery** returns to the compact view. Clicking a tile selects
+it. Tiles stay muted and offer a play/pause overlay for videos; audio files and
+videos the browser cannot decode show a labeled placeholder tile. The preview
+starts muted; its volume and mute state are remembered for the session and
+applied to the next selected video or audio item. Selecting an item never
+autoplays it, and videos loop. Selection and volume are session-only and are
+never saved into the workflow.
+
+A gallery refresh happens on **Refresh**, on any widget change, after a run
+you queued finishes (`execution_success`), and when the queue drains after
+having been busy (`status`), so a run queued from a second browser tab also
+refreshes this one. Bursts collapse into one request within 500 ms; there is
+no interval timer. Under `newest first`, newly listed items select the newest
+one unless the current selection is playing, in which case the selection stays
+and the new items simply appear in the grid. A kept selection survives a
+refresh; a missing one clears. States are announced in a polite live region:
+`no items match`, loading, stale (the previous list is dimmed while a refresh
+is in flight), error (the route message is shown verbatim and the last valid
+list is preserved), `list may be incomplete: scan cap reached`, and folder not
+found. Each tile and the preview offer **Open** (the `/view` URL in a new
+tab), **Copy path** (`subfolder/filename` relative to the output root), and,
+for PNG files only, **Load workflow**, which loads the embedded workflow the
+same way dropping the file on the canvas would. Tile media loads only while
+the grid is shown, the node is not collapsed, and the tile is in view; playing
+media pauses when the node leaves view and is released when the node is
+removed.
+
+The gallery never lists paths outside the output root and never deletes,
+renames, moves, or re-encodes files. Folders on other drives, pagination, and
+server-side thumbnails are out of scope.
+
 ## File and network behavior
 
 The sizing nodes use standard-library integer math plus tensor shape
@@ -532,6 +636,21 @@ exists only in saved workflow graph data and is omitted from prompt execution.
 The value inspector makes no network calls and reads or writes no files. It
 returns only its bounded report through ComfyUI's execution UI message.
 
+The output gallery reads only directory listings and file metadata. Its single
+read-only route, `GET /lfgg/v1/output-gallery/list`, resolves the ComfyUI
+output root, proves the requested subfolder stays inside it after resolving
+symlinks, and rejects absolute paths, drive markers, `..`, and symlink escapes
+with status 400; a missing subfolder returns 404. The walk uses `os.scandir`,
+never follows symlinked directories, skips hidden entries and files that
+resolve outside the root, and visits at most 20,000 directory entries (the
+scan cap) before reporting the list as truncated. It stats only the files it
+returns plus the entries it sorts, reads no file content, caches nothing, and
+writes nothing. Like every custom route it has no authentication gate; it
+reveals output filenames, subfolders, sizes, and modification times, never
+absolute paths. Every image, video, and audio byte is served by ComfyUI's
+native `/view` route with `type=output`; the pack serves no bytes of its own
+and adds no file-serving route. The frontend makes no other network calls.
+
 ## Migrate legacy workflows
 
 No legacy workflow ID is registered. Replace nodes manually:
@@ -584,6 +703,7 @@ node --test tests/frontend/routing_organizer.test.mjs
 node --test tests/frontend/switches.test.mjs
 node --test tests/frontend/string_join.test.mjs
 node --test tests/frontend/value_inspector.test.mjs
+node --test tests/frontend/output_gallery.test.mjs
 python -m ruff check .
 python -m pytest -q tests/unit
 comfy node validate

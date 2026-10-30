@@ -13,6 +13,7 @@ if __package__:
         DimensionsByRatioAndMegapixels,
         ImageDimensionsByMegapixels,
     )
+    from .lfgg_nodes.output_gallery import OutputGallery
     from .lfgg_nodes.power_lora_loader_folder import PowerLoraLoaderFolder
     from .lfgg_nodes.prompt_assistant import PromptAssistant
     from .lfgg_nodes.prompt_composer import PromptComposer
@@ -38,6 +39,7 @@ else:
         DimensionsByRatioAndMegapixels,
         ImageDimensionsByMegapixels,
     )
+    from lfgg_nodes.output_gallery import OutputGallery
     from lfgg_nodes.power_lora_loader_folder import PowerLoraLoaderFolder
     from lfgg_nodes.prompt_assistant import PromptAssistant
     from lfgg_nodes.prompt_composer import PromptComposer
@@ -81,6 +83,7 @@ NODE_CLASS_MAPPINGS = _merge_class_mappings(
     {"LFGG_IndexSwitch": IndexSwitch},
     {"LFGG_ValueInspector": ValueInspector},
     {"LFGG_VideoCutter": VideoCutter},
+    {"LFGG_OutputGallery": OutputGallery},
 )
 NODE_DISPLAY_NAME_MAPPINGS = {
     "LFGG_DimensionsByAspectRatio": "LFGG Dimensions by Aspect Ratio",
@@ -103,6 +106,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LFGG_IndexSwitch": "LFGG Index Switch",
     "LFGG_ValueInspector": "LFGG Value Inspector",
     "LFGG_VideoCutter": "LFGG Video Cutter",
+    "LFGG_OutputGallery": "LFGG Output Gallery",
 }
 WEB_DIRECTORY = "./web"
 

@@ -74,6 +74,13 @@ components:
     typography: "{typography.code}"
     rounded: "{rounded.none}"
     padding: "{spacing.sm}"
+  gallery-tile:
+    backgroundColor: "{colors.media-surface}"
+    textColor: "{colors.on-surface}"
+    typography: "{typography.label-md}"
+    rounded: "{rounded.sm}"
+    padding: "{spacing.2xs}"
+    height: 96px
 ---
 
 # LFGG Custom Node Design
@@ -81,7 +88,7 @@ components:
 Purpose: Define the durable interaction and visual rules for every LFGG node.
 Read when: Designing, implementing, or reviewing a registered node or its frontend UI.
 Source of truth: `README.md` defines node behavior; this file defines shared node UX and presentation.
-Last reviewed: 2026-09-06
+Last reviewed: 2026-10-30
 
 ## Overview
 
@@ -265,6 +272,25 @@ content rather than shrinking text or overlapping hit areas.
   below their intrinsic canvas width while preserving their aspect ratio.
 - Use public graph-change and graph-configured events for linked-source
   updates across renderers. Do not wrap upstream widgets or introduce polling.
+- The output gallery's selected preview is one native media element: an
+  image, a looping video with native controls, or audio with native controls,
+  muted at first, never autoplayed, under the same 180px/360px
+  compact/expanded caps with `object-fit: contain`. A caption names `subfolder/filename`, kind, and size;
+  selection and volume are session state and are never serialized.
+- Gallery tiles use `{components.gallery-tile}`: an auto-fill grid of at least
+  96px columns that reflows to the allocated width, a square media surface,
+  a full-tile labeled select button whose `aria-pressed` outline marks the
+  selection, a labeled play/pause overlay for muted video tiles, a labeled
+  text tile for audio or undecodable video, and a native disclosure actions
+  menu (Open, Copy path, PNG-only Load workflow) rather than hover-only
+  controls. Tile media loads only while expanded, not collapsed, and in view
+  through an intersection observer; every playing element pauses when the root
+  leaves view and media is released on removal.
+- Gallery refresh is event-driven only: the refresh button, widget changes,
+  `execution_success`, and the queue-drained `status` transition share one
+  500 ms debounce. Empty, loading, stale (dimmed previous list), error
+  (verbatim route message), truncated, and not-found states are text in one
+  polite live region and always keep the last valid list.
 
 ## Do's and Don'ts
 
