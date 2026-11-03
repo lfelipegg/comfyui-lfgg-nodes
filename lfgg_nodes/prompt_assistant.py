@@ -816,7 +816,10 @@ def build_request_body(messages, model, seed, temperature, max_tokens):
 # llama-server client
 # --------------------------------------------------------------------------
 
+# llama-server wraps every token in an SSE JSON chunk of roughly 200-400
+# bytes, so the streamed-body cap grows with the requested max_tokens.
 STREAM_LIMIT = 1024 * 1024
+STREAM_BYTES_PER_TOKEN = 1024
 BODY_LIMIT = 256 * 1024
 UNLOAD_DEADLINE = 30.0
 UNLOAD_POLL_INTERVAL = 0.5
@@ -992,7 +995,7 @@ class ServerClient:
         import aiohttp
 
         path = "/v1/chat/completions"
-        parser = _StreamParser()
+        parser = _StreamParser(body.get("max_tokens"))
         try:
             async with self._open("POST", path, json=body) as response:
                 if response.status != 200:
@@ -1091,7 +1094,9 @@ def _model_items(payload, path):
 class _StreamParser:
     """Parse OpenAI-style SSE chat chunks under the streamed-body cap."""
 
-    def __init__(self):
+    def __init__(self, max_tokens=None):
+        tokens = max_tokens if isinstance(max_tokens, int) else 0
+        self._limit = STREAM_LIMIT + max(tokens, 0) * STREAM_BYTES_PER_TOKEN
         self._buffer = bytearray()
         self._parts = []
         self._received = 0
@@ -1102,9 +1107,10 @@ class _StreamParser:
 
     def feed(self, chunk):
         self._received += len(chunk)
-        if self._received > STREAM_LIMIT:
+        if self._received > self._limit:
             raise PromptAssistantError(
-                f"streamed reply exceeds {STREAM_LIMIT} bytes; lower max_tokens"
+                f"streamed reply exceeds {self._limit} bytes; check the server "
+                "log for a model that ignores max_tokens or repeats itself"
             )
         self._buffer.extend(chunk)
         while True:

@@ -202,6 +202,22 @@ def test_stream_failures_are_actionable(monkeypatch):
 
     run(capped)
 
+    async def cap_scales_with_max_tokens(server, client):
+        monkeypatch.setattr(prompt_assistant, "STREAM_LIMIT", 64)
+        monkeypatch.setattr(prompt_assistant, "STREAM_BYTES_PER_TOKEN", 200)
+        server.chunks = [
+            sse(chunk("x" * 40)),
+            sse(chunk("y" * 40, finish="stop")),
+            sse(b"[DONE]"),
+        ]
+        prompt = await client.stream_chat({"max_tokens": 2})
+        assert prompt == "x" * 40 + "y" * 40
+        server.chunks = [sse(chunk("z" * 200))] * 3
+        with pytest.raises(PromptAssistantError, match="exceeds 464 bytes"):
+            await client.stream_chat({"max_tokens": 2})
+
+    run(cap_scales_with_max_tokens)
+
 
 def test_interruption_closes_the_connection():
     class Interrupted(BaseException):

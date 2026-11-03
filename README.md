@@ -618,7 +618,8 @@ and under the `share` policy `GET /models`, `POST /models/unload`, and
 allowlisted skill tree for the picker; they expose model ids, skill names,
 file sizes, and configured root paths, never the API key or file contents.
 Bounds: 5 s connect timeout, the configured read timeout, one attempt without
-retries or redirects, 256 KiB plain responses, 1 MiB streamed replies, 64 KiB
+retries or redirects, 256 KiB plain responses, streamed replies of 1 MiB plus
+1 KiB per `max_tokens` (33 MiB at the 32768 maximum), 64 KiB
 configuration, 512 KiB per attachment, 256 KiB attached total, eight images,
 and 268,435,456 source pixels per frame. Interrupting the queue closes the
 connection, which makes `llama-server` cancel the slot.

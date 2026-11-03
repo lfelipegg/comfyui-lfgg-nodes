@@ -217,7 +217,8 @@ Endpoints used, all on the configured `base_url`:
 | `POST /models/unload` | `share` policy, router mode | Release the LLM after the reply. |
 
 Bounds: connect timeout 5 s; read timeout from config; one attempt, no
-retries; streamed body capped at 1 MiB; non-streaming bodies capped at
+retries; streamed body capped at 1 MiB plus 1 KiB per `max_tokens` (each
+token arrives wrapped in its own SSE JSON chunk); non-streaming bodies capped at
 256 KiB; `http` and `https` only; no redirects followed. Any failure raises
 an actionable `LFGG Prompt Assistant` error that names the base URL and the
 likely fix. No blank output is ever returned.
