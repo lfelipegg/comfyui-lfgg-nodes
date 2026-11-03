@@ -260,6 +260,11 @@ A Markdown file inside a skill, other than `SKILL.md`, that can be attached
 individually alongside the skill.
 _Avoid_: Reference doc, attachment file
 
+**Linked reference**:
+A skill reference whose path `SKILL.md` or another linked reference mentions,
+attached automatically whenever its skill is selected.
+_Avoid_: Auto reference, required reference
+
 **Skill allowlist**:
 The configured set of skill names the prompt assistant may show and attach.
 _Avoid_: Enabled skills, skill filter

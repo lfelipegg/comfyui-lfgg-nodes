@@ -14,6 +14,8 @@ import importlib
 import io
 import json
 import logging
+import posixpath
+import re
 import time
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.parse import urlsplit
@@ -206,6 +208,8 @@ EXCLUDED_DIRECTORIES = frozenset({"evals", "docs", "tests", "scripts", "wildcard
 FILE_LIMIT = 512 * 1024
 ATTACHED_TOTAL_LIMIT = 256 * 1024
 DISCOVERY_ENTRY_LIMIT = 10_000
+# A path-like mention ending in ``.md``: markdown links, backticks, or bare text.
+MARKDOWN_MENTION = re.compile(r"[A-Za-z0-9_./-]+\.md(?![A-Za-z0-9_])")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -453,8 +457,61 @@ class Attachment:
     path: Path
 
 
+def _read_text(path, label):
+    try:
+        with path.open("rb") as source:
+            content = source.read(FILE_LIMIT + 1)
+    except OSError:
+        raise PromptAssistantError(f"attachment {label} could not be read") from None
+    if len(content) > FILE_LIMIT:
+        raise PromptAssistantError(
+            f"attachment {label} exceeds the {FILE_LIMIT // 1024} KiB file limit"
+        )
+    try:
+        return content.decode("utf-8-sig"), len(content)
+    except UnicodeDecodeError:
+        raise PromptAssistantError(f"attachment {label} must be UTF-8") from None
+
+
+def _mentioned_files(text, directory, available):
+    """Yield attachable files ``text`` names, relative to its file or the skill."""
+    for match in MARKDOWN_MENTION.finditer(text):
+        mention = match.group(0)
+        for anchor in (directory, ""):
+            candidate = posixpath.normpath(posixpath.join(anchor, mention))
+            if candidate in available:
+                yield candidate
+                break
+
+
+def linked_references(skill, files):
+    """Follow ``.md`` mentions from ``SKILL.md`` through the files they name.
+
+    Only mentions that match one of ``files`` (the skill's attachable files) are
+    followed, so links cannot reach outside the skill or into excluded content.
+    """
+    available = {item.relative: item.path for item in files}
+    linked = []
+    queue = [(SKILL_FILE_NAME, skill.path / SKILL_FILE_NAME)]
+    seen = {SKILL_FILE_NAME}
+    while queue:
+        relative, path = queue.pop(0)
+        text, _ = _read_text(path, f"{skill.name}/{relative}")
+        directory = posixpath.dirname(relative)
+        for mention in _mentioned_files(text, directory, available):
+            if mention not in seen:
+                seen.add(mention)
+                linked.append(mention)
+                queue.append((mention, available[mention]))
+    return linked
+
+
 def resolve_selection(entries, discovery):
-    """Map parsed entries to files, raising actionable errors for bad entries."""
+    """Map parsed entries to files, raising actionable errors for bad entries.
+
+    Each selected skill attaches its ``SKILL.md``, then every reference that
+    ``SKILL.md`` links to (transitively), then any other selected files.
+    """
     attachments = []
     for name, files in group_selection(entries).items():
         skill = discovery.skills.get(name)
@@ -471,8 +528,18 @@ def resolve_selection(entries, discovery):
                 skill=name, relative=SKILL_FILE_NAME, path=skill.path / SKILL_FILE_NAME
             )
         )
+        available = skill_files(skill)
+        paths = {item.relative: item.path for item in available}
+        included = set()
+        for relative in linked_references(skill, available):
+            included.add(relative)
+            attachments.append(
+                Attachment(skill=name, relative=relative, path=paths[relative])
+            )
         for relative in files:
             parts = _file_parts(f"{name}/{relative}", relative)
+            if PurePosixPath(*parts).as_posix() in included:
+                continue
             candidate = skill.path.joinpath(*parts)
             resolved = _contained(candidate, skill.path)
             if resolved is None:
@@ -508,25 +575,11 @@ class AttachedText:
 
 
 def _read_attachment(attachment):
-    label = f"{attachment.skill}/{attachment.relative}"
-    try:
-        with attachment.path.open("rb") as source:
-            content = source.read(FILE_LIMIT + 1)
-    except OSError:
-        raise PromptAssistantError(f"attachment {label} could not be read") from None
-    if len(content) > FILE_LIMIT:
-        raise PromptAssistantError(
-            f"attachment {label} exceeds the {FILE_LIMIT // 1024} KiB file limit"
-        )
-    try:
-        text = content.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        raise PromptAssistantError(f"attachment {label} must be UTF-8") from None
+    text, size = _read_text(
+        attachment.path, f"{attachment.skill}/{attachment.relative}"
+    )
     return AttachedText(
-        skill=attachment.skill,
-        relative=attachment.relative,
-        text=text,
-        size=len(content),
+        skill=attachment.skill, relative=attachment.relative, text=text, size=size
     )
 
 
@@ -558,7 +611,26 @@ def strip_frontmatter(text):
     return text
 
 
-def build_system_message(master_prompt, attached):
+def unattached_references(attachments, discovery):
+    """List the attachable files of each attached skill that were left out."""
+    attached = {(item.skill, item.relative) for item in attachments}
+    missing = []
+    for name in dict.fromkeys(item.skill for item in attachments):
+        for item in skill_files(discovery.skills[name]):
+            if (name, item.relative) not in attached:
+                missing.append(f"{name}/{item.relative}")
+    return missing
+
+
+ATTACHMENT_NOTE = (
+    "# Attached skill files\n\n"
+    "You cannot open files or run scripts. Every file you can use is attached "
+    "in full below. When a skill says to read or consult a file, use the "
+    "section headed with that skill and file path."
+)
+
+
+def build_system_message(master_prompt, attached, unattached=()):
     """Compose the system message; ``None`` when there is nothing to send."""
     if not isinstance(master_prompt, str):
         raise PromptAssistantError("master_prompt must be a string")
@@ -566,6 +638,14 @@ def build_system_message(master_prompt, attached):
     master = master_prompt.strip()
     if master:
         sections.append(master)
+    if attached:
+        note = ATTACHMENT_NOTE
+        if unattached:
+            note += (
+                " These files are not attached, so do not assume their "
+                f"contents: {', '.join(unattached)}."
+            )
+        sections.append(note)
     for item in attached:
         if item.relative == SKILL_FILE_NAME:
             body = strip_frontmatter(item.text).strip()
@@ -1222,11 +1302,18 @@ def skills_catalog(config):
     """Describe allowlisted skills for the picker: roots, files, and sizes."""
     discovery = discover_skills(config.skills_roots, config.skills)
     skills = []
+    warnings = list(discovery.warnings)
     for name, skill in discovery.skills.items():
         try:
             skill_size = (skill.path / SKILL_FILE_NAME).stat().st_size
         except OSError:
             skill_size = 0
+        files = skill_files(skill)
+        try:
+            linked = set(linked_references(skill, files))
+        except PromptAssistantError as error:
+            linked = set()
+            warnings.append(str(error).removeprefix(ERROR_PREFIX))
         skills.append(
             {
                 "name": name,
@@ -1234,8 +1321,12 @@ def skills_catalog(config):
                 "available": True,
                 "skill_size": skill_size,
                 "files": [
-                    {"path": item.relative, "size": item.size}
-                    for item in skill_files(skill)
+                    {
+                        "path": item.relative,
+                        "size": item.size,
+                        "linked": item.relative in linked,
+                    }
+                    for item in files
                 ],
             }
         )
@@ -1254,7 +1345,7 @@ def skills_catalog(config):
             {"path": root.spec, "available": root.available} for root in discovery.roots
         ],
         "skills": skills,
-        "warnings": list(discovery.warnings),
+        "warnings": warnings,
         "limits": {"total": ATTACHED_TOTAL_LIMIT, "file": FILE_LIMIT},
     }
 
@@ -1417,9 +1508,12 @@ class PromptAssistant:
             discover_skills, config.skills_roots, config.skills
         )
         _log_warnings(discovery.warnings)
-        attachments = resolve_selection(entries, discovery)
+        attachments = await asyncio.to_thread(resolve_selection, entries, discovery)
+        unattached = await asyncio.to_thread(
+            unattached_references, attachments, discovery
+        )
         attached = await asyncio.to_thread(read_attachments, attachments)
-        system = build_system_message(master_prompt, attached)
+        system = build_system_message(master_prompt, attached, unattached)
         encoded = await asyncio.to_thread(
             encode_images, [image_1, image_2, image_3, image_4]
         )

@@ -5,11 +5,13 @@ from lfgg_nodes.prompt_assistant import (
     PromptAssistantError,
     build_system_message,
     discover_skills,
+    linked_references,
     parse_selection,
     read_attachments,
     resolve_selection,
     skill_files,
     strip_frontmatter,
+    unattached_references,
 )
 
 SKILL_MD = "---\nname: {name}\ndescription: x\n---\n\n# {name}\n\nBody of {name}.\n"
@@ -253,6 +255,10 @@ def test_attachments_enforce_caps_and_build_ordered_system_message(
 
     assert message == (
         "Master.\n\n"
+        "# Attached skill files\n\n"
+        "You cannot open files or run scripts. Every file you can use is attached "
+        "in full below. When a skill says to read or consult a file, use the "
+        "section headed with that skill and file path.\n\n"
         "# Skill: scenario-maker-sdxl\n\n"
         "# scenario-maker-sdxl\n\nBody of scenario-maker-sdxl.\n\n"
         "## scenario-maker-sdxl/references/routing.md\n\n"
@@ -270,6 +276,62 @@ def test_attachments_enforce_caps_and_build_ordered_system_message(
     monkeypatch.setattr(prompt_assistant, "FILE_LIMIT", 10)
     with pytest.raises(PromptAssistantError, match="SKILL.md exceeds the 0 KiB"):
         read_attachments(attachments)
+
+
+def test_skill_links_attach_references_transitively_and_stay_in_the_skill(
+    roots, tmp_path
+):
+    first, _ = roots
+    skill = first / "scenario-maker-sdxl"
+    (skill / "SKILL.md").write_text(
+        "Read `references/routing.md` first, then `scripts/tool.md`,\n"
+        "`references/missing.md`, `../scenario-maker-wan/SKILL.md`, and\n"
+        "[the profile](references/models/sdxl.md).\n"
+        "Never `evals/snapshot-1/SKILL.md`.\n",
+        encoding="utf-8",
+    )
+    (skill / "references" / "models" / "sdxl.md").write_text(
+        "See [routing](../routing.md) and [guide](sdxl/guide.md).\n",
+        encoding="utf-8",
+    )
+    (skill / "references" / "models" / "sdxl").mkdir()
+    (skill / "references" / "models" / "sdxl" / "guide.md").write_text(
+        "Back to `references/models/sdxl.md`.\n", encoding="utf-8"
+    )
+    discovery = discover_skills([str(first)], None)
+    sdxl = discovery.skills["scenario-maker-sdxl"]
+
+    assert linked_references(sdxl, skill_files(sdxl)) == [
+        "references/routing.md",
+        "references/models/sdxl.md",
+        "references/models/sdxl/guide.md",
+    ]
+
+    attachments = resolve_selection(
+        parse_selection(
+            "scenario-maker-sdxl/references/routing.md\nscenario-maker-sdxl/CONTEXT.md"
+        ),
+        discovery,
+    )
+    assert [item.relative for item in attachments] == [
+        "SKILL.md",
+        "references/routing.md",
+        "references/models/sdxl.md",
+        "references/models/sdxl/guide.md",
+        "CONTEXT.md",
+    ]
+    assert unattached_references(attachments, discovery) == []
+
+    bare = resolve_selection(parse_selection("scenario-maker-sdxl"), discovery)
+    unattached = unattached_references(bare, discovery)
+    assert unattached == ["scenario-maker-sdxl/CONTEXT.md"]
+    message = build_system_message("", read_attachments(bare), unattached)
+    assert message.startswith("# Attached skill files\n\nYou cannot open files")
+    assert (
+        "These files are not attached, so do not assume their contents: "
+        "scenario-maker-sdxl/CONTEXT.md.\n\n# Skill: scenario-maker-sdxl"
+    ) in message
+    assert "## scenario-maker-sdxl/references/models/sdxl/guide.md" in message
 
 
 def test_attachments_require_utf8(roots):

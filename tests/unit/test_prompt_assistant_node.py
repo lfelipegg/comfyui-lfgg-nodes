@@ -189,7 +189,8 @@ def test_share_policy_sequences_unload_stream_and_release(monkeypatch, tmp_path)
         assert body["max_tokens"] == 64
         assert body["messages"][0]["role"] == "system"
         system = body["messages"][0]["content"]
-        assert system.startswith("Master\n\n# Skill: scenario-maker-sdxl\n\n")
+        assert system.startswith("Master\n\n# Attached skill files\n\n")
+        assert "\n\n# Skill: scenario-maker-sdxl\n\n" in system
         assert "## scenario-maker-sdxl/references/ref.md\n\nRef body" in system
         assert body["messages"][1] == {
             "role": "user",
@@ -376,7 +377,9 @@ def test_routes_report_models_and_skills_without_secrets(monkeypatch, tmp_path):
         assert sdxl["available"] is True
         assert sdxl["root"] == str(harness.root)
         assert sdxl["skill_size"] > 0
-        assert sdxl["files"] == [{"path": "references/ref.md", "size": 9}]
+        assert sdxl["files"] == [
+            {"path": "references/ref.md", "size": 9, "linked": False}
+        ]
         assert catalog["limits"] == {"total": 256 * 1024, "file": 512 * 1024}
         assert any("missing" in warning for warning in catalog["warnings"])
 

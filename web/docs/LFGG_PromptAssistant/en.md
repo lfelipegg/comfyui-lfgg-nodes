@@ -15,10 +15,12 @@ Configure the server and skills in
 are skipped), and the `skills` allowlist of skill folder names.
 
 **Skills** are directories one level below a root that contain `SKILL.md`. The
-`skills` text lists one entry per line: a skill name attaches its `SKILL.md`;
-`skill-name/references/file.md` also attaches that reference. The picker below
-the text edits it: check a skill, open its references, or choose **All
-references**. Hand-written lines are kept. Attachments are limited to 256 KiB in
+`skills` text lists one entry per line: a skill name attaches its `SKILL.md`
+and every reference that `SKILL.md` links to, following links between
+references too, because the model cannot open files itself;
+`skill-name/file.md` also attaches a file that is not linked. The picker below
+the text edits it: check a skill, open its references (linked ones are checked
+and locked), or choose **All references**. Hand-written lines are kept. Attachments are limited to 256 KiB in
 total and 512 KiB per file; the node fails rather than truncates. Files under
 `evals`, `docs`, `tests`, `scripts`, `wildcards`, and hidden directories are
 never attached.

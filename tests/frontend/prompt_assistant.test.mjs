@@ -167,6 +167,42 @@ test("selection helpers edit only the skills text", () => {
   );
 });
 
+const LINKED_CATALOG = {
+  ...CATALOG,
+  skills: [
+    {
+      ...CATALOG.skills[0],
+      files: [
+        { path: "references/models/sdxl.md", size: 1024, linked: true },
+        { path: "references/routing.md", size: 512, linked: false },
+      ],
+    },
+  ],
+};
+
+test("linked references count with their skill and stay locked in the picker", async () => {
+  assert.deepEqual(selectionSummary("scenario-maker-sdxl", LINKED_CATALOG), {
+    skills: 1, files: 1, bytes: 3072, unknown: [],
+  });
+  assert.deepEqual(
+    selectionSummary("scenario-maker-sdxl/references/models/sdxl.md\nscenario-maker-sdxl/references/routing.md", LINKED_CATALOG),
+    { skills: 1, files: 2, bytes: 3584, unknown: [] },
+  );
+
+  const { skillsWidget, node, options } = graphNode({ skills: "scenario-maker-sdxl", fetchSkills: async () => LINKED_CATALOG });
+  const widget = installPromptAssistant(node, options);
+  await widget.lfggReady;
+  byRole(widget.element, "disclosure").dispatch("click");
+  byRole(widget.element, "files-toggle", "scenario-maker-sdxl").dispatch("click");
+  const linkedBox = byRole(widget.element, "file-toggle", "scenario-maker-sdxl/references/models/sdxl.md");
+  assert.equal(linkedBox.checked, true);
+  assert.equal(linkedBox.disabled, true);
+  assert.equal(byRole(widget.element, "file-toggle", "scenario-maker-sdxl/references/routing.md").checked, false);
+  byRole(widget.element, "all-files", "scenario-maker-sdxl").dispatch("click");
+  assert.equal(skillsWidget.value, "scenario-maker-sdxl\nscenario-maker-sdxl/references/routing.md");
+  assert.match(byRole(widget.element, "summary").textContent, /^1 skill · 2 references · ≈ 3\.5 KiB of 256 KiB$/);
+});
+
 test("installs a compact picker after the skills widget plus a nonserialized report", async () => {
   const { node, skillsWidget, options } = graphNode();
   const widget = installPromptAssistant(node, options);

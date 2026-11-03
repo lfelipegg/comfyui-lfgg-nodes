@@ -56,20 +56,32 @@ export function selectionSummary(text, catalog) {
   const skills = new Map((catalog?.skills ?? []).map((skill) => [skill.name, skill]));
   const selectedSkills = new Set(entries.map((entry) => entry.skill));
   let bytes = 0;
+  let files = 0;
   const unknown = [];
   for (const name of selectedSkills) {
     const skill = skills.get(name);
-    if (!skill?.available) unknown.push(name);
-    else bytes += skill.skill_size ?? 0;
+    if (!skill?.available) {
+      unknown.push(name);
+      continue;
+    }
+    bytes += skill.skill_size ?? 0;
+    // References linked from SKILL.md are attached with the skill itself.
+    for (const file of skill.files ?? []) {
+      if (!file.linked) continue;
+      files += 1;
+      bytes += file.size;
+    }
   }
-  let files = 0;
+  const counted = new Set();
   for (const entry of entries) {
-    if (entry.file === null) continue;
+    if (entry.file === null || counted.has(entry.raw)) continue;
+    counted.add(entry.raw);
+    const file = skills.get(entry.skill)?.files?.find((item) => item.path === entry.file);
+    if (file?.linked) continue;
     files += 1;
-    const size = skills.get(entry.skill)?.files?.find((item) => item.path === entry.file)?.size;
-    if (size === undefined) {
+    if (file === undefined) {
       if (!unknown.includes(entry.raw)) unknown.push(entry.raw);
-    } else bytes += size;
+    } else bytes += file.size;
   }
   return { skills: selectedSkills.size, files, bytes, unknown };
 }
@@ -268,12 +280,11 @@ export function installPromptAssistant(
             else fileExpanded.add(skill.name);
             render();
           });
+          const optional = files.filter((file) => !file.linked).map((file) => file.path);
           const all = button(document, "All references", "all-files");
           all.dataset.name = skill.name;
-          all.disabled = lockedSkills;
-          all.addEventListener("click", () => writeSkills(
-            setAllFiles(skillsText(), skill.name, files.map((file) => file.path), true),
-          ));
+          all.disabled = lockedSkills || optional.length === 0;
+          all.addEventListener("click", () => writeSkills(setAllFiles(skillsText(), skill.name, optional, true)));
           head.append(toggleFiles, all);
           if (fileExpanded.has(skill.name)) {
             const fileList = document.createElement("div");
@@ -281,9 +292,11 @@ export function installPromptAssistant(
             Object.assign(fileList.style, { display: "grid", gap: "0", minWidth: "0", paddingLeft: `${UI.inset}px` });
             for (const file of files) {
               const raw = `${skill.name}/${file.path}`;
-              const fileBox = checkbox(document, "file-toggle", `${file.path} (${formatBytes(file.size)})`, raw);
-              fileBox.input.checked = selectedFiles.has(raw);
-              fileBox.input.disabled = lockedSkills;
+              const label = `${file.path} (${formatBytes(file.size)})${file.linked ? " · linked from SKILL.md" : ""}`;
+              const fileBox = checkbox(document, "file-toggle", label, raw);
+              // Linked references always ride along with a selected skill.
+              fileBox.input.checked = file.linked ? selectedSkills.has(skill.name) : selectedFiles.has(raw);
+              fileBox.input.disabled = lockedSkills || file.linked;
               fileBox.input.addEventListener("change", () => writeSkills(
                 setFile(skillsText(), skill.name, file.path, fileBox.input.checked),
               ));

@@ -371,17 +371,24 @@ see which roots were searched, but never file contents or resolved paths.
 
 A skill is a directory one level below a root that contains `SKILL.md`. The
 `skills` text holds one entry per line: `scenario-maker-sdxl` attaches that
-skill's `SKILL.md`; `scenario-maker-sdxl/references/models/sdxl.md` also
-attaches one reference and implies the skill. Attachable references are `.md`
-files beneath the skill outside `evals`, `docs`, `tests`, `scripts`,
-`wildcards`, and hidden directories; symlinks must resolve inside the skill.
+skill's `SKILL.md` and every reference it links to;
+`scenario-maker-sdxl/README.md` also attaches one more file and implies the
+skill. Attachable references are `.md` files beneath the skill outside `evals`,
+`docs`, `tests`, `scripts`, `wildcards`, and hidden directories; symlinks must
+resolve inside the skill. A linked reference is any attachable file whose path
+appears in `SKILL.md` (relative to the skill, such as `references/routing.md`)
+or in a linked reference (relative to that file, such as `../routing.md`, or to
+the skill); links are followed transitively and other mentions are ignored,
+because the model cannot open files itself. The system message opens with a
+note that says so and names the selected skills' references that were left
+out.
 Each file is limited to 512 KiB and all attachments together to 256 KiB; the
 node fails naming the largest attachments rather than truncating. Unknown,
 non-allowlisted, missing, excluded, or non-`.md` entries fail with the entry
 and the roots searched. The frontend picker below the text edits it, shows
 missing allowlisted skills with the roots searched, lists each skill's
-references with an **All references** shortcut, and shows the attached-size
-estimate. **Refresh models** fills the `model` list from the server and keeps
+references with linked ones checked and locked, offers an **All references**
+shortcut for the rest, and shows the attached-size estimate. **Refresh models** fills the `model` list from the server and keeps
 a saved id that is no longer listed, marked as missing. The reply streams into
 ComfyUI's progress text; the final prompt also appears in a read-only,
 selectable **Generated prompt** report that is restored on workflow reload.

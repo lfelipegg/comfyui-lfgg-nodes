@@ -138,7 +138,11 @@ matters: `scenario-maker` carries two dozen snapshot copies of `SKILL.md` under
 
 Selection is persisted in the `skills` widget, one entry per line, in order:
 
-- `scenario-maker-illustrious` attaches that skill's `SKILL.md`.
+- `scenario-maker-illustrious` attaches that skill's `SKILL.md` and its linked
+  references (amended 2026-11-02, ADR 0008): every attachable file whose
+  relative path appears in `SKILL.md`, or in an already linked file relative to
+  that file or to the skill, followed transitively in first-mention order.
+  Mentions that match no attachable file are ignored.
 - `scenario-maker-illustrious/references/models/illustrious.md` attaches one
   reference file and implies the skill's `SKILL.md` even if the bare name line
   is absent.
@@ -157,7 +161,8 @@ that lists the largest attachments; the node never truncates.
 
 The frontend picker lists allowlisted skills under each root, shows missing
 allowlisted skills as unavailable with the roots searched, expands a skill to
-its attachable files, offers an `all references` shortcut per skill, and shows
+its attachable files with linked references checked and locked, offers an
+`all references` shortcut per skill for the unlinked rest, and shows
 the running attached-size estimate. It edits the `skills` text; it owns no
 other state. Without the frontend extension the text box remains usable.
 
@@ -165,9 +170,13 @@ other state. Without the frontend extension the text box remains usable.
 
 One request to `POST /v1/chat/completions`:
 
-- `system`: the master prompt, then for each selected skill a block headed
-  `# Skill: <name>` containing the `SKILL.md` body with YAML frontmatter
-  removed, then each attached file headed `## <name>/<relative path>`.
+- `system`: the master prompt, then (when anything is attached) a note headed
+  `# Attached skill files` saying the model cannot open files or run scripts,
+  that a skill's "read this file" means the matching attached section, and
+  naming the selected skills' attachable files that were left out; then for
+  each selected skill a block headed `# Skill: <name>` containing the
+  `SKILL.md` body with YAML frontmatter removed, then its linked references,
+  then other selected files, each headed `## <name>/<relative path>`.
   An empty master prompt with no skills omits the system message.
 - `user`: an ordered content array. For each image, a text part
   `Image N of M` followed by an `image_url` part carrying a `data:` URI; then
